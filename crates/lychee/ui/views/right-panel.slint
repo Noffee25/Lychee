@@ -1,7 +1,7 @@
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
 import { AppState, Player, Actions, QueueItem } from "../state.slint";
-import { IconButton, Cover, Segmented, Divider } from "../widgets.slint";
+import { IconButton, Cover, Segmented, Divider, ArtistLinks } from "../widgets.slint";
 import { ScrollView } from "std-widgets.slint";
 
 component QueueRow inherits Rectangle {
@@ -178,10 +178,10 @@ component QueueTab inherits ScrollView {
                         color: Theme.text;
                         overflow: elide;
                     }
-                    Text {
-                        text: Player.now.artist;
-                        color: Theme.text-2;
-                        overflow: elide;
+                    ArtistLinks {
+                        names: Player.now.artists;
+                        font-size: 13.5px;
+                        clicked(name) => { Actions.open-artist(name); }
                     }
                 }
                 IconButton {

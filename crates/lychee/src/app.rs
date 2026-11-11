@@ -5,7 +5,7 @@
 //! that fire while the app is busy (re-entrancy) are queued instead of causing borrow panics.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -2339,6 +2339,12 @@ impl App {
                     id: t.id as i32,
                     title: t.title.clone().into(),
                     artist: t.display_artist().into(),
+                    artists: ModelRc::new(VecModel::from(
+                        credited_artists(t.display_artist(), &known_artists(&self.library.index()))
+                            .into_iter()
+                            .map(SharedString::from)
+                            .collect::<Vec<_>>(),
+                    )),
                     album: t.album.clone().into(),
                     album_id: handle,
                     cover,
@@ -2984,6 +2990,32 @@ fn tint_color(rgb: u32) -> Color {
 }
 
 /// Placeholder colour derived from a name, so the same album always gets the same tile.
+/// Names of artists with albums in the library, as [`lychee_tagger::credits::keep_key`] writes them.
+fn known_artists(index: &LibraryIndex) -> HashSet<String> {
+    index.artists().iter().map(|a| lychee_tagger::credits::keep_key(&a.name)).collect()
+}
+
+/// The separate artists of a credit, for links: "A feat. B, C" → A, B, C. Commas, `;` and feat./ft.
+/// split; library artists ("Tyler, The Creator") stay whole. "A & B" splits only when both are
+/// library artists, because "&" is part of so many names ("Mumford & Sons").
+fn credited_artists(artist: &str, known: &HashSet<String>) -> Vec<String> {
+    let credits = lychee_tagger::Credits { split_commas: true, keep: known.clone(), ..Default::default() };
+    let parsed = credits.parse(artist);
+    let names: Vec<String> = parsed
+        .leads
+        .into_iter()
+        .chain(parsed.featured)
+        .flat_map(|name| {
+            let parts: Vec<String> = name.split('&').map(|p| p.trim().to_string()).collect();
+            let all_known = parts.len() > 1
+                && parts.iter().all(|p| known.contains(&lychee_tagger::credits::keep_key(p)))
+                && !known.contains(&lychee_tagger::credits::keep_key(&name));
+            if all_known { parts } else { vec![name] }
+        })
+        .collect();
+    if names.is_empty() { vec![artist.to_string()] } else { names }
+}
+
 fn seed_color(text: &str) -> Color {
     let mut h: u32 = 0x811c_9dc5;
     for b in text.bytes() {
@@ -3080,6 +3112,21 @@ fn relative_day(unix: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credits_split_into_artist_links() {
+        let known: HashSet<String> =
+            ["Daft Punk", "Justice", "Tyler, The Creator", "Simon & Garfunkel"].iter().map(|n| n.to_lowercase()).collect();
+        let names = |s: &str| credited_artists(s, &known);
+        assert_eq!(names("Denzel Curry feat. Twelve'len, GoldLink"), ["Denzel Curry", "Twelve'len", "GoldLink"]);
+        assert_eq!(names("Tyler, The Creator feat. Frank Ocean"), ["Tyler, The Creator", "Frank Ocean"]);
+        assert_eq!(names("Daft Punk & Justice"), ["Daft Punk", "Justice"]);
+        assert_eq!(names("Mumford & Sons"), ["Mumford & Sons"]);
+        assert_eq!(names("Simon & Garfunkel"), ["Simon & Garfunkel"]);
+        assert_eq!(names("Daft Punk; Pharrell Williams"), ["Daft Punk", "Pharrell Williams"]);
+        assert_eq!(names("AC/DC"), ["AC/DC"]);
+        assert_eq!(names("Unknown Artist"), ["Unknown Artist"]);
+    }
 
     #[test]
     fn number_formatting() {

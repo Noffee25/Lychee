@@ -442,6 +442,48 @@ export component Divider inherits Rectangle {
     background: Theme.border;
 }
 
+// Artist names separated by commas, each one a link: "Denzel Curry, Twelve'len, GoldLink".
+// Names keep their full width and only the last one elides; if the earlier ones already don't
+// fit, the row is clipped and fades into `fade-color` (the background behind it).
+export component ArtistLinks inherits Rectangle {
+    in property <[string]> names;
+    in property <length> font-size: 12.5px;
+    in property <brush> text-color: Theme.text-2;
+    in property <brush> hover-color: Theme.text;
+    in property <color> fade-color: Theme.side;
+    callback clicked(string);
+    clip: true;
+    min-width: 0px;
+    preferred-width: row.preferred-width;
+    height: row.preferred-height;
+    row := HorizontalLayout {
+        alignment: start;
+        for name[i] in root.names: HorizontalLayout {
+            if i > 0: Text {
+                text: ", ";
+                font-size: root.font-size;
+                color: root.text-color;
+            }
+            Text {
+                min-width: i == root.names.length - 1 ? 0px : self.preferred-width;
+                text: name;
+                font-size: root.font-size;
+                color: ta.has-hover ? root.hover-color : root.text-color;
+                overflow: elide;
+                ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.clicked(name); }
+                }
+            }
+        }
+    }
+    if row.min-width > root.width: Rectangle {
+        x: root.width - self.width;
+        width: 32px;
+        background: @linear-gradient(90deg, root.fade-color.transparentize(100%) 0%, root.fade-color 85%);
+    }
+}
+
 // A small busy indicator in the accent colour (the std Spinner uses the Fluent blue).
 export component BusyRing inherits Rectangle {
     in property <color> ink: Theme.accent;

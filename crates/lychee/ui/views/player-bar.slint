@@ -1,7 +1,7 @@
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
 import { AppState, Player, Actions } from "../state.slint";
-import { IconButton, Cover, SeekBar, Bubble, PillButton, Divider } from "../widgets.slint";
+import { IconButton, Cover, SeekBar, Bubble, PillButton, Divider, ArtistLinks } from "../widgets.slint";
 
 // Bottom-right Last.fm indicator with a status popover.
 component LastfmButton inherits Rectangle {
@@ -228,7 +228,7 @@ export component PlayerBar inherits Rectangle {
         padding-left: 16px;
         padding-right: 12px;
         spacing: 20px;
-        // Now playing. The cover and title open the album; the artist name opens the artist.
+        // Now playing. The cover and title open the album; each artist name opens that artist.
         // One condition for the whole block, so it can't half appear.
         HorizontalLayout {
             cross-axis-alignment: center;
@@ -265,15 +265,9 @@ export component PlayerBar inherits Rectangle {
                                 color: now-ta.has-hover ? Theme.accent : Theme.text;
                                 overflow: elide;
                             }
-                            Text {
-                                text: Player.now.artist;
-                                font-size: 12.5px;
-                                color: artist-ta.has-hover ? Theme.text : Theme.text-2;
-                                overflow: elide;
-                                artist-ta := TouchArea {
-                                    mouse-cursor: pointer;
-                                    clicked => { Actions.open-artist(Player.now.artist); }
-                                }
+                            ArtistLinks {
+                                names: Player.now.artists;
+                                clicked(name) => { Actions.open-artist(name); }
                             }
                         }
                     }

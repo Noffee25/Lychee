@@ -129,6 +129,8 @@ export struct NowPlaying {
     id: int,
     title: string,
     artist: string,
+    // The credit split into separate artists, each a link ("A feat. B, C" → A, B, C).
+    artists: [string],
     album: string,
     album-id: int,
     cover: image,
