@@ -5,13 +5,6 @@ on:
     branches: [main]
   pull_request:
 
-env:
-  CARGO_TERM_COLOR: never
-
-# Read-only unless a job asks for more (only the report job pushes).
-permissions:
-  contents: read
-
 jobs:
   build:
     name: ${{ matrix.os }}
@@ -20,58 +13,37 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
-
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
-        run: bash packaging/ci-apt.sh libasound2-dev libfontconfig1-dev
-
+        run: |
+          # TEMPORARY (2026-11-11): Canonical's DNS is down, so use mirrors outside it first.
+          # Remove after v0.1.0 is published.
+          printf '%s\n' https://mirrors.edge.kernel.org/ubuntu/ https://mirror.math.princeton.edu/pub/ubuntu/ \
+            https://archive.ubuntu.com/ubuntu/ | sudo tee /etc/apt/apt-mirrors.txt
+          sudo apt-get update && sudo apt-get install -y libasound2-dev libfontconfig1-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-
       - uses: Swatinem/rust-cache@v2
-
-      - name: Build
-        run: cargo build --workspace --all-targets --locked 2>&1 | tee build.log
-
-      - name: Test
-        run: cargo test --workspace --locked 2>&1 | tee test.log
-
+      - run: cargo build --workspace --all-targets --locked
+      - run: cargo test --workspace --locked
       - name: Clippy (advisory)
         continue-on-error: true
-        run: cargo clippy --workspace --all-targets --locked 2>&1 | tee clippy.log
-
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: log-${{ matrix.os }}
-          path: "*.log"
+        run: cargo clippy --workspace --all-targets --locked
 
   report:
-    # Agents working on this private repository can't see Actions; they read this branch.
+    # Agents can't see Actions on this private repository; they read the status/ci branch.
     name: Report
     if: always() && github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
-    # The workflow token is read-only by default; this job pushes the status/ci branch.
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          pattern: log-*
-          path: logs
-      - name: Push the outcome to the status/ci branch
+      - run: bash packaging/ci-report.sh status/ci "CI $(git log -1 --format=%h)"
         env:
           GH_TOKEN: ${{ github.token }}
-          RESULTS: "build=${{ needs.build.result }}"
-        run: |
-          chmod +x packaging/ci-report.sh
-          packaging/ci-report.sh status/ci "CI $(git log -1 --format=%h)" logs

@@ -46,7 +46,7 @@ design/            HTML prototypes; the app implements direction D "Flow" and it
 docs/              features.md (done/planned), architecture.md, tech-stack.md, screenshots/
 assets/            desktop file, icons; windows/lychee.ico + lychee.res (from packaging/windows/make-icon.py)
 packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, release-notes.md,
-                   ci-report.sh + ci-apt.sh (CI helpers: status branches, apt with retries)
+                   ci-report.sh (writes CI/release results to the status branches)
 ```
 
 ## Build, run, test
@@ -191,18 +191,25 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
 - The GitHub repo is private: its API (and the Actions page) needs credentials you probably don't
   have. CI and release runs therefore report to branches. Read them with
   `git fetch origin status/ci && git show FETCH_HEAD:STATUS.md`; use `status/release` for releases.
-  The report lists each job's result, error lines and the end of each log (`packaging/ci-report.sh`).
-  - Workflow tokens are read-only in this repo. Only jobs that push (the reports, publishing a release)
-    declare `permissions: contents: write`; without it the report fails with "Write access to
-    repository not granted" (403).
-  - If a report never shows up, ask the owner for that run's Report job log.
+  - The report (`packaging/ci-report.sh`) comes from GitHub's jobs API: every job's result, and for
+    failed jobs only, the failed step, the `##[error]` lines and the log leading up to the last error.
+    Passing jobs get no log, so clippy warnings never show up there.
+  - Check the commit line: the branch holds only the latest run. If a report is missing or stale,
+    ask the owner for the run's Report job log.
+- The owner wants the workflows kept small: no retry wrappers or extra test matrices. A runner's network
+  outage (e.g. apt "Temporary failure resolving") is waited out and re-run, not scripted around.
+  - Exception, temporary: during Canonical's DNS outage of 2026-11-11 both workflows point
+    `/etc/apt/apt-mirrors.txt` at non-Canonical mirrors (marked `TEMPORARY`). Once v0.1.0 is published,
+    remove those lines and this note in a `[skip ci]` commit.
+- Workflow tokens are read-only in this repo. Publish declares `contents: write`; the Report jobs declare
+  `contents: write` and `actions: read`.
 
 ## Releasing
 
 1. Bump `version` in the root `Cargo.toml` (`[workspace.package]`), update `packaging/release-notes.md`
    (its file names include the version), and commit.
-2. Push `main` and wait for `status/ci` to report `build: success`. That is the first real Windows
-   build of new code.
+2. Push `main` and wait for `status/ci` to report success. That is the first real Windows build of new
+   code.
 3. `git tag vX.Y.Z && git push origin vX.Y.Z`. `.github/workflows/release.yml` then builds:
    - on Ubuntu 22.04 (glibc 2.35): the `.deb`, `.rpm` and `.tar.xz` with `install.sh`;
    - on Windows: the Inno Setup installer and a portable zip.
@@ -213,7 +220,7 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
      scanner can detect. Keep them in sync with `install.sh`'s list.
    - On Windows the C runtime is static (`.cargo/config.toml`), so there's nothing to redistribute. The
      exe icon is linked from `assets/windows/lychee.res`; `LYCHEE_NO_EXE_ICON=1` skips it.
-5. If a job fails, nothing is published: Publish needs both builds and every install test.
+5. If a job fails, nothing is published: Publish needs both builds.
    - If the cause is outside the code (a runner's network, for example), the owner can click *Re-run
      failed jobs*.
    - Or delete the tag (`git push origin :refs/tags/vX.Y.Z`), tag the fixed commit and push the tag again.
