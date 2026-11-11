@@ -4,13 +4,14 @@ The first release of **Lychee**, a modern music player for your own library on L
 
 | Your system | File | How to install |
 |---|---|---|
+| **Fedora** (also openSUSE, RHEL) | `lychee-0.1.0-1.x86_64.rpm` | Double-click it to install with GNOME Software, or run `sudo dnf install ./lychee-0.1.0-1.x86_64.rpm` (`sudo zypper install ./…` on openSUSE). dnf installs the libraries it needs. |
 | **Windows 10 / 11** (64-bit) | `Lychee-0.1.0-windows-x64-setup.exe` | Run it. It installs for your account (no admin needed) or, if you choose, for everyone. |
 | Windows, without installing | `Lychee-0.1.0-windows-x64-portable.zip` | Unzip anywhere and run `lychee.exe`. |
 | **Ubuntu, Debian, Mint, Pop!_OS** | `lychee_0.1.0_amd64.deb` | `sudo apt install ./lychee_0.1.0_amd64.deb` (apt installs the libraries it needs) |
-| **Fedora, openSUSE, RHEL** | `lychee-0.1.0-1.x86_64.rpm` | `sudo dnf install ./lychee-0.1.0-1.x86_64.rpm` (or `sudo zypper install ./…`) |
 | **Any other Linux** (Arch, Manjaro…) | `lychee-0.1.0-linux-x86_64.tar.xz` | Unpack it, open a terminal in the folder and run `./install.sh`. It installs any missing libraries with your package manager, then Lychee for your account (`--system` for everyone, `--uninstall` to remove it). |
 
-`SHA256SUMS.txt` has checksums for every file.
+`SHA256SUMS.txt` has checksums for every file. Before publishing, every Linux package was installed and
+started on a clean Fedora, Ubuntu 24.04, Debian 12 and Arch system.
 
 ## What's in it
 

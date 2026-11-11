@@ -49,10 +49,11 @@ Mini player: ![Mini player](docs/screenshots/mini.png)
 
 Download the latest version from the [Releases page](https://github.com/Y2Kwastaken/Lychee/releases/latest):
 
+- **Fedora** (and openSUSE, RHEL): double-click `lychee-….x86_64.rpm` to install it with GNOME Software, or
+  run `sudo dnf install ./lychee-….x86_64.rpm`. dnf pulls in the libraries Lychee uses.
 - **Windows 10/11:** `…-windows-x64-setup.exe` installs Lychee, with no admin rights needed; the
   `…-portable.zip` runs without installing. Nothing else is needed.
-- **Ubuntu / Debian:** `sudo apt install ./lychee_…_amd64.deb`. **Fedora / openSUSE:**
-  `sudo dnf install ./lychee-….x86_64.rpm`. The package manager pulls in the libraries Lychee uses.
+- **Ubuntu / Debian:** `sudo apt install ./lychee_…_amd64.deb`.
 - **Any other Linux:** unpack `lychee-…-linux-x86_64.tar.xz` and run `./install.sh`. It installs missing
   libraries with apt, dnf, zypper or pacman, then Lychee for your user (`--system` for everyone,
   `--uninstall` to remove it, `--dry-run` to see what it would do).

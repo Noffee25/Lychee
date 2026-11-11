@@ -82,9 +82,53 @@ jobs:
           name: log-windows
           path: build.log
 
+  test-linux:
+    # Install each package on a clean system and start Lychee, so a release can't ship a package
+    # with a missing dependency. Fedora first: it's the main platform.
+    name: Install test (${{ matrix.image }})
+    needs: linux
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: fedora:latest
+            install: dnf install -y ./lychee-*.x86_64.rpm
+          - image: ubuntu:24.04
+            install: apt-get update -q && apt-get install -y ./lychee_*_amd64.deb
+          - image: debian:12
+            install: apt-get update -q && apt-get install -y ./lychee_*_amd64.deb
+          - image: archlinux:latest
+            # The tarball's install.sh, as a user would run it (root here, so --system).
+            install: pacman -Syu --noconfirm && tar -xJf lychee-*-linux-x86_64.tar.xz && ./lychee-*-linux-x86_64/install.sh --system
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: pkg
+      - name: Install and start Lychee
+        run: |
+          docker run --rm -v "$PWD/pkg:/pkg" -w /pkg "${{ matrix.image }}" bash -euo pipefail -c '
+            ${{ matrix.install }}
+            lychee --version
+            # Libraries Lychee loads at runtime must have come along too.
+            for so in libasound.so.2 libfontconfig.so.1 libxkbcommon.so.0 libwayland-client.so.0 libwayland-egl.so.1 libEGL.so.1 libGL.so.1 libX11-xcb.so.1 libXcursor.so.1 libXi.so.6; do
+              ldconfig -p | grep -q "$so" || { echo "missing $so"; exit 1; }
+            done
+            echo "installs and runs on ${{ matrix.image }}"
+          ' 2>&1 | tee install.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: log-install-${{ strategy.job-index }}
+          path: install.log
+
   release:
     name: Publish
-    needs: [linux, windows]
+    needs: [linux, windows, test-linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -113,7 +157,7 @@ jobs:
     # Agents working on this private repository can't see Actions; they read this branch.
     name: Report
     if: always()
-    needs: [linux, windows, release]
+    needs: [linux, windows, test-linux, release]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -125,7 +169,7 @@ jobs:
       - name: Push the outcome to the status/release branch
         env:
           GH_TOKEN: ${{ github.token }}
-          RESULTS: "linux=${{ needs.linux.result }} windows=${{ needs.windows.result }} release=${{ needs.release.result }}"
+          RESULTS: "linux=${{ needs.linux.result }} windows=${{ needs.windows.result }} install-tests=${{ needs.test-linux.result }} release=${{ needs.release.result }}"
         run: |
           chmod +x packaging/ci-report.sh
           packaging/ci-report.sh status/release "Release $GITHUB_REF_NAME" logs
