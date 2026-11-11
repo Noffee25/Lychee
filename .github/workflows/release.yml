@@ -51,9 +51,34 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  macos:
+    name: macOS app
+    runs-on: macos-latest
+    env:
+      # The oldest macOS Lychee runs on; keep in step with LSMinimumSystemVersion in Info.plist.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      # One after the other: two LTO builds at once can run out of memory on the runner.
+      - run: cargo build --release --locked -p lychee --target aarch64-apple-darwin
+      - run: cargo build --release --locked -p lychee --target x86_64-apple-darwin
+      # One universal app for Apple silicon and Intel Macs.
+      - run: >-
+          packaging/macos/build-dmg.sh "${GITHUB_REF_NAME#v}" dist
+          target/aarch64-apple-darwin/release/lychee target/x86_64-apple-darwin/release/lychee
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/*
+          if-no-files-found: error
+
   release:
     name: Publish
-    needs: [linux, windows]
+    needs: [linux, windows, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -75,7 +100,7 @@ jobs:
     # Agents can't see Actions on this private repository; they read the status/release branch.
     name: Report
     if: always()
-    needs: [linux, windows, release]
+    needs: [linux, windows, macos, release]
     runs-on: ubuntu-latest
     permissions:
       contents: write

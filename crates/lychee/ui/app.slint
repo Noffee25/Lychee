@@ -135,7 +135,12 @@ export component AppWindow inherits Window {
         }
         KeyBinding {
             keys: @keys(Control + Q);
-            activated => { AppState.right-panel = !AppState.right-panel; }
+            activated => { if (!AppState.mac) { AppState.right-panel = !AppState.right-panel; } }
+        }
+        KeyBinding {
+            // ⌃⌘S, the usual "show sidebar" keys on macOS, where ⌘Q quits.
+            keys: @keys(Meta + Control + S);
+            activated => { if (AppState.mac) { AppState.right-panel = !AppState.right-panel; } }
         }
         KeyBinding {
             keys: @keys(Control + ",");

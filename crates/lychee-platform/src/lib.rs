@@ -3,6 +3,7 @@
 //!
 //! * Linux/BSD: MPRIS over D-Bus (GNOME and KDE media controls, `playerctl`, media keys).
 //! * Windows: System Media Transport Controls (media keys, volume flyout, lock screen).
+//! * macOS: Now Playing (media keys, Control Center and menu bar widget, headphone remotes).
 //!
 //! The UI never talks to these APIs directly. It pushes state with the setters below and
 //! receives [`MediaAction`]s on a channel, the same way every other control surface does.
@@ -13,6 +14,8 @@ use crossbeam_channel::Sender;
 
 #[cfg(all(unix, not(target_os = "macos")))]
 mod mpris;
+#[cfg(target_os = "macos")]
+mod nowplaying;
 #[cfg(windows)]
 mod smtc;
 
@@ -64,18 +67,21 @@ pub struct NowPlaying {
     pub art_path: Option<PathBuf>,
 }
 
-/// Updates sent to the backend thread.
+/// Updates sent to the backend (its thread, or straight to the OS on macOS).
 #[derive(Clone, Debug)]
-#[cfg_attr(not(any(windows, all(unix, not(target_os = "macos")))), allow(dead_code))]
+#[cfg_attr(not(any(windows, unix)), allow(dead_code))]
 enum Update {
     Metadata(Option<NowPlaying>),
     Playback(Playback),
     Position(u64),
     Seeked(u64),
-    // Windows' media overlay has no volume of its own; only MPRIS reads this.
-    #[cfg_attr(windows, allow(dead_code))]
+    // Windows' and macOS' media controls have no volume of their own; only MPRIS reads this.
+    #[cfg_attr(any(windows, target_os = "macos"), allow(dead_code))]
     Volume(f64),
+    // macOS' Now Playing widget shows no shuffle or repeat.
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     Shuffle(bool),
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     Repeat(Repeat),
     #[cfg(windows)]
     Window(isize),
@@ -86,6 +92,8 @@ pub struct MediaControls {
     backend: mpris::Backend,
     #[cfg(windows)]
     backend: smtc::Backend,
+    #[cfg(target_os = "macos")]
+    backend: nowplaying::Backend,
 }
 
 impl MediaControls {
@@ -100,13 +108,17 @@ impl MediaControls {
         {
             return Some(MediaControls { backend: smtc::Backend::start(actions) });
         }
+        #[cfg(target_os = "macos")]
+        {
+            return Some(MediaControls { backend: nowplaying::Backend::start(actions) });
+        }
         #[allow(unreachable_code)]
         None
     }
 
     #[allow(unused_variables)]
     fn send(&self, update: Update) {
-        #[cfg(any(windows, all(unix, not(target_os = "macos"))))]
+        #[cfg(any(windows, unix))]
         self.backend.send(update);
     }
 

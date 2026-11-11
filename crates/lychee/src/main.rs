@@ -1,4 +1,4 @@
-//! Lychee: a modern music player for Linux and Windows.
+//! Lychee: a modern music player for Linux, Windows and macOS.
 
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
@@ -82,6 +82,15 @@ fn main() -> anyhow::Result<()> {
     let (media_tx, media_rx) = crossbeam_channel::unbounded();
     let media = if screenshot.is_some() { None } else { lychee_platform::MediaControls::new(media_tx) };
 
+    #[cfg(target_os = "macos")]
+    let on_exit = {
+        let on_exit = OnExit::default();
+        slint::BackendSelector::new()
+            .backend_name("winit".into())
+            .with_winit_custom_application_handler(on_exit.clone())
+            .select()?;
+        on_exit
+    };
     let ui = AppWindow::new()?;
     // Wayland app id / X11 class: lets docks match the window to lychee.desktop (icon, name,
     // pinning). It has to come after the first window is created (before that Slint has no
@@ -155,9 +164,53 @@ fn main() -> anyhow::Result<()> {
             attach_media_window(&ui, &d);
         });
     }
+    #[cfg(target_os = "macos")]
+    {
+        let d = dispatcher.clone();
+        on_exit.set(move || {
+            d.with_app(|a| a.shutdown());
+        });
+    }
     slint::run_event_loop_until_quit()?;
+    #[cfg(target_os = "macos")]
+    on_exit.run();
+    #[cfg(not(target_os = "macos"))]
     dispatcher.with_app(|a| a.shutdown());
     Ok(())
+}
+
+/// The shutdown (saving the session and settings) for when the event loop ends without returning.
+///
+/// On macOS, Quit in the app menu (⌘Q) or the Dock, and logging out, end the process from inside
+/// the event loop, so `run_event_loop_until_quit` never returns. winit still reports `exiting`
+/// first, so the shutdown runs from there. It runs once: after a normal quit, `run` finds it done.
+#[cfg(target_os = "macos")]
+#[derive(Clone, Default)]
+struct OnExit(Rc<RefCell<Option<Box<dyn FnOnce()>>>>);
+
+#[cfg(target_os = "macos")]
+impl OnExit {
+    fn set(&self, shutdown: impl FnOnce() + 'static) {
+        *self.0.borrow_mut() = Some(Box::new(shutdown));
+    }
+
+    fn run(&self) {
+        let shutdown = self.0.borrow_mut().take();
+        if let Some(shutdown) = shutdown {
+            shutdown();
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl slint::winit_030::CustomApplicationHandler for OnExit {
+    fn exiting(
+        &mut self,
+        _event_loop: &slint::winit_030::winit::event_loop::ActiveEventLoop,
+    ) -> slint::winit_030::EventResult {
+        self.run();
+        slint::winit_030::EventResult::Propagate
+    }
 }
 
 /// Theme changes and files dropped onto the window. Returns the timer that batches drops.

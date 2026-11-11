@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Lychee.app's Info.plist. build-dmg.sh fills in @VERSION@ and @BUILD@ (numbers and dots only). -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>Lychee</string>
+    <key>CFBundleExecutable</key>
+    <string>lychee</string>
+    <key>CFBundleIconFile</key>
+    <string>lychee</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.noffee25.lychee</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>Lychee</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@BUILD@</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.music</string>
+    <!-- Big Sur: the first macOS for Apple silicon. Keep in step with MACOSX_DEPLOYMENT_TARGET in release.yml. -->
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <!-- Lets Macs with two GPUs keep using the integrated one (Lychee draws with OpenGL). -->
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Licensed under the Apache License, Version 2.0</string>
+</dict>
+</plist>

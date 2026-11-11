@@ -1,6 +1,6 @@
 # CLAUDE.md: working on Lychee
 
-Lychee is a local-library music player for **Linux and Windows**, written in **Rust**, with a custom
+Lychee is a local-library music player for **Linux, Windows and macOS**, written in **Rust**, with a custom
 **Slint** UI in the "Flow" design. These notes are for agents picking the project up. Read them
 before changing code: they record decisions the owner made and pitfalls that already cost time.
 
@@ -17,10 +17,14 @@ before changing code: they record decisions the owner made and pitfalls that alr
 - **Last.fm** is a core feature, with its status icon in the bottom-right of the player bar.
 - **Licences:** the project is Apache-2.0. Slint is used under its Royalty-free 2.0 licence, which
   requires keeping `AboutSlint` in Settings → About and the "Made with Slint" badge in the README.
-- **Delivery:** when asked to "push", the owner expects a commit on `main` pushed to
-  `origin` (git@github.com:Noffee25/Lychee.git). Commits so far end with a `Co-Authored-By:` trailer
-  for the AI model that wrote them; follow your harness's attribution rules. Keep `README.md` and
-  `docs/` current when features change.
+- **Branches and delivery:**
+  - New work (features and fixes) goes on **`develop`**, where no CI runs (`ci.yml` only runs for `main`
+    and pull requests into `main`). When asked to "push", commit on `develop` and push it to `origin`
+    (git@github.com:Noffee25/Lychee.git).
+  - `main` is what gets released. It only moves when `develop` is merged for a release (see Releasing),
+    or when the owner asks for a change there.
+  - Commits so far end with a `Co-Authored-By:` trailer for the AI model that wrote them; follow your
+    harness's attribution rules. Keep `README.md` and `docs/` current when features change.
 
 ## Repository map
 
@@ -33,7 +37,8 @@ crates/
   lychee-library   scanner (walkdir + scoped threads + lofty), SQLite store (db.rs), artwork cache + accent/tint
                    colours, in-memory LibraryIndex + fuzzy search, LRC lyrics, refresh_files()
   lychee-lastfm    Last.fm client and background Scrobbler with an offline queue
-  lychee-platform  MPRIS (Linux), SMTC (Windows; type-checked, never run here), `open()` for URLs/folders
+  lychee-platform  MPRIS (Linux), SMTC (Windows), Now Playing (macOS, nowplaying.rs), `open()` for URLs and
+                   folders. The Windows and macOS backends are type-checked but have never been run here.
   lychee-tagger    tag editor engine: lossless read/write (file.rs), EasyTAG masks (mask.rs), clean-up
                    (process.rs), Session with pending edits, undo, saving (session.rs)
   lychee-lookup    MusicBrainz / Cover Art Archive / LRCLIB clients, album guessing and track matching
@@ -44,9 +49,10 @@ crates/
                    editor-state.slint (Editor), theme.slint, widgets.slint, icons.slint, views/*.slint
 design/            HTML prototypes; the app implements direction D "Flow" and its compact mini player
 docs/              features.md (done/planned), architecture.md, tech-stack.md, screenshots/
-assets/            desktop file, icons; windows/lychee.ico + lychee.res (from packaging/windows/make-icon.py)
-packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, release-notes.md,
-                   ci-report.sh (writes CI/release results to the status branches)
+assets/            desktop file, icons; windows/lychee.ico + lychee.res (from packaging/windows/make-icon.py);
+                   macos/lychee.icns (from packaging/macos/make-icns.py)
+packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, macos/build-dmg.sh + Info.plist,
+                   release-notes.md, ci-report.sh (writes CI/release results to the status branches)
 ```
 
 ## Build, run, test
@@ -61,15 +67,20 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
   at opt-level 2.
 - Code style: `rustfmt.toml` (max_width 120). rustfmt and clippy aren't installed here, so match the
   surrounding style by hand. CI (`.github/workflows/ci.yml`) builds and tests Ubuntu and Windows
-  with `--locked`, so commit `Cargo.lock`. Clippy is advisory there.
+  on `main` (not `develop`) with `--locked`, so commit `Cargo.lock`. Clippy is advisory there.
 - Handy tools: `cargo run -p lychee-tagger --example tag -- FILE [field=value]…` prints or edits tags;
   `cargo run -p lychee-lookup --example lookup -- "Artist" "Album"` runs a live MusicBrainz search.
-- **Type-checking Windows code on Linux.** Install a throwaway rustup toolchain with the
-  `x86_64-pc-windows-gnu` target, setting `RUSTUP_HOME` and `CARGO_HOME` to a temp dir. Run its
-  `cargo check --workspace --all-targets --target x86_64-pc-windows-gnu` with `RUSTC` pointing at that
-  toolchain's rustc. `CC_x86_64_pc_windows_gnu` and `AR_x86_64_pc_windows_gnu` can point at stub
-  scripts that just create their output files, because `check` never links the C parts (SQLite, ring).
-  Do this before releasing: CI is the only place Windows gets built.
+- **Type-checking Windows and macOS code on Linux.** Install a throwaway rustup toolchain with the
+  `x86_64-pc-windows-gnu`, `aarch64-apple-darwin` and `x86_64-apple-darwin` targets.
+  - Set `RUSTUP_HOME` and `CARGO_HOME` to a folder on disk (it's about 1 GB; `target/xcheck` is
+    git-ignored), and use its own `CARGO_TARGET_DIR`.
+  - Run its `cargo check --workspace --all-targets --target <target>` with `RUSTC` pointing at that
+    toolchain's rustc.
+  - `CC_<target>`, `CXX_<target>` and `AR_<target>` (dashes as underscores) can point at stub scripts
+    that just create their output files, because `check` never links the C parts (SQLite, ring).
+  - For the Apple targets, also set `SDKROOT` to any existing folder (so the cc crate doesn't look for
+    `xcrun`) and `MACOSX_DEPLOYMENT_TARGET=11.0`. Nothing in the macOS build uses bindgen.
+  - Do this before releasing: Windows is only built by CI and the release, macOS only by the release.
 - **Release profile:** fat LTO, one codegen unit, and `opt-level = "s"` for the `lychee` crate only. That
   crate is mostly UI code generated from `.slint`; the audio and decoding crates stay at full speed.
   This cut the binary from 53 to 44 MB.
@@ -115,7 +126,7 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
     title vetoes a duration-only match.
   - Unit tests use JSON fixtures, never the network.
 - **Mini player** (`mini.rs`):
-  - On X11 and Windows it is a second Slint window, kept on top.
+  - On X11, Windows and macOS it is a second Slint window, kept on top.
   - Wayland has no "always on top", so there the app re-launches itself as `lychee --mini-player` on
     XWayland. The parent sends JSON state lines on stdin and gets button words back on stdout; the
     helper quits on EOF.
@@ -125,6 +136,21 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
   - Drags start only after a few pixels of movement, and Slint's pointer state is reset after the
     window manager takes over.
   - `LYCHEE_MINI=inprocess|external` forces either mode.
+- **macOS** has been type-checked but never run.
+  - **Shortcuts:** Slint maps `Control` to ⌘ (and `Meta` to ⌃) there, so `@keys(Control + K)` is ⌘K.
+    - Labels come from `AppState.mac` (Slint's `Platform.os`) in `.slint`, and from
+      `palette::shortcut(mac, other)` in Rust.
+    - ⌘Q is Quit in Slint's default menu bar, so the side panel is ⌃⌘S there instead of Ctrl Q.
+  - **Quitting:** ⌘Q, Quit in the Dock and logging out end the process inside the event loop, so
+    `run_event_loop_until_quit` never returns.
+    - `OnExit` in `main.rs`, a winit `CustomApplicationHandler`, runs the shutdown from `exiting`, so the
+      session and settings are still saved.
+    - It can't cancel the quit, so unsaved tag edits are lost on ⌘Q.
+  - **Now Playing** (`lychee-platform/src/nowplaying.rs`) runs on the main thread. It publishes only
+    on track, state and seek changes, because macOS keeps the clock running from the playback rate.
+  - **Paths:** `directories` gives `~/Library/Application Support/Lychee` and `~/Library/Caches/Lychee`.
+  - **Opening files:** Finder's "Open With" doesn't work, because winit 0.30 doesn't pass open-file
+    events on. Drag and drop does work.
 
 ## Slint pitfalls (1.18, winit + FemtoVG)
 
@@ -193,8 +219,8 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
 - `~/.ssh/known_hosts` had no github.com entry. Pushing worked with a temporary known_hosts built from
   <https://api.github.com/meta> (check the fingerprints against GitHub's published ones) passed through
   `GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=… -o StrictHostKeyChecking=yes"`. Don't edit `~/.ssh`.
-- The GitHub repo is private: its API (and the Actions page) needs credentials you probably don't
-  have. CI and release runs therefore report to branches. Read them with
+- Agents here have SSH git access but no GitHub API credentials (no `gh`), so CI and release runs report
+  to branches. Read them with
   `git fetch origin status/ci && git show FETCH_HEAD:STATUS.md`; use `status/release` for releases.
   - The report (`packaging/ci-report.sh`) comes from GitHub's jobs API: every job's result, and for
     failed jobs only, the failed step, the `##[error]` lines and the log leading up to the last error.
@@ -208,13 +234,16 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
 
 ## Releasing
 
-1. Bump `version` in the root `Cargo.toml` (`[workspace.package]`), update `packaging/release-notes.md`
-   (its file names include the version), and commit.
-2. Push `main` and wait for `status/ci` to report success. That is the first real Windows build of new
-   code.
+1. On `develop`: bump `version` in the root `Cargo.toml` (`[workspace.package]`), update
+   `packaging/release-notes.md` (its file names include the version), commit and push.
+2. Merge `develop` into `main`: `git switch main && git merge --ff-only develop && git push origin main`.
+   Then wait for `status/ci` to report success: that is the first real Windows build of new code.
+   macOS isn't in CI, so the release is its first build unless the owner has tried `develop` on a Mac.
 3. `git tag vX.Y.Z && git push origin vX.Y.Z`. `.github/workflows/release.yml` then builds:
    - on Ubuntu 22.04 (glibc 2.35): the `.deb`, `.rpm` and `.tar.xz` with `install.sh`;
-   - on Windows: the Inno Setup installer and a portable zip.
+   - on Windows: the Inno Setup installer and a portable zip;
+   - on macOS: both architectures, joined into a universal `Lychee.app` in `Lychee-X.Y.Z-macos.dmg`
+     (`packaging/macos/build-dmg.sh`).
 
    It publishes them with `SHA256SUMS.txt` as a GitHub release and reports to `status/release`.
 4. Packaging notes:
@@ -222,7 +251,15 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
      scanner can detect. Keep them in sync with `install.sh`'s list.
    - On Windows the C runtime is static (`.cargo/config.toml`), so there's nothing to redistribute. The
      exe icon is linked from `assets/windows/lychee.res`; `LYCHEE_NO_EXE_ICON=1` skips it.
-5. If a job fails, nothing is published: Publish needs both builds.
+   - The macOS app is signed ad hoc, not with a Developer ID, so on first launch Gatekeeper asks people
+     to choose "Open Anyway" (the release notes explain how). Notarising would need an Apple Developer
+     account and signing secrets.
+   - Keep `MACOSX_DEPLOYMENT_TARGET` (`release.yml`) and `LSMinimumSystemVersion` (`Info.plist`) at the
+     same version (11.0). The bundle id is `io.github.noffee25.lychee`.
+   - macOS icons sit on a rounded tile, or recent macOS shows them in a grey square:
+     `packaging/macos/make-icns.py` composes it from the logo.
+   - `hdiutil create` sometimes fails on GitHub's macOS runners ("Resource busy"); re-run the job.
+5. If a job fails, nothing is published: Publish needs all three builds.
    - If the cause is outside the code (a runner's network, for example), the owner can click *Re-run
      failed jobs*.
    - Or delete the tag (`git push origin :refs/tags/vX.Y.Z`), tag the fixed commit and push the tag again.
@@ -230,8 +267,7 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
 ## Dependencies
 
 The owner asked for a lean dependency tree that loses no features. The Linux build compiles about
-457 crates (it was 512); `Cargo.lock` also lists crates for platforms we don't build (macOS, Android,
-web). Decisions so far:
+457 crates (it was 512); `Cargo.lock` also lists crates for platforms we don't build (Android, web). Decisions so far:
 - **Removed:**
   - Slint's `image-default-formats` (it pulled in an AV1 *encoder* and EXR); the `image` crate keeps
     jpeg/png/webp/gif/bmp/tiff.
@@ -248,13 +284,19 @@ web). Decisions so far:
   - `accessibility`;
   - winit's `sctk-adwaita`, which draws title bars on GNOME;
   - the rustls/ring TLS stack.
-- Check new dependencies with `cargo tree -p lychee --target x86_64-unknown-linux-gnu -e normal,build`.
+- **macOS:** the `objc2-*` framework crates are used with default features off, because their defaults
+  pull in all of AVFoundation. They're the same objc2 0.6 generation Slint, cpal and rfd use.
+- Check new dependencies with `cargo tree -p lychee --target x86_64-unknown-linux-gnu -e normal,build`
+  (or `--target aarch64-apple-darwin`).
   `cargo tree -d` finds duplicate versions, and `--prune <crate>` shows what a dependency costs.
 
 ## Status and next steps
 
 Done and planned work is tracked in `docs/features.md`. Notable gaps:
 - Windows type-checks and CI builds it, but nobody has run it on a real Windows machine yet.
+- macOS type-checks (Apple silicon and Intel) and the release workflow packages it, but it hasn't been run
+  on a Mac yet. The owner has a Mac to try it on. Gaps: no "Open With" from Finder, and ⌘Q can't ask
+  about unsaved tag edits.
 - EasyTAG features not done yet: playlist generator, loading file names from a text file, ID3v2.3/2.4
   conversion, stripping tags.
 - Also planned: AcoustID fingerprints, ReplayGain, live folder watching, and a system tray.

@@ -1483,8 +1483,8 @@ impl EditorCtl {
         e.set_summary(summary.into());
         e.set_can_undo(self.session.can_undo());
         e.set_can_redo(self.session.can_redo());
-        e.set_undo_label("Undo (Ctrl Z)".into());
-        e.set_redo_label("Redo (Ctrl Shift Z)".into());
+        e.set_undo_label(crate::palette::shortcut("Undo (⌘Z)", "Undo (Ctrl Z)").into());
+        e.set_redo_label(crate::palette::shortcut("Redo (⇧⌘Z)", "Redo (Ctrl Shift Z)").into());
     }
 
     /// Reload every input from the session (selection changed, undo, a tool ran).

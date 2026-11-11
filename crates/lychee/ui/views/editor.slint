@@ -856,7 +856,7 @@ export component EditorPage inherits Rectangle {
                             icon: Icons.check;
                             size: 30px;
                             icon-size: 15px;
-                            tooltip: "Select all (Ctrl A)";
+                            tooltip: AppState.mac ? "Select all (⌘A)" : "Select all (Ctrl A)";
                             clicked => {
                                 Editor.select-all();
                             }
@@ -954,7 +954,8 @@ export component EditorPage inherits Rectangle {
                         vertical-stretch: 1;
                         Text {
                             width: parent.width - 60px;
-                            text: "Select files on the left to edit their tags.\nCtrl-click and Shift-click select several; every change applies to all of them.";
+                            text: "Select files on the left to edit their tags.\n" + (AppState.mac ? "⌘-click" : "Ctrl-click")
+                                + " and Shift-click select several; every change applies to all of them.";
                             color: Theme.text-2;
                             horizontal-alignment: center;
                             wrap: word-wrap;

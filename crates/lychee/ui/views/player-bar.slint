@@ -427,7 +427,7 @@ export component PlayerBar inherits Rectangle {
             IconButton {
                 icon: Icons.mini;
                 icon-size: 17px;
-                tooltip: "Mini player (Ctrl+M)";
+                tooltip: AppState.mac ? "Mini player (⌘M)" : "Mini player (Ctrl M)";
                 clicked => { Actions.open-mini(); }
             }
             LastfmButton { }

@@ -3,7 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+  # Only pull requests into main: work on the develop branch (and PRs into it) runs no CI.
   pull_request:
+    branches: [main]
 
 jobs:
   build:

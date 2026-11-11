@@ -99,7 +99,7 @@ export component Sidebar inherits Rectangle {
                         padding-left: 6px;
                         padding-right: 6px;
                         Text {
-                            text: "Ctrl K";
+                            text: AppState.mac ? "⌘K" : "Ctrl K";
                             font-family: Theme.mono;
                             font-size: 11px;
                             color: Theme.text-3;

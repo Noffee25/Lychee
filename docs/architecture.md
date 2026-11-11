@@ -26,7 +26,8 @@ crates/
 │                    in-memory LibraryIndex with fuzzy search, LRC parsing
 ├─ lychee-lastfm     Last.fm client (auth, now playing, scrobble, love) and a background Scrobbler
 │                    with a persistent offline queue
-├─ lychee-platform   MediaControls: MPRIS (mpris-server) on Linux, SMTC (windows crate) on Windows
+├─ lychee-platform   MediaControls: MPRIS (mpris-server) on Linux, SMTC (windows crate) on Windows,
+│                    Now Playing (objc2-media-player, on the main thread) on macOS
 ├─ lychee-tagger     Tag editor engine: read/write with lofty (lossless split/merge), EasyTAG masks,
 │                    text clean-up, a Session with pending changes, multi-selection and undo
 ├─ lychee-lookup     MusicBrainz (rate-limited), Cover Art Archive and LRCLIB clients; album
@@ -91,7 +92,7 @@ are added or closed. Edits live in memory until saved:
 
 ## Mini player
 
-On X11 and Windows the mini player is a second Slint window. Wayland has no way for an app to stay above
+On X11, Windows and macOS the mini player is a second Slint window. Wayland has no way for an app to stay above
 other windows, so on a Wayland session Lychee starts itself again as `lychee --mini-player`. That helper
 forces winit's X11 backend (XWayland), where the window manager honours "keep above". The parent sends
 the player state as JSON lines on the helper's stdin and gets button presses back as words on its stdout.
@@ -111,7 +112,7 @@ mini player is open, and showing it again maps a fresh window.
 | A lyrics or artwork provider | `lychee-library::lyrics::load` / `ArtIngest`; online ones in `lychee-lookup` |
 | A metadata source (Discogs, AcoustID) | a sibling of `musicbrainz.rs` producing `Release`s; `matching` scores any source |
 | A tag editor tool | a `Session` method (one undo step through `Session::edit`) and a scanner mode |
-| OS integration (macOS Now Playing) | a backend in `lychee-platform` |
+| OS integration (another OS's media controls) | a backend in `lychee-platform` |
 | A new page or panel | a `.slint` view, a `Page` variant and a `refresh_page` arm |
 | A command | `palette::Command` + `App::run_command` (it then appears in Ctrl+K) |
 

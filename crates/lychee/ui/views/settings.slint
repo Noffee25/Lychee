@@ -354,16 +354,16 @@ export component SettingsPage inherits Rectangle {
                     Section {
                         title: "Keyboard shortcuts";
                         ShortcutRow { action: "Play / pause"; keys: "Space"; }
-                        ShortcutRow { action: "Previous / next track"; keys: "Ctrl ← / Ctrl →"; }
+                        ShortcutRow { action: "Previous / next track"; keys: AppState.mac ? "⌘← / ⌘→" : "Ctrl ← / Ctrl →"; }
                         ShortcutRow { action: "Seek back / forward 10 seconds"; keys: "← / →"; }
-                        ShortcutRow { action: "Volume down / up"; keys: "Ctrl ↓ / Ctrl ↑"; }
-                        ShortcutRow { action: "Search and commands"; keys: "Ctrl K"; }
-                        ShortcutRow { action: "Mini player"; keys: "Ctrl M"; }
-                        ShortcutRow { action: "Toggle the queue panel"; keys: "Ctrl Q"; }
-                        ShortcutRow { action: "Settings"; keys: "Ctrl ,"; }
+                        ShortcutRow { action: "Volume down / up"; keys: AppState.mac ? "⌘↓ / ⌘↑" : "Ctrl ↓ / Ctrl ↑"; }
+                        ShortcutRow { action: "Search and commands"; keys: AppState.mac ? "⌘K" : "Ctrl K"; }
+                        ShortcutRow { action: "Mini player"; keys: AppState.mac ? "⌘M" : "Ctrl M"; }
+                        ShortcutRow { action: "Toggle the queue panel"; keys: AppState.mac ? "⌃⌘S" : "Ctrl Q"; }
+                        ShortcutRow { action: "Settings"; keys: AppState.mac ? "⌘," : "Ctrl ,"; }
                         ShortcutRow { action: "Back / close"; keys: "Esc"; }
-                        ShortcutRow { action: "Tag editor: save / undo / redo"; keys: "Ctrl S / Ctrl Z / Ctrl Shift Z"; }
-                        ShortcutRow { action: "Tag editor: select all files"; keys: "Ctrl A"; }
+                        ShortcutRow { action: "Tag editor: save / undo / redo"; keys: AppState.mac ? "⌘S / ⌘Z / ⇧⌘Z" : "Ctrl S / Ctrl Z / Ctrl Shift Z"; }
+                        ShortcutRow { action: "Tag editor: select all files"; keys: AppState.mac ? "⌘A" : "Ctrl A"; }
                     }
 
                     Section {

@@ -1,6 +1,6 @@
 # Lychee: feature list
 
-Lychee is a local-library music player for Linux and Windows, written in Rust, with a modern custom UI
+Lychee is a local-library music player for Linux, Windows and macOS, written in Rust, with a modern custom UI
 (the "Flow" design, see `design/`). Features are grouped by milestone.
 `[x]` means done in the current code; `[ ]` means planned.
 
@@ -114,6 +114,11 @@ Lychee is a local-library music player for Linux and Windows, written in Rust, w
 ### Desktop integration
 - [x] **Linux: MPRIS** (media keys, GNOME and KDE media controls, `playerctl`) and a `.desktop` file
 - [x] **Windows: System Media Transport Controls** (media keys, volume flyout, lock screen). Written but not yet tested on Windows.
+- [x] **macOS: Now Playing** (media keys, Control Center and menu bar widget, headphone remotes), `⌘` shortcut
+  labels, ⌘Q / Dock / logout quits that save the session, and a universal app (Apple silicon + Intel) in a
+  `.dmg`. Type-checked and packaged by the release workflow, but not yet run on a Mac.
+- [ ] macOS: opening audio files from Finder ("Open With", double-click). winit doesn't pass them to the app.
+- [ ] macOS: ⌘Q quits without asking about unsaved tag edits (the system ends the app directly)
 - [ ] Single instance: opening a file while Lychee runs hands it to the running window
 - [ ] Desktop notifications on track change
 
@@ -150,7 +155,7 @@ Lychee is a local-library music player for Linux and Windows, written in Rust, w
 - Remote libraries: Subsonic / Navidrome, Jellyfin
 - Internet radio; podcasts
 - Remote control API; casting (UPnP/DLNA, Chromecast)
-- Plugins (sandboxed WASM) and theme packs; a terminal UI on the same core; macOS
+- Plugins (sandboxed WASM) and theme packs; a terminal UI on the same core
 
 ## Not planned
 - Streaming-service features: recommendations, "You might also like", algorithmic home screens

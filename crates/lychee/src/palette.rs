@@ -26,6 +26,11 @@ pub enum Command {
     TagEditor,
 }
 
+/// A shortcut label: macOS shows ⌘ where other systems say Ctrl (Slint maps Control to ⌘ there).
+pub const fn shortcut(mac: &'static str, other: &'static str) -> &'static str {
+    if cfg!(target_os = "macos") { mac } else { other }
+}
+
 pub struct CommandInfo {
     pub command: Command,
     pub title: &'static str,
@@ -36,20 +41,20 @@ pub struct CommandInfo {
 
 pub const COMMANDS: &[CommandInfo] = &[
     CommandInfo { command: Command::PlayPause, title: "Play / pause", subtitle: "Playback", hint: "Space", icon: "play" },
-    CommandInfo { command: Command::Next, title: "Next track", subtitle: "Playback", hint: "Ctrl →", icon: "next" },
-    CommandInfo { command: Command::Previous, title: "Previous track", subtitle: "Playback", hint: "Ctrl ←", icon: "prev" },
+    CommandInfo { command: Command::Next, title: "Next track", subtitle: "Playback", hint: shortcut("⌘→", "Ctrl →"), icon: "next" },
+    CommandInfo { command: Command::Previous, title: "Previous track", subtitle: "Playback", hint: shortcut("⌘←", "Ctrl ←"), icon: "prev" },
     CommandInfo { command: Command::Shuffle, title: "Toggle shuffle", subtitle: "Playback", hint: "", icon: "shuffle" },
     CommandInfo { command: Command::Repeat, title: "Cycle repeat (off / all / one)", subtitle: "Playback", hint: "", icon: "repeat" },
     CommandInfo { command: Command::ClearQueue, title: "Clear the queue", subtitle: "Removes everything after the current song", hint: "", icon: "trash" },
-    CommandInfo { command: Command::Mini, title: "Open mini player", subtitle: "Compact, always-on-top window", hint: "Ctrl M", icon: "mini" },
+    CommandInfo { command: Command::Mini, title: "Open mini player", subtitle: "Compact, always-on-top window", hint: shortcut("⌘M", "Ctrl M"), icon: "mini" },
     CommandInfo { command: Command::Lyrics, title: "Show lyrics", subtitle: "Side panel", hint: "", icon: "lyrics" },
-    CommandInfo { command: Command::SidePanel, title: "Toggle the side panel", subtitle: "Queue, lyrics and details", hint: "Ctrl Q", icon: "sidebar" },
+    CommandInfo { command: Command::SidePanel, title: "Toggle the side panel", subtitle: "Queue, lyrics and details", hint: shortcut("⌃⌘S", "Ctrl Q"), icon: "sidebar" },
     CommandInfo { command: Command::Theme, title: "Switch light / dark theme", subtitle: "Appearance", hint: "", icon: "moon" },
     CommandInfo { command: Command::Albums, title: "Go to Albums", subtitle: "Library", hint: "", icon: "disc" },
     CommandInfo { command: Command::Artists, title: "Go to Artists", subtitle: "Library", hint: "", icon: "user" },
     CommandInfo { command: Command::Songs, title: "Go to Songs", subtitle: "Library", hint: "", icon: "music" },
     CommandInfo { command: Command::Favorites, title: "Go to Favorites", subtitle: "Library", hint: "", icon: "heart" },
-    CommandInfo { command: Command::Settings, title: "Open Settings", subtitle: "Preferences", hint: "Ctrl ,", icon: "settings" },
+    CommandInfo { command: Command::Settings, title: "Open Settings", subtitle: "Preferences", hint: shortcut("⌘,", "Ctrl ,"), icon: "settings" },
     CommandInfo { command: Command::AddFolder, title: "Add music folder…", subtitle: "Library", hint: "", icon: "folder-plus" },
     CommandInfo { command: Command::Rescan, title: "Rescan library", subtitle: "Pick up new and changed files", hint: "", icon: "refresh" },
     CommandInfo { command: Command::Lastfm, title: "Connect Last.fm", subtitle: "Scrobbling", hint: "", icon: "scrobble" },

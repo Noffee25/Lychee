@@ -2,7 +2,7 @@
 
 Status: **decided and implemented in v0.1** (November 2026). The Flow design direction was chosen and is
 built with Slint. Lychee is licensed Apache-2.0; Slint is used under its Royalty-free License 2.0, with the
-required attribution in Settings → About. Everything below targets **Linux (Wayland and X11) and Windows**.
+required attribution in Settings → About. Everything below targets **Linux (Wayland and X11) and Windows**; macOS support came later (see *What v0.1 actually uses*).
 
 ## Summary
 
@@ -12,7 +12,7 @@ required attribution in Settings → About. Everything below targets **Linux (Wa
 | Decoding | **Symphonia 0.6** | Pure Rust: MP3, FLAC, WAV, AIFF, CAF, OGG Vorbis, AAC-LC, ALAC, MP4/M4A, MKV/WebM |
 | Opus | **opus-decoder** (pure Rust), or **symphonia-adapter-libopus** | Symphonia 0.6 demuxes Opus but cannot decode it |
 | Rarer formats | Optional **FFmpeg** backend (cargo feature) | WMA, APE, WavPack, DSD, Musepack, TTA… behind the same decoder trait |
-| Audio output | **cpal 0.18** | Native PipeWire, PulseAudio, ALSA and JACK hosts on Linux; WASAPI on Windows |
+| Audio output | **cpal 0.18** | Native PipeWire, PulseAudio, ALSA and JACK hosts on Linux; WASAPI on Windows; CoreAudio on macOS |
 | Resampling | **rubato** | High-quality conversion when the device rate differs from the file's rate |
 | Engine | Our own small engine: decode thread → DSP → **rtrb** ring buffer → cpal callback | Needed for gapless playback, sample-accurate position, DSP and visualizer taps, and device switching |
 | Tags and embedded art | **lofty 0.25** | Reads and writes ID3v1/v2, Vorbis comments, MP4 atoms, APE and RIFF INFO; also pictures and audio properties |
@@ -23,6 +23,7 @@ required attribution in Settings → About. Everything below targets **Linux (Wa
 | Images | **image** + **fast_image_resize** + a fast blur | Thumbnail cache, blurred backdrops, accent-color extraction |
 | Linux media controls | **MPRIS** over **zbus 6** (or **mpris-server 0.11**) | Media keys, GNOME and KDE media widgets, `playerctl` |
 | Windows media controls | **SMTC** via the **windows** crate | Media keys, volume flyout, lock screen |
+| macOS media controls | **Now Playing** (`MPNowPlayingInfoCenter`, `MPRemoteCommandCenter`) via **objc2-media-player** | Media keys, Control Center, headphone remotes |
 | Tray and notifications | **ksni** (Linux), **tray-icon** (Windows), **notify-rust** | |
 | Plumbing | tracing, thiserror/anyhow, serde + toml, directories, crossbeam-channel, interprocess (single instance), rfd (file dialogs) | |
 | Packaging | Flatpak + AppImage (+ .deb/.rpm); MSI or NSIS on Windows; GitHub Actions CI | |
@@ -182,9 +183,13 @@ Avoid **souvlaki**, the usual cross-platform media-controls crate. It has been u
   `walkdir`; parallel scanning uses scoped standard-library threads
 - `ureq 3` (rustls) for Last.fm, MusicBrainz, the Cover Art Archive and LRCLIB; MD5 for Last.fm signatures
   is a small built-in implementation (`lychee_core::md5`)
-- `mpris-server 0.10` (on zbus 5, the same version Slint uses) on Linux, `windows 0.62` (SMTC) on Windows.
+- `mpris-server 0.10` (on zbus 5, the same version Slint uses) on Linux, `windows 0.62` (SMTC) on Windows,
+  `objc2-media-player 0.3` (Now Playing) on macOS, on the same objc2 0.6 that Slint, cpal and rfd use.
   souvlaki was avoided as planned.
 - `rfd` (file dialogs via XDG portals, with a zenity fallback), `directories`, `toml 1`, `tracing`
   (+ `tracing-subscriber` with its `Targets` filter)
+- Packaging: `.deb`, `.rpm` and a `.tar.xz` with `install.sh` for Linux; an Inno Setup installer and a
+  portable zip for Windows; for macOS a universal `Lychee.app` (Apple silicon + Intel, macOS 11+), signed ad
+  hoc, in a `.dmg`. All built by `.github/workflows/release.yml`.
 - A November 2026 audit trimmed the Linux build from 512 to 457 crates without dropping features. See
   "Dependencies" in `CLAUDE.md` for what was removed and what was kept on purpose.

@@ -2,7 +2,7 @@
 
 <h1 align="center">Lychee</h1>
 
-<p align="center">A modern, beautiful music player for your own library on <b>Linux</b> and <b>Windows</b>, written in <b>Rust</b>.</p>
+<p align="center">A modern, beautiful music player for your own library on <b>Linux</b>, <b>Windows</b> and <b>macOS</b>, written in <b>Rust</b>.</p>
 
 ![Lychee: album page](docs/screenshots/album.jpg)
 
@@ -28,9 +28,9 @@
   Album (1998)"), finds it on MusicBrainz and matches each file to its track by duration and title. It
   then fills in what's missing (or replaces everything), plus the cover from the Cover Art Archive and
   synced lyrics from LRCLIB.
-- **Mini player (Ctrl+M).** A compact bar that stays on top. On Wayland, which has no "always on top",
+- **Mini player (Ctrl+M, ⌘M on a Mac).** A compact bar that stays on top. On Wayland, which has no "always on top",
   it runs through XWayland so it can.
-- **Desktop integration.** MPRIS on Linux (media keys, GNOME/KDE media controls, `playerctl`) and System Media Transport Controls on Windows. Drag and drop files to play them, or pass them on the command line.
+- **Desktop integration.** MPRIS on Linux (media keys, GNOME/KDE media controls, `playerctl`), System Media Transport Controls on Windows, and Now Playing on macOS (media keys, Control Center). Drag and drop files to play them, or pass them on the command line.
 - **Remembers where you were.** On restart, Lychee restores your queue, the track you were on and its position.
 
 | Albums | Songs and lyrics |
@@ -53,6 +53,11 @@ Download the latest version from the [Releases page](https://github.com/Noffee25
   run `sudo dnf install ./lychee-….x86_64.rpm`. dnf pulls in the libraries Lychee uses.
 - **Windows 10/11:** `…-windows-x64-setup.exe` installs Lychee, with no admin rights needed; the
   `…-portable.zip` runs without installing. Nothing else is needed.
+- **macOS 11 or newer** (Apple silicon and Intel): open `Lychee-…-macos.dmg` and drag Lychee into
+  Applications. Lychee isn't notarised by Apple, so the first time you open it macOS says it can't
+  check it for malware: click **Done**, open **System Settings → Privacy & Security**, and click
+  **Open Anyway** next to the message about Lychee. Or, in Terminal:
+  `xattr -dr com.apple.quarantine /Applications/Lychee.app`.
 - **Ubuntu / Debian:** `sudo apt install ./lychee_…_amd64.deb`.
 - **Any other Linux:** unpack `lychee-…-linux-x86_64.tar.xz` and run `./install.sh`. It installs missing
   libraries with apt, dnf, zypper or pacman, then Lychee for your user (`--system` for everyone,
@@ -75,6 +80,10 @@ sudo pacman -S base-devel alsa-lib fontconfig
 
 **Windows** needs the MSVC build tools (Visual Studio "Desktop development with C++").
 
+**macOS** needs Apple's command line tools (`xcode-select --install`). To make the app and the disk
+image as well: `cargo build --release`, then
+`packaging/macos/build-dmg.sh 0.0.0 dist target/release/lychee` (it writes `dist/Lychee-0.0.0-macos.dmg`).
+
 Then:
 
 ```sh
@@ -89,7 +98,8 @@ On first start, add your music folder. Lychee scans it in the background.
 
 **Releases** are built by `.github/workflows/release.yml` when a `v*` tag is pushed. It builds the
 `.deb`, `.rpm` and `.tar.xz` on Ubuntu 22.04 (via `packaging/linux/build-packages.sh`), and the Inno
-Setup installer and portable zip on Windows (`packaging/windows/lychee.iss`).
+Setup installer and portable zip on Windows (`packaging/windows/lychee.iss`), and a universal macOS
+app in a disk image (`packaging/macos/build-dmg.sh`).
 
 ### Last.fm
 
@@ -117,13 +127,15 @@ Then click **Connect**, approve Lychee in the browser page that opens, and you'r
 | Tag editor: save / undo / redo | `Ctrl S` / `Ctrl Z` / `Ctrl Shift Z` |
 | Tag editor: select all files | `Ctrl A` |
 
+On a Mac, press `⌘` instead of `Ctrl`. The side panel is `⌃⌘S` there, because `⌘Q` quits.
+
 ## Where Lychee keeps things
 
-| | Linux | Windows |
-|---|---|---|
-| Settings | `~/.config/lychee/config.toml` | `%APPDATA%\Lychee\config\config.toml` |
-| Library database, scrobble queue | `~/.local/share/lychee/` | `%APPDATA%\Lychee\data\` |
-| Artwork cache | `~/.cache/lychee/` | `%LOCALAPPDATA%\Lychee\cache\` |
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| Settings | `~/.config/lychee/config.toml` | `%APPDATA%\Lychee\config\config.toml` | `~/Library/Application Support/Lychee/config.toml` |
+| Library database, scrobble queue | `~/.local/share/lychee/` | `%APPDATA%\Lychee\data\` | `~/Library/Application Support/Lychee/` |
+| Artwork cache | `~/.cache/lychee/` | `%LOCALAPPDATA%\Lychee\cache\` | `~/Library/Caches/Lychee/` |
 
 Set `LYCHEE_HOME=/some/folder` to keep everything in one place (portable installs, testing).
 Lychee only changes your music files when you save in the tag editor.
@@ -136,10 +148,11 @@ crates/
   lychee-audio     playback engine: Symphonia + pure-Rust Opus, rubato resampling, gapless, cpal output
   lychee-library   scanning, tags (lofty), artwork + colors, SQLite store, fuzzy search, lyrics
   lychee-lastfm    Last.fm auth, now playing, scrobbling with an offline queue
-  lychee-platform  MPRIS (Linux) and System Media Transport Controls (Windows)
+  lychee-platform  MPRIS (Linux), System Media Transport Controls (Windows), Now Playing (macOS)
   lychee-tagger    tag editor engine: lossless tag writing, EasyTAG masks, text clean-up, undo
   lychee-lookup    MusicBrainz, Cover Art Archive and LRCLIB clients, album detection and matching
-packaging/         Linux installer and packages, Windows installer and icon, release notes
+packaging/         Linux installer and packages, Windows installer and icon, macOS app and disk image,
+                   release notes
   lychee           the app: Slint UI (ui/), controller, settings, mini player
 design/            interactive design prototypes (the app implements direction D, "Flow")
 docs/              features, architecture and technology notes

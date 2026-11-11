@@ -160,6 +160,9 @@ export struct ScanUi {
 }
 
 export global AppState {
+    // macOS: Slint maps Control to ⌘ there, so labels say ⌘ instead of Ctrl, and ⌘Q is Quit, so the
+    // side panel toggles with ⌃⌘S instead of Ctrl Q.
+    out property <bool> mac: Platform.os == OperatingSystemType.macos;
     // Navigation: "albums", "album", "artists", "artist", "songs", "genres", "genre",
     // "recent", "favorites", "playlist", "history", "settings".
     in-out property <string> page: "albums";
