@@ -218,6 +218,8 @@ export global AppState {
     in-out property <string> device-name;
     in-out property <int> theme-mode;
     in-out property <bool> dynamic-accent: true;
+    in-out property <bool> mini-on-top: true;
+    in-out property <bool> wayland;
     in-out property <string> toast;
     in-out property <string> version;
 }
@@ -284,6 +286,7 @@ export global Actions {
     callback set-device(string);
     callback set-theme-mode(int);
     callback set-dynamic-accent(bool);
+    callback set-mini-on-top(bool);
 
     callback lastfm-connect();
     callback lastfm-cancel();

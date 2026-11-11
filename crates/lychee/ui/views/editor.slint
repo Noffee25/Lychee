@@ -1,0 +1,1682 @@
+// The tag editor, after EasyTAG: a file list with pending-change markers, a form that edits
+// every selected file at once, artwork and lyrics, a scanner (fill tags from file names, rename
+// files from tags, clean up text) and an online lookup.
+
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, InfoRow } from "../state.slint";
+import { Editor, EditorFile, EditorField, EditorPicture, ScanRow, LookupItem, LookupTrack } from "../editor-state.slint";
+import { PillButton, IconButton, Toggle, Segmented, TextField, Divider, Cover } from "../widgets.slint";
+import { ListView, ScrollView, TextEdit } from "std-widgets.slint";
+
+// One editor field as a single-line input. The text is (re)loaded from Rust whenever
+// `Editor.generation` changes, so typing never fights with model updates.
+component FieldInput inherits Rectangle {
+    in property <EditorField> field;
+    in property <string> placeholder;
+    in property <bool> numeric;
+    property <int> generation: Editor.generation;
+    changed generation => {
+        input.text = root.field.value;
+    }
+    init => {
+        input.text = root.field.value;
+    }
+    height: 32px;
+    min-width: 36px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: input.has-focus ? Theme.accent : Theme.border-2;
+    background: root.field.enabled ? Theme.bg : Theme.surface-2;
+    opacity: root.field.enabled ? 1 : 0.55;
+    forward-focus: input;
+    input := TextInput {
+        x: 10px;
+        width: parent.width - 20px;
+        height: 100%;
+        vertical-alignment: center;
+        color: Theme.text;
+        font-size: 13px;
+        single-line: true;
+        enabled: root.field.enabled;
+        input-type: root.numeric ? InputType.number : InputType.text;
+        selection-background-color: Theme.accent.with-alpha(0.35);
+        edited => {
+            Editor.set-field(root.field.id, self.text);
+        }
+    }
+    if input.text == "": Text {
+        x: 10px;
+        width: parent.width - 20px;
+        height: 100%;
+        text: root.field.mixed ? (root.width > 100px ? "Multiple values" : "…") : !root.field.enabled ? (root.width > 100px ? "Not supported" : "–") : root.placeholder;
+        color: Theme.text-3;
+        font-size: 13px;
+        font-italic: root.field.mixed;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+}
+
+component FieldLabel inherits HorizontalLayout {
+    in property <EditorField> field;
+    in property <string> text: root.field.label;
+    in property <length> label-width: 104px;
+    width: root.label-width;
+    spacing: 6px;
+    cross-axis-alignment: center;
+    Text {
+        text: root.text;
+        color: Theme.text-2;
+        font-size: 12.5px;
+        horizontal-alignment: right;
+        horizontal-stretch: 1;
+        overflow: elide;
+    }
+    // Edited but not saved yet.
+    Rectangle {
+        width: 6px;
+        height: 6px;
+        border-radius: 3px;
+        background: root.field.changed ? Theme.accent : transparent;
+    }
+}
+
+component FieldRow inherits HorizontalLayout {
+    in property <EditorField> field;
+    in property <string> placeholder;
+    in property <length> label-width: 104px;
+    spacing: 10px;
+    cross-axis-alignment: center;
+    FieldLabel {
+        field: root.field;
+        label-width: root.label-width;
+    }
+    FieldInput {
+        field: root.field;
+        placeholder: root.placeholder;
+        horizontal-stretch: 1;
+    }
+}
+
+component Tab inherits Rectangle {
+    in property <string> text;
+    in property <string> id;
+    property <bool> active: Editor.tab == root.id;
+    height: 30px;
+    width: label.preferred-width + 24px;
+    border-radius: 8px;
+    background: root.active ? Theme.surface-2 : ta.has-hover ? Theme.hover : transparent;
+    border-width: root.active ? 1px : 0px;
+    border-color: Theme.border;
+    label := Text {
+        text: root.text;
+        color: root.active ? Theme.text : Theme.text-2;
+        font-weight: 500;
+        font-size: 13px;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            Editor.tab = root.id;
+        }
+    }
+}
+
+component Banner inherits Rectangle {
+    in property <string> text;
+    in property <bool> warning;
+    border-radius: 9px;
+    background: root.warning ? Theme.warning.with-alpha(0.12) : Theme.surface-2;
+    border-width: 1px;
+    border-color: root.warning ? Theme.warning.with-alpha(0.35) : Theme.border;
+    height: row.preferred-height;
+    row := HorizontalLayout {
+        padding: 10px;
+        padding-left: 12px;
+        spacing: 10px;
+        Image {
+            source: root.warning ? Icons.alert : Icons.info;
+            colorize: root.warning ? Theme.warning : Theme.text-2;
+            width: 16px;
+            height: 16px;
+            y: 1px;
+        }
+        Text {
+            text: root.text;
+            color: Theme.text-2;
+            font-size: 12.5px;
+            wrap: word-wrap;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> mono: true;
+    callback clicked;
+    height: 26px;
+    width: chip-text.preferred-width + 18px;
+    border-radius: 7px;
+    border-width: 1px;
+    border-color: Theme.border-2;
+    background: ta.has-hover ? Theme.hover : Theme.surface-2;
+    chip-text := Text {
+        text: root.text;
+        font-family: root.mono ? Theme.mono : Theme.font;
+        font-size: 11.5px;
+        color: Theme.text-2;
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component CheckChip inherits Rectangle {
+    in property <string> text;
+    in-out property <bool> checked;
+    callback toggled();
+    height: 30px;
+    width: chip-row.preferred-width;
+    border-radius: 15px;
+    border-width: 1px;
+    border-color: root.checked ? Theme.accent.with-alpha(0.6) : Theme.border-2;
+    background: root.checked ? Theme.accent.with-alpha(0.12) : ta.has-hover ? Theme.hover : transparent;
+    chip-row := HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 12px;
+        spacing: 6px;
+        cross-axis-alignment: center;
+        Image {
+            source: root.checked ? Icons.check : Icons.plus;
+            width: 13px;
+            height: 13px;
+            colorize: root.checked ? Theme.accent : Theme.text-3;
+        }
+        Text {
+            text: root.text;
+            color: root.checked ? Theme.text : Theme.text-2;
+            font-size: 12.5px;
+            font-weight: 500;
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.checked = !root.checked;
+            root.toggled();
+        }
+    }
+}
+
+component FileRow inherits Rectangle {
+    in property <EditorFile> file;
+    in property <int> index;
+    height: 46px;
+    border-radius: 8px;
+    background: root.file.selected ? Theme.accent.with-alpha(0.14) : ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea {
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                Editor.select(root.index, e.modifiers.control || e.modifiers.meta, e.modifiers.shift);
+            }
+        }
+    }
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 10px;
+        cross-axis-alignment: center;
+        Rectangle {
+            width: 8px;
+            height: 8px;
+            border-radius: 4px;
+            background: root.file.error != "" ? Theme.danger : root.file.modified ? Theme.accent : transparent;
+        }
+        Text {
+            width: 24px;
+            text: root.file.track;
+            font-family: Theme.mono;
+            font-size: 12px;
+            color: Theme.text-3;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            min-width: 0px;
+            alignment: center;
+            spacing: 1px;
+            Text {
+                text: root.file.title;
+                font-weight: 500;
+                color: Theme.text;
+                overflow: elide;
+            }
+            Text {
+                text: root.file.error != "" ? root.file.error : root.file.new-name != "" ? "→ " + root.file.new-name : root.file.name;
+                font-family: Theme.mono;
+                font-size: 11px;
+                color: root.file.error != "" ? Theme.danger : root.file.new-name != "" ? Theme.accent : Theme.text-3;
+                overflow: elide;
+            }
+        }
+        Text {
+            horizontal-stretch: 0.7;
+            preferred-width: 0px;
+            min-width: 0px;
+            text: root.file.artist;
+            font-size: 12.5px;
+            color: Theme.text-2;
+            overflow: elide;
+            vertical-alignment: center;
+        }
+    }
+    ContextMenuArea {
+        Menu {
+            MenuItem {
+                title: "Revert changes";
+                enabled: root.file.modified;
+                activated => {
+                    Editor.file-action("revert", root.index);
+                }
+            }
+            MenuItem {
+                title: "Show in folder";
+                activated => {
+                    Editor.file-action("show-folder", root.index);
+                }
+            }
+            MenuSeparator { }
+            MenuItem {
+                title: "Remove from the list";
+                activated => {
+                    Editor.file-action("close", root.index);
+                }
+            }
+        }
+    }
+}
+
+component TagsTab inherits ScrollView {
+    VerticalLayout {
+        padding: 18px;
+        padding-right: 22px;
+        spacing: 10px;
+        alignment: start;
+        FieldRow { field: Editor.fields[0]; }
+        FieldRow { field: Editor.fields[1]; }
+        FieldRow { field: Editor.fields[2]; }
+        FieldRow {
+            field: Editor.fields[3];
+            placeholder: "Same as artist";
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            cross-axis-alignment: center;
+            FieldLabel { field: Editor.fields[4]; }
+            FieldInput {
+                field: Editor.fields[4];
+                width: 88px;
+                placeholder: "YYYY";
+            }
+            FieldLabel {
+                field: Editor.fields[5];
+                label-width: 52px;
+            }
+            FieldInput {
+                field: Editor.fields[5];
+                horizontal-stretch: 1;
+            }
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            cross-axis-alignment: center;
+            FieldLabel { field: Editor.fields[6]; text: "Track"; }
+            FieldInput {
+                field: Editor.fields[6];
+                width: 54px;
+                numeric: true;
+            }
+            Text {
+                text: "of";
+                color: Theme.text-3;
+                font-size: 12.5px;
+            }
+            FieldInput {
+                field: Editor.fields[7];
+                width: 54px;
+                numeric: true;
+            }
+            IconButton {
+                icon: Icons.hash;
+                size: 30px;
+                icon-size: 15px;
+                tooltip: "Number the selected files 1, 2, 3… (per disc)";
+                enabled: Editor.selected-count > 0;
+                clicked => {
+                    Editor.number-tracks();
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            FieldLabel {
+                field: Editor.fields[8];
+                text: "Disc";
+                label-width: 40px;
+            }
+            FieldInput {
+                field: Editor.fields[8];
+                width: 46px;
+                numeric: true;
+            }
+            Text {
+                text: "of";
+                color: Theme.text-3;
+                font-size: 12.5px;
+            }
+            FieldInput {
+                field: Editor.fields[9];
+                width: 46px;
+                numeric: true;
+            }
+        }
+        FieldRow { field: Editor.fields[10]; }
+        FieldRow { field: Editor.fields[11]; }
+        Rectangle {
+            height: 30px;
+            HorizontalLayout {
+                padding-left: 114px;
+                spacing: 6px;
+                alignment: start;
+                cross-axis-alignment: center;
+                Image {
+                    source: Editor.more-fields ? Icons.chev-d : Icons.chev-r;
+                    colorize: Theme.text-2;
+                    width: 14px;
+                    height: 14px;
+                }
+                Text {
+                    text: Editor.more-fields ? "Fewer fields" : "More fields: original artist, lyricist, label, ISRC, copyright…";
+                    color: Theme.text-2;
+                    font-size: 12.5px;
+                    overflow: elide;
+                }
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    Editor.more-fields = !Editor.more-fields;
+                }
+            }
+        }
+        if Editor.more-fields: VerticalLayout {
+            spacing: 10px;
+            FieldRow { field: Editor.fields[12]; }
+            FieldRow { field: Editor.fields[13]; }
+            FieldRow { field: Editor.fields[14]; }
+            FieldRow { field: Editor.fields[15]; }
+            FieldRow { field: Editor.fields[16]; }
+            FieldRow { field: Editor.fields[17]; }
+            FieldRow { field: Editor.fields[18]; }
+            FieldRow { field: Editor.fields[19]; }
+        }
+    }
+}
+
+component PictureCard inherits Rectangle {
+    in property <EditorPicture> picture;
+    in property <int> index;
+    width: 172px;
+    height: 230px;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.bg;
+    VerticalLayout {
+        padding: 8px;
+        spacing: 6px;
+        Rectangle {
+            height: 154px;
+            border-radius: 8px;
+            clip: true;
+            background: Theme.surface-2;
+            Image {
+                source: root.picture.image;
+                width: parent.width;
+                height: parent.height;
+                image-fit: contain;
+            }
+        }
+        HorizontalLayout {
+            spacing: 0px;
+            cross-axis-alignment: center;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                preferred-width: 0px;
+                min-width: 0px;
+                spacing: 1px;
+                Text {
+                    text: root.picture.kind;
+                    font-weight: 600;
+                    font-size: 12.5px;
+                    color: Theme.text;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.picture.detail;
+                    font-family: Theme.mono;
+                    font-size: 10px;
+                    color: Theme.text-3;
+                    overflow: elide;
+                }
+            }
+            IconButton {
+                icon: Icons.download;
+                size: 28px;
+                icon-size: 14px;
+                tooltip: "Save image as…";
+                clicked => {
+                    Editor.export-picture(root.index);
+                }
+            }
+            IconButton {
+                icon: Icons.trash;
+                size: 28px;
+                icon-size: 14px;
+                tooltip: "Remove from the selected files";
+                clicked => {
+                    Editor.remove-picture(root.index);
+                }
+            }
+        }
+    }
+    ContextMenuArea {
+        Menu {
+            for kind[k] in ["Front cover", "Back cover", "Booklet", "Disc", "Artist", "Other"]: MenuItem {
+                title: kind;
+                activated => {
+                    Editor.set-picture-kind(root.index, k);
+                }
+            }
+        }
+    }
+}
+
+component ArtworkTab inherits ScrollView {
+    VerticalLayout {
+        padding: 18px;
+        spacing: 14px;
+        alignment: start;
+        if !Editor.pictures-supported: Banner {
+            warning: true;
+            text: "Some of the selected files can't store pictures (their format has no room for them).";
+        }
+        if Editor.pictures-mixed: Banner {
+            text: "The selected files have different artwork. Adding a picture replaces that kind of picture in all of them.";
+        }
+        if !Editor.pictures-mixed && Editor.pictures.length == 0: Rectangle {
+            height: 150px;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.border-2;
+            background: Theme.surface-2;
+            VerticalLayout {
+                alignment: center;
+                spacing: 8px;
+                Image {
+                    source: Icons.image;
+                    colorize: Theme.text-3;
+                    width: 28px;
+                    height: 28px;
+                }
+                Text {
+                    text: "No artwork";
+                    color: Theme.text-2;
+                    horizontal-alignment: center;
+                }
+            }
+        }
+        if !Editor.pictures-mixed && Editor.pictures.length > 0: HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            for picture[i] in Editor.pictures: PictureCard {
+                picture: picture;
+                index: i;
+            }
+        }
+        Text {
+            text: "Right-click a picture to change its type. Changes apply to every selected file.";
+            font-size: 12px;
+            color: Theme.text-3;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            PillButton {
+                text: "Add image…";
+                icon: Icons.plus;
+                pill-height: 34px;
+                clicked => {
+                    Editor.add-picture();
+                }
+            }
+            PillButton {
+                text: "Use folder image";
+                icon: Icons.folder;
+                pill-height: 34px;
+                clicked => {
+                    Editor.folder-picture();
+                }
+            }
+            PillButton {
+                text: "Find cover online";
+                icon: Icons.globe;
+                pill-height: 34px;
+                clicked => {
+                    Editor.lookup-tags = false;
+                    Editor.lookup-lyrics = false;
+                    Editor.lookup-artwork = true;
+                    Editor.lookup-start();
+                }
+            }
+        }
+    }
+}
+
+component LyricsBox inherits TextEdit {
+    property <int> generation: Editor.generation;
+    changed generation => {
+        self.text = Editor.lyrics;
+    }
+    init => {
+        self.text = Editor.lyrics;
+    }
+    font-size: 13px;
+    wrap: word-wrap;
+    placeholder-text: "No lyrics. Type or paste them here; synced lyrics use LRC time stamps like [01:23.45].";
+    edited(text) => {
+        Editor.set-lyrics(text);
+    }
+}
+
+component LyricsTab inherits Rectangle {
+    VerticalLayout {
+        padding: 18px;
+        spacing: 12px;
+        if Editor.lyrics-editable: LyricsBox {
+            vertical-stretch: 1;
+        }
+        if !Editor.lyrics-editable: Rectangle {
+            vertical-stretch: 1;
+            Text {
+                width: parent.width - 40px;
+                text: "Lyrics belong to one track: select a single file to read or edit them.\nYou can still find lyrics online for all " + Editor.selected-count + " selected files.";
+                color: Theme.text-2;
+                horizontal-alignment: center;
+                wrap: word-wrap;
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: start;
+            PillButton {
+                text: Editor.selected-count > 1 ? "Find lyrics online for " + Editor.selected-count + " files" : "Find lyrics online";
+                icon: Icons.globe;
+                pill-height: 34px;
+                clicked => {
+                    Editor.lyrics-online();
+                }
+            }
+            if Editor.lyrics-editable: PillButton {
+                text: "Clear";
+                icon: Icons.x;
+                pill-height: 34px;
+                enabled: Editor.lyrics != "";
+                clicked => {
+                    Editor.set-lyrics("");
+                }
+            }
+        }
+    }
+}
+
+component FileTab inherits ScrollView {
+    VerticalLayout {
+        padding: 18px;
+        spacing: 2px;
+        alignment: start;
+        for row in Editor.info: HorizontalLayout {
+            spacing: 14px;
+            padding-top: 5px;
+            padding-bottom: 5px;
+            Text {
+                width: 150px;
+                text: row.label;
+                color: Theme.text-3;
+                font-size: 12.5px;
+                horizontal-alignment: right;
+            }
+            Text {
+                horizontal-stretch: 1;
+                text: row.value;
+                color: Theme.text;
+                font-family: Theme.mono;
+                font-size: 12px;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+component EmptyEditor inherits Rectangle {
+    border-radius: 14px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.surface;
+    VerticalLayout {
+        alignment: center;
+        spacing: 14px;
+        padding: 40px;
+        Image {
+            source: Icons.edit;
+            colorize: Theme.accent;
+            width: 34px;
+            height: 34px;
+        }
+        Text {
+            text: "Edit tags, artwork and lyrics";
+            font-size: 20px;
+            font-weight: 650;
+            color: Theme.text;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: "Open a folder, or right-click an album or song in your library and choose “Edit tags…”. Fill tags from file names, rename files from tags, and look albums up on MusicBrainz.";
+            color: Theme.text-2;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            alignment: center;
+            PillButton {
+                text: "Open folder…";
+                icon: Icons.folder;
+                primary: true;
+                clicked => {
+                    Editor.open-folder();
+                }
+            }
+            PillButton {
+                text: "Add files…";
+                icon: Icons.plus;
+                clicked => {
+                    Editor.add-files();
+                }
+            }
+        }
+    }
+}
+
+export component EditorPage inherits Rectangle {
+    init => {
+        AppState.content-scrolled = false;
+    }
+    VerticalLayout {
+        padding-top: 56px;
+        padding-left: 24px;
+        padding-right: 24px;
+        padding-bottom: 18px;
+        spacing: 14px;
+        HorizontalLayout {
+            spacing: 8px;
+            cross-axis-alignment: center;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 3px;
+                Text {
+                    text: Editor.title;
+                    font-size: 26px;
+                    font-weight: 700;
+                    color: Theme.text;
+                    overflow: elide;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    if Editor.busy: Rectangle {
+                        width: 7px;
+                        height: 7px;
+                        border-radius: 3.5px;
+                        background: Theme.accent;
+                    }
+                    Text {
+                        text: Editor.busy ? Editor.busy-text : Editor.summary;
+                        color: Editor.busy ? Theme.text : Theme.text-2;
+                        font-size: 13px;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+            }
+            IconButton {
+                icon: Icons.undo;
+                enabled: Editor.can-undo && !Editor.busy;
+                tooltip: Editor.undo-label;
+                clicked => {
+                    Editor.undo();
+                }
+            }
+            IconButton {
+                icon: Icons.redo;
+                enabled: Editor.can-redo && !Editor.busy;
+                tooltip: Editor.redo-label;
+                clicked => {
+                    Editor.redo();
+                }
+            }
+            PillButton {
+                text: "Open folder…";
+                icon: Icons.folder;
+                pill-height: 36px;
+                enabled: !Editor.busy;
+                clicked => {
+                    Editor.open-folder();
+                }
+            }
+            PillButton {
+                text: "Revert";
+                has-icon: false;
+                pill-height: 36px;
+                enabled: Editor.modified-count > 0 && !Editor.busy;
+                clicked => {
+                    Editor.revert();
+                }
+            }
+            PillButton {
+                text: Editor.modified-count > 1 ? "Save " + Editor.modified-count + " files" : "Save";
+                icon: Icons.save;
+                primary: true;
+                pill-height: 36px;
+                enabled: Editor.modified-count > 0 && !Editor.busy;
+                clicked => {
+                    Editor.save();
+                }
+            }
+        }
+        if Editor.busy && Editor.busy-progress >= 0: Rectangle {
+            height: 3px;
+            border-radius: 2px;
+            background: Theme.border-2;
+            Rectangle {
+                x: 0px;
+                width: parent.width * Math.max(0.03, Math.min(1, Editor.busy-progress));
+                border-radius: 2px;
+                background: Theme.accent;
+            }
+        }
+        if Editor.files.length == 0: EmptyEditor {
+            vertical-stretch: 1;
+        }
+        if Editor.files.length > 0: HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: 16px;
+            Rectangle {
+                horizontal-stretch: 0.85;
+                min-width: 250px;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.border;
+                background: Theme.surface;
+                clip: true;
+                VerticalLayout {
+                    HorizontalLayout {
+                        height: 44px;
+                        padding-left: 14px;
+                        padding-right: 8px;
+                        spacing: 2px;
+                        cross-axis-alignment: center;
+                        Text {
+                            text: Editor.files.length + (Editor.files.length == 1 ? " file" : " files") + (Editor.selected-count > 0 ? " · " + Editor.selected-count + " selected" : "");
+                            color: Theme.text-2;
+                            font-size: 12.5px;
+                            font-weight: 500;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        IconButton {
+                            icon: Icons.check;
+                            size: 30px;
+                            icon-size: 15px;
+                            tooltip: "Select all (Ctrl A)";
+                            clicked => {
+                                Editor.select-all();
+                            }
+                        }
+                        IconButton {
+                            icon: Icons.plus;
+                            size: 30px;
+                            icon-size: 15px;
+                            tooltip: "Add files…";
+                            clicked => {
+                                Editor.add-files();
+                            }
+                        }
+                        IconButton {
+                            icon: Icons.x;
+                            size: 30px;
+                            icon-size: 15px;
+                            tooltip: "Close the selected files";
+                            enabled: Editor.selected-count > 0;
+                            clicked => {
+                                Editor.close-files();
+                            }
+                        }
+                    }
+                    Divider { }
+                    ListView {
+                        vertical-stretch: 1;
+                        for file[i] in Editor.files: FileRow {
+                            file: file;
+                            index: i;
+                        }
+                    }
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1.15;
+                min-width: 400px;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.border;
+                background: Theme.surface;
+                clip: true;
+                VerticalLayout {
+                    HorizontalLayout {
+                        height: 50px;
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 4px;
+                        cross-axis-alignment: center;
+                        Tab {
+                            text: "Tags";
+                            id: "tags";
+                        }
+                        Tab {
+                            text: "Artwork";
+                            id: "artwork";
+                        }
+                        Tab {
+                            text: "Lyrics";
+                            id: "lyrics";
+                        }
+                        Tab {
+                            text: "File";
+                            id: "file";
+                        }
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
+                        PillButton {
+                            text: "Scanner";
+                            icon: Icons.wand;
+                            pill-height: 32px;
+                            enabled: Editor.selected-count > 0 && !Editor.busy;
+                            clicked => {
+                                Editor.open-scanner(Editor.scanner-mode);
+                            }
+                        }
+                        PillButton {
+                            text: "Look up";
+                            icon: Icons.globe;
+                            pill-height: 32px;
+                            enabled: Editor.selected-count > 0 && !Editor.busy;
+                            clicked => {
+                                Editor.lookup-tags = true;
+                                Editor.lookup-artwork = true;
+                                Editor.lookup-lyrics = true;
+                                Editor.lookup-start();
+                            }
+                        }
+                    }
+                    Divider { }
+                    if Editor.selected-count == 0: Rectangle {
+                        vertical-stretch: 1;
+                        Text {
+                            width: parent.width - 60px;
+                            text: "Select files on the left to edit their tags.\nCtrl-click and Shift-click select several; every change applies to all of them.";
+                            color: Theme.text-2;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                    }
+                    if Editor.selected-count > 0 && Editor.tab == "tags": TagsTab {
+                        vertical-stretch: 1;
+                    }
+                    if Editor.selected-count > 0 && Editor.tab == "artwork": ArtworkTab {
+                        vertical-stretch: 1;
+                    }
+                    if Editor.selected-count > 0 && Editor.tab == "lyrics": LyricsTab {
+                        vertical-stretch: 1;
+                    }
+                    if Editor.selected-count > 0 && Editor.tab == "file": FileTab {
+                        vertical-stretch: 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
+component Dialog inherits Rectangle {
+    in property <length> panel-width: 720px;
+    in property <length> panel-height: 620px;
+    callback close();
+    background: Theme.scrim;
+    TouchArea {
+        clicked => {
+            root.close();
+        }
+    }
+    panel := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: Math.min(root.panel-width, parent.width - 60px);
+        height: Math.min(root.panel-height, parent.height - 60px);
+        background: Theme.surface;
+        border-radius: 16px;
+        border-width: 1px;
+        border-color: Theme.border-2;
+        drop-shadow-blur: 60px;
+        drop-shadow-offset-y: 24px;
+        drop-shadow-color: #00000090;
+        clip: true;
+        TouchArea { }
+        keys := FocusScope {
+            init => {
+                self.focus();
+            }
+            capture-key-pressed(event) => {
+                if (event.text == Key.Escape) {
+                    root.close();
+                    return accept;
+                }
+                reject
+            }
+            @children
+        }
+    }
+}
+
+component PreviewList inherits Rectangle {
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.bg;
+    clip: true;
+    ListView {
+        for row in Editor.scan-rows: HorizontalLayout {
+            height: 34px;
+            padding-left: 12px;
+            padding-right: 12px;
+            spacing: 10px;
+            cross-axis-alignment: center;
+            Text {
+                horizontal-stretch: 1;
+                preferred-width: 0px;
+                min-width: 0px;
+                text: row.before;
+                font-family: Theme.mono;
+                font-size: 11.5px;
+                color: Theme.text-3;
+                overflow: elide;
+            }
+            Image {
+                source: Icons.arrow-r;
+                colorize: Theme.text-3;
+                width: 13px;
+                height: 13px;
+            }
+            Text {
+                horizontal-stretch: 1.3;
+                preferred-width: 0px;
+                min-width: 0px;
+                text: row.after;
+                font-size: 12.5px;
+                color: row.ok ? Theme.text : Theme.danger;
+                overflow: elide;
+            }
+        }
+    }
+}
+
+export component ScannerDialog inherits Dialog {
+    panel-width: 760px;
+    panel-height: 640px;
+    close => {
+        Editor.scanner-open = false;
+    }
+    VerticalLayout {
+        padding: 22px;
+        spacing: 14px;
+        HorizontalLayout {
+            spacing: 12px;
+            cross-axis-alignment: center;
+            Text {
+                text: "Scanner";
+                font-size: 19px;
+                font-weight: 700;
+                color: Theme.text;
+            }
+            Segmented {
+                options: ["Fill tags", "Rename files", "Clean up"];
+                selected <=> Editor.scanner-mode;
+                changed(i) => {
+                    Editor.scanner-changed();
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+            IconButton {
+                icon: Icons.x;
+                tooltip: "Close (Esc)";
+                clicked => {
+                    Editor.scanner-open = false;
+                }
+            }
+        }
+        Text {
+            text: Editor.scanner-mode == 0 ? "Read tags from the names of the " + Editor.selected-count + " selected files and their folders. Each / in the mask is one folder up."
+                : Editor.scanner-mode == 1 ? "Give the " + Editor.selected-count + " selected files new names built from their tags. Files are renamed when you save; a / in the mask makes a folder."
+                : "Tidy the text of the " + Editor.selected-count + " selected files.";
+            color: Theme.text-2;
+            wrap: word-wrap;
+        }
+        if Editor.scanner-mode == 0: VerticalLayout {
+            spacing: 10px;
+            TextField {
+                has-icon: false;
+                placeholder: "Mask, e.g. %n - %t";
+                text <=> Editor.fill-mask;
+                edited => {
+                    Editor.scanner-changed();
+                }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for preset in ["%n - %t", "%n. %t", "%n %t", "%a - %t", "%n - %a - %t", "%a - %b/%n - %t", "%a/%b/%n - %t", "%a/%b (%y)/%n - %t"]: Chip {
+                    text: preset;
+                    clicked => {
+                        Editor.fill-mask = preset;
+                        Editor.scanner-changed();
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 10px;
+                cross-axis-alignment: center;
+                Toggle {
+                    checked <=> Editor.fill-overwrite;
+                    toggled => {
+                        Editor.scanner-changed();
+                    }
+                }
+                Text {
+                    text: "Replace values that are already there";
+                    color: Theme.text-2;
+                    font-size: 12.5px;
+                }
+            }
+        }
+        if Editor.scanner-mode == 1: VerticalLayout {
+            spacing: 10px;
+            TextField {
+                has-icon: false;
+                placeholder: "Mask, e.g. %n - %t";
+                text <=> Editor.rename-mask;
+                edited => {
+                    Editor.scanner-changed();
+                }
+            }
+            HorizontalLayout {
+                spacing: 6px;
+                alignment: start;
+                for preset in ["%n - %t", "%n. %t", "%n %t", "%n - %a - %t", "%a - %t", "%d-%n %t", "%a/%b/%n - %t"]: Chip {
+                    text: preset;
+                    clicked => {
+                        Editor.rename-mask = preset;
+                        Editor.scanner-changed();
+                    }
+                }
+            }
+        }
+        if Editor.scanner-mode < 2: Text {
+            text: "%a artist · %z album artist · %b album · %t title · %n track · %l tracks · %d disc · %x discs · %y year · %g genre · %p composer · %o original artist · %c comment · %r copyright · %u URL · %e encoded by · %i ignore";
+            font-family: Theme.mono;
+            font-size: 11px;
+            color: Theme.text-3;
+            wrap: word-wrap;
+        }
+        if Editor.scanner-mode == 2: VerticalLayout {
+            spacing: 12px;
+            HorizontalLayout {
+                spacing: 12px;
+                cross-axis-alignment: center;
+                Text {
+                    width: 70px;
+                    text: "Fields";
+                    color: Theme.text-2;
+                    font-size: 12.5px;
+                }
+                Segmented {
+                    options: ["All text", "Title", "Artists", "Album"];
+                    selected <=> Editor.cleanup-fields;
+                    changed(i) => {
+                        Editor.scanner-changed();
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 12px;
+                cross-axis-alignment: center;
+                Text {
+                    width: 70px;
+                    text: "Case";
+                    color: Theme.text-2;
+                    font-size: 12.5px;
+                }
+                Segmented {
+                    options: ["Keep", "Title Case", "Sentence case", "UPPER", "lower"];
+                    selected <=> Editor.cleanup-case;
+                    changed(i) => {
+                        Editor.scanner-changed();
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 18px;
+                alignment: start;
+                cross-axis-alignment: center;
+                HorizontalLayout {
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    Toggle {
+                        checked <=> Editor.cleanup-underscores;
+                        toggled => {
+                            Editor.scanner-changed();
+                        }
+                    }
+                    Text {
+                        text: "_ to spaces";
+                        color: Theme.text-2;
+                        font-size: 12.5px;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    Toggle {
+                        checked <=> Editor.cleanup-percent;
+                        toggled => {
+                            Editor.scanner-changed();
+                        }
+                    }
+                    Text {
+                        text: "%20 to spaces";
+                        color: Theme.text-2;
+                        font-size: 12.5px;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    Toggle {
+                        checked <=> Editor.cleanup-spaces;
+                        toggled => {
+                            Editor.scanner-changed();
+                        }
+                    }
+                    Text {
+                        text: "Tidy spaces";
+                        color: Theme.text-2;
+                        font-size: 12.5px;
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                cross-axis-alignment: center;
+                Text {
+                    width: 70px;
+                    text: "Replace";
+                    color: Theme.text-2;
+                    font-size: 12.5px;
+                }
+                TextField {
+                    has-icon: false;
+                    placeholder: "Text to find";
+                    text <=> Editor.cleanup-find;
+                    edited => {
+                        Editor.scanner-changed();
+                    }
+                }
+                Text {
+                    text: "with";
+                    color: Theme.text-3;
+                    font-size: 12.5px;
+                }
+                TextField {
+                    has-icon: false;
+                    placeholder: "Replacement";
+                    text <=> Editor.cleanup-replace;
+                    edited => {
+                        Editor.scanner-changed();
+                    }
+                }
+            }
+        }
+        PreviewList {
+            vertical-stretch: 1;
+            min-height: 120px;
+        }
+        HorizontalLayout {
+            spacing: 10px;
+            cross-axis-alignment: center;
+            Text {
+                text: Editor.scan-status;
+                color: Editor.scan-ok ? Theme.text-2 : Theme.danger;
+                font-size: 12.5px;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            PillButton {
+                text: "Cancel";
+                has-icon: false;
+                pill-height: 36px;
+                clicked => {
+                    Editor.scanner-open = false;
+                }
+            }
+            PillButton {
+                text: Editor.scanner-mode == 0 ? "Fill tags" : Editor.scanner-mode == 1 ? "Rename" : "Apply";
+                icon: Icons.check;
+                primary: true;
+                pill-height: 36px;
+                enabled: Editor.scan-ok;
+                clicked => {
+                    Editor.scanner-apply();
+                }
+            }
+        }
+    }
+}
+
+component ResultRow inherits Rectangle {
+    in property <LookupItem> item;
+    in property <bool> selected;
+    callback clicked;
+    height: 58px;
+    border-radius: 9px;
+    background: root.selected ? Theme.accent.with-alpha(0.14) : ta.has-hover ? Theme.hover : transparent;
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 10px;
+        cross-axis-alignment: center;
+        VerticalLayout {
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            min-width: 0px;
+            alignment: center;
+            spacing: 2px;
+            Text {
+                text: root.item.title;
+                font-weight: 600;
+                color: Theme.text;
+                overflow: elide;
+            }
+            Text {
+                text: root.item.artist;
+                font-size: 12.5px;
+                color: Theme.text-2;
+                overflow: elide;
+            }
+            Text {
+                text: root.item.detail;
+                font-family: Theme.mono;
+                font-size: 10.5px;
+                color: Theme.text-3;
+                overflow: elide;
+            }
+        }
+        if root.item.score != "": Rectangle {
+            width: score-text.preferred-width + 14px;
+            height: 22px;
+            border-radius: 11px;
+            background: root.item.good ? Theme.success.with-alpha(0.16) : Theme.surface-2;
+            score-text := Text {
+                text: root.item.score;
+                font-family: Theme.mono;
+                font-size: 11px;
+                font-weight: 600;
+                color: root.item.good ? Theme.success : Theme.text-2;
+            }
+        }
+    }
+}
+
+export component LookupDialog inherits Dialog {
+    panel-width: 960px;
+    panel-height: 680px;
+    close => {
+        Editor.lookup-open = false;
+    }
+    VerticalLayout {
+        padding: 22px;
+        spacing: 14px;
+        HorizontalLayout {
+            spacing: 12px;
+            cross-axis-alignment: center;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 2px;
+                Text {
+                    text: "Look up online";
+                    font-size: 19px;
+                    font-weight: 700;
+                    color: Theme.text;
+                }
+                Text {
+                    text: "MusicBrainz identifies the album and fills in the tags; covers come from the Cover Art Archive and lyrics from LRCLIB.";
+                    font-size: 12.5px;
+                    color: Theme.text-2;
+                    overflow: elide;
+                }
+            }
+            IconButton {
+                icon: Icons.x;
+                tooltip: "Close (Esc)";
+                clicked => {
+                    Editor.lookup-open = false;
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            cross-axis-alignment: center;
+            TextField {
+                has-icon: false;
+                placeholder: "Artist";
+                text <=> Editor.lookup-artist;
+                accepted => {
+                    Editor.lookup-search(Editor.lookup-artist, Editor.lookup-album);
+                }
+            }
+            TextField {
+                has-icon: false;
+                placeholder: "Album (or a song title)";
+                text <=> Editor.lookup-album;
+                accepted => {
+                    Editor.lookup-search(Editor.lookup-artist, Editor.lookup-album);
+                }
+            }
+            PillButton {
+                text: "Search";
+                icon: Icons.search;
+                pill-height: 34px;
+                enabled: Editor.lookup-state != "searching";
+                clicked => {
+                    Editor.lookup-search(Editor.lookup-artist, Editor.lookup-album);
+                }
+            }
+        }
+        HorizontalLayout {
+            vertical-stretch: 1;
+            spacing: 14px;
+            Rectangle {
+                horizontal-stretch: 0.9;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.border;
+                background: Theme.bg;
+                clip: true;
+                if Editor.lookup-state == "results": ListView {
+                    for item[i] in Editor.lookup-results: ResultRow {
+                        item: item;
+                        selected: i == Editor.lookup-selected;
+                        clicked => {
+                            Editor.lookup-pick(i);
+                        }
+                    }
+                }
+                if Editor.lookup-state != "results": VerticalLayout {
+                    alignment: center;
+                    padding: 24px;
+                    spacing: 8px;
+                    Image {
+                        source: Editor.lookup-state == "error" ? Icons.alert : Editor.lookup-state == "searching" ? Icons.globe : Icons.search;
+                        colorize: Editor.lookup-state == "error" ? Theme.danger : Theme.text-3;
+                        width: 24px;
+                        height: 24px;
+                    }
+                    Text {
+                        text: Editor.lookup-message;
+                        color: Theme.text-2;
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+            VerticalLayout {
+                horizontal-stretch: 1.1;
+                spacing: 12px;
+                HorizontalLayout {
+                    spacing: 14px;
+                    Cover {
+                        width: 104px;
+                        height: 104px;
+                        radius: 10px;
+                        source: Editor.lookup-cover;
+                        has-image: Editor.lookup-has-cover;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 4px;
+                        Text {
+                            text: Editor.lookup-selected >= 0 ? Editor.lookup-heading : "Pick a release";
+                            font-size: 16px;
+                            font-weight: 650;
+                            color: Theme.text;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: Editor.lookup-subheading;
+                            color: Theme.text-2;
+                            font-size: 12.5px;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+                Rectangle {
+                    vertical-stretch: 1;
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    background: Theme.bg;
+                    clip: true;
+                    if Editor.lookup-loading-tracks: Text {
+                        text: "Loading the track list…";
+                        color: Theme.text-2;
+                    }
+                    if !Editor.lookup-loading-tracks: ListView {
+                        for t in Editor.lookup-tracks: HorizontalLayout {
+                            height: 32px;
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            spacing: 8px;
+                            cross-axis-alignment: center;
+                            Image {
+                                source: t.ok ? Icons.check : Icons.minus;
+                                colorize: t.ok ? Theme.success : Theme.text-3;
+                                width: 13px;
+                                height: 13px;
+                            }
+                            Text {
+                                horizontal-stretch: 1;
+                                preferred-width: 0px;
+                                min-width: 0px;
+                                text: t.track;
+                                font-size: 12.5px;
+                                color: Theme.text;
+                                overflow: elide;
+                            }
+                            Text {
+                                horizontal-stretch: 0.8;
+                                preferred-width: 0px;
+                                min-width: 0px;
+                                text: t.file;
+                                font-family: Theme.mono;
+                                font-size: 11px;
+                                color: Theme.text-3;
+                                overflow: elide;
+                            }
+                            Text {
+                                width: 86px;
+                                text: t.times;
+                                font-family: Theme.mono;
+                                font-size: 11px;
+                                color: Theme.text-3;
+                                horizontal-alignment: right;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Divider { }
+        HorizontalLayout {
+            spacing: 8px;
+            cross-axis-alignment: center;
+            CheckChip {
+                text: "Tags";
+                checked <=> Editor.lookup-tags;
+                toggled => {
+                    Editor.lookup-options-changed();
+                }
+            }
+            CheckChip {
+                text: "Cover art";
+                checked <=> Editor.lookup-artwork;
+                toggled => {
+                    Editor.lookup-options-changed();
+                }
+            }
+            CheckChip {
+                text: "Lyrics";
+                checked <=> Editor.lookup-lyrics;
+                toggled => {
+                    Editor.lookup-options-changed();
+                }
+            }
+            Rectangle {
+                width: 6px;
+            }
+            Segmented {
+                options: ["Fill in what's missing", "Replace everything"];
+                selected: Editor.lookup-overwrite ? 1 : 0;
+                changed(i) => {
+                    Editor.lookup-overwrite = i == 1;
+                    Editor.lookup-options-changed();
+                }
+            }
+            Text {
+                horizontal-stretch: 1;
+                text: Editor.lookup-summary;
+                color: Theme.text-2;
+                font-size: 12.5px;
+                horizontal-alignment: right;
+                overflow: elide;
+            }
+            PillButton {
+                text: "Apply";
+                icon: Icons.check;
+                primary: true;
+                pill-height: 36px;
+                enabled: Editor.lookup-selected >= 0 && !Editor.lookup-loading-tracks && (Editor.lookup-tags || Editor.lookup-artwork || Editor.lookup-lyrics);
+                clicked => {
+                    Editor.lookup-apply();
+                }
+            }
+        }
+    }
+}
+
+export component QuitPrompt inherits Dialog {
+    panel-width: 460px;
+    panel-height: 214px;
+    close => {
+        Editor.quit-prompt = false;
+    }
+    VerticalLayout {
+        padding: 24px;
+        spacing: 12px;
+        Text {
+            text: "Save your tag changes?";
+            font-size: 18px;
+            font-weight: 700;
+            color: Theme.text;
+        }
+        Text {
+            text: Editor.modified-count + (Editor.modified-count == 1 ? " file has" : " files have") + " changes that aren't saved yet. They are lost if you quit without saving.";
+            color: Theme.text-2;
+            wrap: word-wrap;
+            vertical-stretch: 1;
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            alignment: end;
+            PillButton {
+                text: "Cancel";
+                has-icon: false;
+                pill-height: 36px;
+                clicked => {
+                    Editor.quit-prompt = false;
+                }
+            }
+            PillButton {
+                text: "Quit without saving";
+                has-icon: false;
+                danger: true;
+                pill-height: 36px;
+                clicked => {
+                    Editor.quit-discard();
+                }
+            }
+            PillButton {
+                text: "Save and quit";
+                icon: Icons.save;
+                primary: true;
+                pill-height: 36px;
+                clicked => {
+                    Editor.quit-save();
+                }
+            }
+        }
+    }
+}

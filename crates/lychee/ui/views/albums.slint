@@ -139,6 +139,10 @@ export component AlbumTile inherits Rectangle {
                 title: "Show in folder";
                 activated => { Actions.album-action("show-folder", root.card.id); }
             }
+            MenuItem {
+                title: "Edit tags…";
+                activated => { Actions.album-action("edit-tags", root.card.id); }
+            }
         }
     }
 }

@@ -51,6 +51,14 @@ pub fn capture(ui: &AppWindow, dispatcher: &Rc<Dispatcher>, out: &Path) -> anyho
     settle(dispatcher, 0);
     if let Ok(scene) = std::env::var("LYCHEE_SCREENSHOT_SCENE") {
         for step in scene.split(';').filter(|s| !s.trim().is_empty()) {
+            // "wait:2000" lets background work (reading tags, lookups) finish.
+            if let Some(ms) = step.trim().strip_prefix("wait:").and_then(|ms| ms.parse::<u64>().ok()) {
+                let until = Instant::now() + Duration::from_millis(ms);
+                while Instant::now() < until {
+                    settle(dispatcher, 0);
+                }
+                continue;
+            }
             dispatcher.with_app(|a| a.run_scene(step.trim()));
             settle(dispatcher, 0);
         }
@@ -60,6 +68,28 @@ pub fn capture(ui: &AppWindow, dispatcher: &Rc<Dispatcher>, out: &Path) -> anyho
     if let Ok(mini_out) = std::env::var("LYCHEE_SCREENSHOT_MINI") {
         dispatcher.dispatch(Action::OpenMini);
         settle(dispatcher, 1);
+        // Debug aid: LYCHEE_SCREENSHOT_MINI_CLICKS="368,44;300,44" clicks inside the mini player.
+        if let Ok(clicks) = std::env::var("LYCHEE_SCREENSHOT_MINI_CLICKS") {
+            let win = WINDOWS.with(|ws| ws.borrow().get(1).cloned());
+            for point in clicks.split(';') {
+                let Some((x, y)) = point.split_once(',') else { continue };
+                let (Ok(x), Ok(y)) = (x.trim().parse::<f32>(), y.trim().parse::<f32>()) else { continue };
+                if let Some(win) = &win {
+                    use slint::platform::{PointerEventButton, WindowEvent};
+                    let position = slint::LogicalPosition::new(x, y);
+                    win.dispatch_event(WindowEvent::PointerMoved { position });
+                    // Hover like a person would, long enough for tooltips to appear.
+                    for _ in 0..8 {
+                        std::thread::sleep(Duration::from_millis(100));
+                        slint::platform::update_timers_and_animations();
+                    }
+                    win.dispatch_event(WindowEvent::PointerPressed { position, button: PointerEventButton::Left });
+                    win.dispatch_event(WindowEvent::PointerReleased { position, button: PointerEventButton::Left });
+                    tracing::info!("clicked mini player at {x},{y}");
+                }
+                settle(dispatcher, 1);
+            }
+        }
         render(1, 400, 88, Path::new(&mini_out))?;
     }
     Ok(())

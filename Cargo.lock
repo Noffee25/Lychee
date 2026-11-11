@@ -3069,7 +3069,9 @@ dependencies = [
  "lychee-core",
  "lychee-lastfm",
  "lychee-library",
+ "lychee-lookup",
  "lychee-platform",
+ "lychee-tagger",
  "md-5",
  "open",
  "parking_lot",
@@ -3141,6 +3143,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lychee-lookup"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tracing",
+ "ureq",
+]
+
+[[package]]
 name = "lychee-platform"
 version = "0.1.0"
 dependencies = [
@@ -3150,6 +3164,16 @@ dependencies = [
  "mpris-server",
  "tracing",
  "windows",
+]
+
+[[package]]
+name = "lychee-tagger"
+version = "0.1.0"
+dependencies = [
+ "lofty",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]

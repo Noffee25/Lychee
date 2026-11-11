@@ -3,8 +3,10 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 mod app;
+mod editor;
 mod images;
 mod lastfm;
+mod mini;
 mod models;
 mod palette;
 mod screenshot;
@@ -24,10 +26,15 @@ use tracing_subscriber::EnvFilter;
 
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,symphonia=warn,lofty=warn,winit=warn,zbus=warn")),
         )
         .init();
+    // The always-on-top mini player helper (see `mini.rs`); its stdout is a pipe to the player.
+    if std::env::args_os().nth(1).is_some_and(|a| a == "--mini-player") {
+        return mini::run_helper();
+    }
 
     let mut open: Vec<PathBuf> = Vec::new();
     for arg in std::env::args_os().skip(1) {
@@ -70,6 +77,7 @@ fn main() -> anyhow::Result<()> {
     let ui = AppWindow::new()?;
     let dispatcher = Dispatcher::new();
     app::wire_main(&ui, &dispatcher);
+    editor::wire(&ui, &dispatcher);
     let services = Services {
         library,
         engine,
@@ -98,6 +106,10 @@ fn main() -> anyhow::Result<()> {
     {
         let d = dispatcher.clone();
         ui.window().on_close_requested(move || {
+            // Unsaved tag edits: ask first (the app shows a prompt).
+            if d.with_app(|a| a.request_close()) == Some(false) {
+                return slint::CloseRequestResponse::KeepWindowShown;
+            }
             d.dispatch(Action::MainWindowClosed);
             let _ = slint::quit_event_loop();
             slint::CloseRequestResponse::HideWindow
@@ -120,6 +132,7 @@ fn main() -> anyhow::Result<()> {
             if let Some(theme) = ui.window().with_winit_window(|w| w.theme()).flatten() {
                 d.dispatch(Action::SystemThemeChanged(theme == winit::window::Theme::Dark));
             }
+            ui.global::<AppState>().set_wayland(mini::is_wayland(ui.window()));
             #[cfg(windows)]
             attach_media_window(&ui, &d);
         });

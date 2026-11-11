@@ -17,6 +17,8 @@ lychee-audio.workspace = true
 lychee-library.workspace = true
 lychee-lastfm.workspace = true
 lychee-platform.workspace = true
+lychee-tagger.workspace = true
+lychee-lookup.workspace = true
 slint = { version = "1.18", default-features = false, features = [
     "std",
     "backend-winit",

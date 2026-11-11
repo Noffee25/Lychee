@@ -23,8 +23,10 @@ use lychee_library::{AlbumSort, Library, LibraryIndex, ScanProgress, ScanSummary
 use lychee_platform::{MediaAction, MediaControls, NowPlaying as OsNowPlaying, Playback, Repeat};
 use slint::{Color, ComponentHandle, Image, ModelRc, SharedString, VecModel};
 
+use crate::editor::{EditorAction, EditorCtl};
 use crate::images::{ImageCache, Size};
 use crate::lastfm::{LastfmMsg, Listen, ListenEvent, start_auth, track_info};
+use crate::mini::{self, MiniCommand, MiniEvent, MiniState};
 use crate::models::LazyModel;
 use crate::palette::{self, Command, Entry};
 use crate::settings::{Paths, Settings, ThemeMode};
@@ -78,6 +80,7 @@ pub enum Action {
     SetDevice(String),
     SetThemeMode(i32),
     SetDynamicAccent(bool),
+    SetMiniOnTop(bool),
     LastfmConnect,
     LastfmCancel,
     LastfmDisconnect,
@@ -96,6 +99,9 @@ pub enum Action {
     OpenPaths(Vec<PathBuf>),
     SystemThemeChanged(bool),
     MainWindowClosed,
+    Editor(EditorAction),
+    QuitSave,
+    QuitDiscard,
 }
 
 /// Serialises actions into the app, tolerating re-entrant callbacks.
@@ -116,6 +122,9 @@ impl Dispatcher {
     }
 
     pub fn dispatch(&self, action: Action) {
+        if !matches!(action, Action::Tick) {
+            tracing::debug!("action: {action:?}");
+        }
         self.queue.borrow_mut().push_back(action);
         self.drain();
     }
@@ -182,6 +191,7 @@ macro_rules! wire_actions {
         a.on_set_device({ let d = d.clone(); move |n| d.dispatch(Action::SetDevice(n.into())) });
         a.on_set_theme_mode({ let d = d.clone(); move |m| d.dispatch(Action::SetThemeMode(m)) });
         a.on_set_dynamic_accent({ let d = d.clone(); move |on| d.dispatch(Action::SetDynamicAccent(on)) });
+        a.on_set_mini_on_top({ let d = d.clone(); move |on| d.dispatch(Action::SetMiniOnTop(on)) });
         a.on_lastfm_connect({ let d = d.clone(); move || d.dispatch(Action::LastfmConnect) });
         a.on_lastfm_cancel({ let d = d.clone(); move || d.dispatch(Action::LastfmCancel) });
         a.on_lastfm_disconnect({ let d = d.clone(); move || d.dispatch(Action::LastfmDisconnect) });
@@ -222,6 +232,7 @@ enum Page {
     Playlist(PlaylistId),
     History,
     Settings,
+    Editor,
 }
 
 impl Page {
@@ -239,6 +250,7 @@ impl Page {
             Page::Playlist(_) => "playlist",
             Page::History => "history",
             Page::Settings => "settings",
+            Page::Editor => "editor",
         }
     }
 }
@@ -338,7 +350,12 @@ pub struct Services {
 
 pub struct App {
     ui: slint::Weak<AppWindow>,
+    /// The in-process mini player (X11, Windows, or Wayland without XWayland).
     mini: Option<MiniWindow>,
+    /// The always-on-top helper process used on Wayland.
+    mini_helper: Option<mini::External>,
+    mini_helper_failed: bool,
+    wayland: Option<bool>,
     dispatcher: std::rc::Weak<Dispatcher>,
     library: Arc<Library>,
     engine: Engine,
@@ -356,6 +373,7 @@ pub struct App {
     images: Rc<ImageCache>,
     handles: Rc<RefCell<Handles>>,
     models: Models,
+    editor: EditorCtl,
 
     queue: Queue,
     status: PlaybackStatus,
@@ -422,9 +440,13 @@ impl App {
         });
 
         let engine_events = s.engine.events();
+        let editor = EditorCtl::new(ui, s.library.clone());
         let mut app = App {
             ui: ui.as_weak(),
             mini: None,
+            mini_helper: None,
+            mini_helper_failed: false,
+            wayland: None,
             dispatcher: Rc::downgrade(dispatcher),
             library: s.library,
             engine: s.engine,
@@ -442,6 +464,7 @@ impl App {
             images,
             handles: Rc::default(),
             models,
+            editor,
             queue: Queue::new(),
             status: PlaybackStatus::Stopped,
             current: None,
@@ -488,6 +511,7 @@ impl App {
         let state = ui.global::<AppState>();
         state.set_theme_mode(self.settings.theme.index());
         state.set_dynamic_accent(self.settings.dynamic_accent);
+        state.set_mini_on_top(self.settings.mini_on_top);
         state.set_right_panel(self.settings.right_panel);
         state.set_right_tab(self.settings.right_tab.clone().into());
         state.set_album_sort(self.settings.album_sort);
@@ -522,6 +546,7 @@ impl App {
                     "favorites" => Page::Favorites,
                     "history" => Page::History,
                     "settings" => Page::Settings,
+                    "editor" => Page::Editor,
                     _ => Page::Albums,
                 };
                 self.show_page(p, true);
@@ -576,6 +601,12 @@ impl App {
                         if let Some(folder) = &album.folder {
                             let _ = open::that(folder);
                         }
+                    }
+                    "edit-tags" => {
+                        let paths: Vec<PathBuf> = album.tracks.iter().filter_map(|id| index.track(*id)).map(|t| t.path.clone()).collect();
+                        let title = album.title.clone();
+                        drop(index);
+                        self.edit_tags(paths, Vec::new(), title);
                     }
                     _ => {}
                 }
@@ -706,6 +737,15 @@ impl App {
                 }
                 self.apply_accent();
             }
+            Action::SetMiniOnTop(on) => {
+                self.settings.mini_on_top = on;
+                self.settings_dirty = true;
+                // A failed helper start shouldn't stick once the user changes their mind.
+                self.mini_helper_failed = false;
+                if let Some(ui) = self.ui.upgrade() {
+                    ui.global::<AppState>().set_mini_on_top(on);
+                }
+            }
             Action::LastfmConnect => self.lastfm_connect(),
             Action::LastfmCancel => {
                 if let Some(cancel) = self.lastfm_cancel.take() {
@@ -767,29 +807,36 @@ impl App {
             Action::OpenMini => self.open_mini(),
             Action::CloseMini => {
                 if let Some(mini) = &self.mini {
+                    // The window is destroyed while the pointer is over it, so it would never
+                    // hear that the pointer left: clear the hover state for next time.
+                    mini.window().dispatch_event(slint::platform::WindowEvent::PointerExited);
                     let _ = mini.hide();
                 }
+                // Dropping the helper closes its stdin, which makes it quit.
+                self.mini_helper = None;
                 if let Some(ui) = self.ui.upgrade() {
                     ui.global::<AppState>().set_mini_open(false);
                 }
                 self.handle(Action::RaiseMain);
             }
             Action::RaiseMain => {
+                let wayland = self.main_is_wayland();
                 if let Some(ui) = self.ui.upgrade() {
                     let _ = ui.show();
-                    use slint::winit_030::WinitWindowAccessor;
-                    ui.window().with_winit_window(|w| {
-                        w.set_minimized(false);
-                        w.focus_window();
-                    });
+                    // Wayland can't un-minimise or focus a window from the app; there the main
+                    // window was hidden instead and `show` maps it again.
+                    if !wayland {
+                        use slint::winit_030::WinitWindowAccessor;
+                        ui.window().with_winit_window(|w| {
+                            w.set_minimized(false);
+                            w.focus_window();
+                        });
+                    }
                 }
             }
             Action::StartWindowDrag => {
                 if let Some(mini) = &self.mini {
-                    use slint::winit_030::WinitWindowAccessor;
-                    mini.window().with_winit_window(|w| {
-                        let _ = w.drag_window();
-                    });
+                    mini::start_drag(mini);
                 }
             }
             Action::OpenUrl(url) => {
@@ -801,6 +848,21 @@ impl App {
                 self.apply_theme();
             }
             Action::MainWindowClosed => self.shutdown(),
+            Action::Editor(action) => {
+                self.editor.handle(action);
+                self.apply_editor_outcome();
+            }
+            Action::QuitSave => {
+                if let Some(ui) = self.ui.upgrade() {
+                    ui.global::<crate::Editor>().set_quit_prompt(false);
+                }
+                self.editor.save_then_quit();
+                self.apply_editor_outcome();
+            }
+            Action::QuitDiscard => {
+                self.shutdown();
+                let _ = slint::quit_event_loop();
+            }
         }
     }
 
@@ -827,6 +889,12 @@ impl App {
         }
         while let Ok(action) = self.media_rx.try_recv() {
             self.on_media_action(action);
+        }
+        self.editor.poll();
+        self.apply_editor_outcome();
+        let mini_events = self.mini_helper.as_ref().map(|m| m.poll()).unwrap_or_default();
+        for event in mini_events {
+            self.on_mini_event(event);
         }
         while let Ok(folder) = self.folder_rx.try_recv() {
             match self.library.add_folder(&folder) {
@@ -1291,8 +1359,71 @@ impl App {
                     let _ = open::that(dir);
                 }
             }
+            "edit-tags" => {
+                // The whole album, with this song selected: lookups work best on albums.
+                let index = self.library.index();
+                let mut paths: Vec<PathBuf> = index
+                    .album(track.album_id)
+                    .map(|a| a.tracks.iter().filter_map(|id| index.track(*id)).map(|t| t.path.clone()).collect())
+                    .unwrap_or_default();
+                if paths.is_empty() {
+                    paths.push(track.path.clone());
+                }
+                drop(index);
+                self.edit_tags(paths, vec![track.path.clone()], track.album.clone());
+            }
             _ => {}
         }
+    }
+
+    /// Open files in the tag editor and go there.
+    fn edit_tags(&mut self, paths: Vec<PathBuf>, select: Vec<PathBuf>, title: String) {
+        self.editor.open(paths, false, select, Some(title));
+        self.apply_editor_outcome();
+        self.show_page(Page::Editor, true);
+    }
+
+    fn apply_editor_outcome(&mut self) {
+        let outcome = self.editor.take_outcome();
+        if let Some(text) = outcome.toast {
+            self.toast(&text);
+        }
+        if outcome.library_changed {
+            self.after_tags_saved();
+        }
+        if outcome.ready_to_quit {
+            self.shutdown();
+            let _ = slint::quit_event_loop();
+        }
+    }
+
+    /// The editor wrote files: show the new tags, covers and names everywhere.
+    fn after_tags_saved(&mut self) {
+        self.images.clear_missing();
+        let refreshed = self.current.as_ref().and_then(|c| self.library.index().track(c.id));
+        if let Some(track) = refreshed {
+            self.current = Some(track);
+            self.update_now_playing();
+            self.update_details();
+        }
+        self.refresh_library_views();
+        if self.page != Page::Editor {
+            self.refresh_page();
+        }
+        self.queue_changed_ui();
+        self.apply_accent();
+    }
+
+    /// The window is closing. `false` keeps it open (unsaved tag changes: ask first).
+    pub fn request_close(&mut self) -> bool {
+        if !self.editor.has_unsaved() {
+            return true;
+        }
+        self.show_page(Page::Editor, true);
+        if let Some(ui) = self.ui.upgrade() {
+            ui.global::<crate::Editor>().set_quit_prompt(true);
+        }
+        false
     }
 
     fn toggle_like(&mut self, id: TrackId) {
@@ -1350,6 +1481,12 @@ impl App {
     }
 
     fn open_paths(&mut self, paths: Vec<PathBuf>) {
+        if self.page == Page::Editor {
+            // Dropped onto the tag editor: edit them instead of playing them.
+            self.editor.open(paths, true, Vec::new(), None);
+            self.apply_editor_outcome();
+            return;
+        }
         match self.library.import_paths(&paths) {
             Ok(ids) if !ids.is_empty() => {
                 if self.status == PlaybackStatus::Playing {
@@ -1693,6 +1830,7 @@ impl App {
             Command::Settings => self.show_page(Page::Settings, true),
             Command::AddFolder => self.pick_folder(),
             Command::Rescan => self.start_scan(),
+            Command::TagEditor => self.show_page(Page::Editor, true),
             Command::Lastfm => self.lastfm_connect(),
         }
     }
@@ -1890,6 +2028,7 @@ impl App {
                 self.set_track_list(recent.iter().map(|t| t.id).collect(), &index, true);
             }
             Page::Settings => self.update_settings_ui(),
+            Page::Editor => {}
         }
     }
 
@@ -2174,6 +2313,7 @@ impl App {
             None => NowPlaying::default(),
         };
         self.for_players(|p| p.set_now(np.clone()));
+        self.sync_mini_helper();
     }
 
     fn update_player_state(&mut self) {
@@ -2217,6 +2357,7 @@ impl App {
                 p.set_duration_text(dur_text.clone());
             }
         });
+        self.sync_mini_helper();
     }
 
     fn for_players(&self, f: impl Fn(&Player)) {
@@ -2343,6 +2484,7 @@ impl App {
         if let Some(mini) = &self.mini {
             mini.global::<Theme>().set_dark(dark);
         }
+        self.sync_mini_helper();
     }
 
     fn apply_accent(&mut self) {
@@ -2370,6 +2512,8 @@ impl App {
         if let Some(mini) = &self.mini {
             mini.global::<Theme>().set_accent(rgb_color(playing_rgb.unwrap_or(DEFAULT_ACCENT)));
         }
+        drop(index);
+        self.sync_mini_helper();
     }
 
     fn toast(&mut self, text: &str) {
@@ -2380,6 +2524,23 @@ impl App {
     }
 
     fn open_mini(&mut self) {
+        if self.mini_helper.is_some() || self.mini.as_ref().is_some_and(|m| m.window().is_visible()) {
+            return;
+        }
+        if self.wants_mini_helper() {
+            match mini::External::spawn() {
+                Ok(helper) => {
+                    // The main window steps aside once the helper reports that it is on screen.
+                    self.mini_helper = Some(helper);
+                    self.sync_mini_helper();
+                    return;
+                }
+                Err(e) => {
+                    tracing::warn!("could not start the mini player helper: {e}");
+                    self.mini_helper_failed = true;
+                }
+            }
+        }
         if self.mini.is_none() {
             match MiniWindow::new() {
                 Ok(mini) => {
@@ -2407,13 +2568,106 @@ impl App {
         self.update_player_state();
         if let Some(mini) = &self.mini {
             let _ = mini.show();
+            mini::keep_on_top(mini);
         }
-        if let Some(ui) = self.ui.upgrade() {
-            ui.global::<AppState>().set_mini_open(true);
-            // Minimise the main window so the mini player takes over.
+        self.main_steps_aside();
+    }
+
+    /// Wayland has no way to keep a window on top, so there the mini player runs as an XWayland
+    /// helper process (unless the user turned "keep on top" off, or XWayland isn't there).
+    fn wants_mini_helper(&mut self) -> bool {
+        match std::env::var("LYCHEE_MINI").as_deref() {
+            Ok("external") => return true,
+            Ok("inprocess") => return false,
+            _ => {}
+        }
+        cfg!(target_os = "linux")
+            && self.settings.mini_on_top
+            && !self.mini_helper_failed
+            && std::env::var_os("DISPLAY").is_some()
+            && self.main_is_wayland()
+    }
+
+    fn main_is_wayland(&mut self) -> bool {
+        if self.wayland.is_none() {
+            self.wayland = self.ui.upgrade().filter(|ui| ui.window().is_visible()).map(|ui| mini::is_wayland(ui.window()));
+        }
+        self.wayland.unwrap_or(false)
+    }
+
+    /// The mini player is up: get the main window out of the way.
+    fn main_steps_aside(&mut self) {
+        let wayland = self.main_is_wayland();
+        let Some(ui) = self.ui.upgrade() else { return };
+        ui.global::<AppState>().set_mini_open(true);
+        if wayland {
+            // A minimised Wayland window can only be brought back by the user, so hide it
+            // completely; `RaiseMain` maps it again.
+            let _ = ui.hide();
+        } else {
             use slint::winit_030::WinitWindowAccessor;
             ui.window().with_winit_window(|w| w.set_minimized(true));
         }
+    }
+
+    fn on_mini_event(&mut self, event: MiniEvent) {
+        match event {
+            MiniEvent::Ready => {
+                if let Some(helper) = &mut self.mini_helper {
+                    helper.ready = true;
+                }
+                self.main_steps_aside();
+            }
+            MiniEvent::Command(MiniCommand::TogglePlay) => self.toggle_play(),
+            MiniEvent::Command(MiniCommand::Next) => self.next(),
+            MiniEvent::Command(MiniCommand::Previous) => self.previous(),
+            MiniEvent::Command(MiniCommand::Close) => self.handle(Action::CloseMini),
+            MiniEvent::Exited => {
+                let was_ready = self.mini_helper.take().is_some_and(|h| h.ready);
+                if was_ready {
+                    self.handle(Action::CloseMini);
+                } else {
+                    // It never got a window up (no XWayland?): use the in-process mini player.
+                    tracing::warn!("the mini player helper exited early; using an in-process window");
+                    self.mini_helper_failed = true;
+                    self.open_mini();
+                }
+            }
+        }
+    }
+
+    fn sync_mini_helper(&mut self) {
+        if self.mini_helper.is_none() {
+            return;
+        }
+        let state = self.mini_state();
+        if let Some(helper) = &mut self.mini_helper {
+            helper.send(&state);
+        }
+    }
+
+    fn mini_state(&self) -> MiniState {
+        let index = self.library.index();
+        let accent = if self.settings.dynamic_accent {
+            self.current.as_ref().and_then(|t| index.album(t.album_id)).and_then(|a| a.accent)
+        } else {
+            None
+        };
+        let mut state = MiniState { dark: self.is_dark(), accent: accent.unwrap_or(DEFAULT_ACCENT), ..MiniState::default() };
+        if let Some(t) = &self.current {
+            let (pos, dur) = (self.position_ms, self.duration_ms);
+            state.has_track = true;
+            state.title = t.title.clone();
+            state.artist = t.display_artist().to_string();
+            state.format = short_format(&t.format);
+            state.position = format_duration_ms(pos);
+            state.duration = format_duration_ms(dur);
+            state.progress = if dur > 0 { pos as f32 / dur as f32 } else { 0.0 };
+            state.playing = self.status == PlaybackStatus::Playing;
+            state.cover = t.artwork.as_deref().map(|k| self.library.artwork_large(k));
+            state.seed = seed_color(&t.album).as_argb_encoded();
+        }
+        state
     }
 
     // ---------------------------------------------------------------------------------------
@@ -2531,6 +2785,50 @@ impl App {
                     self.refresh_library_views();
                 }
             }
+            "edit-album" => {
+                if let Some(id) = find_album(self, arg) {
+                    let handle = self.handles.borrow_mut().get(id);
+                    self.handle(Action::AlbumAction("edit-tags".into(), handle));
+                }
+            }
+            "editor-select" => {
+                for (n, i) in arg.split(',').filter_map(|s| s.trim().parse::<i32>().ok()).enumerate() {
+                    self.handle(Action::Editor(EditorAction::Select(i, n > 0, false)));
+                }
+            }
+            "editor-tab" => {
+                if let Some(ui) = self.ui.upgrade() {
+                    ui.global::<crate::Editor>().set_tab(arg.into());
+                }
+            }
+            "editor-field" => {
+                if let Some((id, value)) = arg.split_once('=') {
+                    self.handle(Action::Editor(EditorAction::SetField(id.into(), value.into())));
+                }
+            }
+            "editor-more" => {
+                if let Some(ui) = self.ui.upgrade() {
+                    ui.global::<crate::Editor>().set_more_fields(true);
+                }
+            }
+            "editor-scanner" => self.handle(Action::Editor(EditorAction::OpenScanner(arg.parse().unwrap_or(0)))),
+            "editor-mask" => {
+                if let Some(ui) = self.ui.upgrade() {
+                    let e = ui.global::<crate::Editor>();
+                    if e.get_scanner_mode() == 1 { e.set_rename_mask(arg.into()) } else { e.set_fill_mask(arg.into()) }
+                }
+                self.handle(Action::Editor(EditorAction::ScannerChanged));
+            }
+            "editor-lookup" => self.handle(Action::Editor(EditorAction::LookupStart)),
+            "editor-lookup-apply" => self.handle(Action::Editor(EditorAction::LookupApply)),
+            "editor-open" => {
+                self.editor.open(vec![PathBuf::from(arg)], false, Vec::new(), None);
+                self.show_page(Page::Editor, true);
+            }
+            "editor-save" => self.handle(Action::Editor(EditorAction::Save)),
+            "editor-quit" => {
+                self.request_close();
+            }
             _ => tracing::warn!("unknown scene step {step}"),
         }
     }
@@ -2541,6 +2839,7 @@ impl App {
         self.settings.right_tab =
             self.ui.upgrade().map(|ui| ui.global::<AppState>().get_right_tab().to_string()).unwrap_or_else(|| "queue".into());
         self.settings.save(&self.paths.config_file);
+        self.mini_helper = None;
         self.engine.stop();
     }
 }
@@ -2581,6 +2880,7 @@ fn icon_by_name(icons: &Icons, name: &str) -> Image {
         "folder-plus" => icons.get_folder_plus(),
         "refresh" => icons.get_refresh(),
         "scrobble" => icons.get_scrobble(),
+        "edit" => icons.get_edit(),
         _ => icons.get_info(),
     }
 }

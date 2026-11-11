@@ -16,6 +16,7 @@ required attribution in Settings → About. Everything below targets **Linux (Wa
 | Resampling | **rubato** | High-quality conversion when the device rate differs from the file's rate |
 | Engine | Our own small engine: decode thread → DSP → **rtrb** ring buffer → cpal callback | Needed for gapless playback, sample-accurate position, DSP and visualizer taps, and device switching |
 | Tags and embedded art | **lofty 0.25** | Reads and writes ID3v1/v2, Vorbis comments, MP4 atoms, APE and RIFF INFO; also pictures and audio properties |
+| Online metadata | **MusicBrainz** ws/2, **Cover Art Archive**, **LRCLIB** over **ureq** | Free, open services. MusicBrainz data is CC0; one request per second; no API key needed |
 | Library database | **SQLite** via **rusqlite** (`bundled`, FTS5) | Embedded, fast, full-text search, single file |
 | Scanning and watching | **walkdir / jwalk + rayon**, **notify** (+ debouncer) | Parallel tag reading; live updates when files change |
 | Fuzzy search | **nucleo** | The matcher used by the Helix editor; powers Ctrl+K |
@@ -117,7 +118,8 @@ Supporting crates: **rubato** (resampling), **rtrb** (lock-free single-producer 
 
 ## 3. Metadata, artwork and color
 
-- **lofty 0.25**: one API for tags and audio properties across MP3, FLAC, WAV, MP4, Ogg, APE, AIFF and others. It reads and writes, which a future tag editor needs. Symphonia's metadata reader is the fallback for anything lofty can't handle.
+- **lofty 0.25**: one API for tags and audio properties across MP3, FLAC, WAV, MP4, Ogg, APE, AIFF and others. It reads and writes; the tag editor (`lychee-tagger`) writes ID3v2 and MP4 through lofty's `SplitTag`/`MergeTag` so unsupported frames survive. Symphonia's metadata reader is the fallback for anything lofty can't handle.
+- **Online lookup** (`lychee-lookup`): MusicBrainz release search and lookups (`inc=recordings+artist-credits+labels+release-groups+genres+isrcs`), front covers from the Cover Art Archive (`/release/{id}/front-1200`, then the release group), and lyrics from LRCLIB (`/api/get` with the duration, then `/api/search`). Requests identify Lychee with a User-Agent that includes the project URL, and MusicBrainz calls are spaced at least 1.1 s apart.
 - **Artwork lookup order:** embedded picture, then a folder image (`cover`, `folder`, `front`, `album` in `.jpg/.png/.webp`), then a **generated placeholder** (the procedural covers in these mockups, ported to Rust and seeded by album name).
 - **Cache:** thumbnails at 64/128/256/512 px plus a pre-blurred backdrop per album, stored in the cache dir. Uses **image** and **fast_image_resize**.
 - **Accent color:** extracted once at scan time from a 64×64 thumbnail and stored in the DB, so theming costs nothing at runtime. Either a small in-house k-means/median-cut with WCAG contrast rules, or **material-colors** (a port of Google's material-color-utilities; it currently needs Rust 1.97).
@@ -164,6 +166,9 @@ Avoid **souvlaki**, the usual cross-platform media-controls crate. It has been u
 - Opus: <https://lib.rs/crates/opus-decoder>, <https://lib.rs/crates/symphonia-adapter-libopus>
 - cpal releases: <https://github.com/rustaudio/cpal/releases>. rodio changelog: <https://github.com/RustAudio/rodio/blob/master/CHANGELOG.md>
 - lofty: <https://github.com/Serial-ATA/lofty-rs>
+- MusicBrainz API and rate limiting: <https://musicbrainz.org/doc/MusicBrainz_API>, <https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting>.
+  Cover Art Archive: <https://musicbrainz.org/doc/Cover_Art_Archive/API>. LRCLIB: <https://lrclib.net/docs>
+- EasyTAG (the model for the tag editor): <https://wiki.gnome.org/Apps/EasyTAG>
 - Media controls: <https://github.com/SFG5453/playwire>, <https://github.com/esoltys/luminous/issues/576>, <https://crates.io/crates/mpris-server>, <https://github.com/SeaDve/mpris-server/issues/20>
 - material-colors: <https://github.com/Aiving/material-colors>
 
@@ -174,6 +179,6 @@ Avoid **souvlaki**, the usual cross-platform media-controls crate. It has been u
   core while playing, so a libopus option is planned.
 - `cpal 0.18`, `rubato 5` (FFT resampler), `rtrb 0.4`
 - `lofty 0.25`, `rusqlite 0.41` (bundled SQLite), `image 0.25`, `nucleo-matcher 0.3`, `walkdir`, `rayon`
-- `ureq 3` (rustls) + `md-5` for Last.fm
+- `ureq 3` (rustls) + `md-5` for Last.fm; `ureq` again for MusicBrainz, the Cover Art Archive and LRCLIB
 - `mpris-server 0.11` (zbus 6) on Linux, `windows 0.62` (SMTC) on Windows. souvlaki was avoided as planned.
 - `rfd` (folder picker via XDG portals), `open`, `directories`, `toml`, `tracing`

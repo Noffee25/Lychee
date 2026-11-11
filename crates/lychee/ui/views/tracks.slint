@@ -185,6 +185,10 @@ export component TrackRowView inherits Rectangle {
                 title: "Show in folder";
                 activated => { Actions.track-action("show-folder", root.track.id); }
             }
+            MenuItem {
+                title: "Edit tags…";
+                activated => { Actions.track-action("edit-tags", root.track.id); }
+            }
             if root.in-playlist: MenuItem {
                 title: "Remove from this playlist";
                 activated => { Actions.track-action("remove-from-playlist", root.track.index); }

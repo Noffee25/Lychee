@@ -1,0 +1,15 @@
+[package]
+name = "lychee-lookup"
+description = "Online metadata for Lychee's tag editor: MusicBrainz, Cover Art Archive and LRCLIB"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ureq = "3"
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

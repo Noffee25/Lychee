@@ -2,6 +2,7 @@ import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
 import { AppState, Actions } from "../state.slint";
 import { NavItem, IconButton, Divider, TextField } from "../widgets.slint";
+import { Editor } from "../editor-state.slint";
 import { ScrollView } from "std-widgets.slint";
 
 component GroupLabel inherits Rectangle {
@@ -152,6 +153,13 @@ export component Sidebar inherits Rectangle {
             icon: Icons.tag;
             active: AppState.page == "genres" || AppState.page == "genre";
             clicked => { Actions.navigate("genres"); }
+        }
+        NavItem {
+            label: "Tag Editor";
+            icon: Icons.edit;
+            count: Editor.modified-count > 0 ? Editor.modified-count + " unsaved" : "";
+            active: AppState.page == "editor";
+            clicked => { Actions.navigate("editor"); }
         }
         GroupLabel {
             text: "Playlists";

@@ -6,7 +6,8 @@
 
 ![Lychee: album page](docs/screenshots/album.jpg)
 
-> **Status: v0.1 (early).** Playback, the library, the Flow interface and Last.fm scrobbling work.
+> **Status: v0.1 (early).** Playback, the library, the Flow interface, Last.fm scrobbling and the tag
+> editor with online lookups work.
 > See [`docs/features.md`](docs/features.md) for what is done and what comes next.
 
 ## Features
@@ -19,7 +20,16 @@
 - **Synced lyrics** from `.lrc` files next to your music or embedded in the file. Click a line to jump to it.
 - **Queue and playlists.** Play next, add to queue, reorder, Favorites, and playlists you can create, rename and delete.
 - **Last.fm scrobbling.** Sign in through the browser, send "now playing" updates, scrobble with an offline queue, and optionally love tracks you favorite. A status icon sits in the bottom-right corner.
-- **Mini player (Ctrl+M).** A compact, always-on-top bar.
+- **Tag editor, modelled on EasyTAG.** Edit many files at once (mixed values show as "Multiple values"),
+  number tracks, edit artwork and lyrics, and undo anything. Its scanner fills tags from file names
+  (`%n - %t`), renames files from tags and cleans up text (Title Case, underscores, spaces). Changes are
+  kept as pending until you save, and frames the editor doesn't know (Serato, private ID3 frames) survive.
+- **Online lookup.** Lychee works out which album a folder holds from its tags or folder name ("Artist -
+  Album (1998)"), finds it on MusicBrainz and matches each file to its track by duration and title. It
+  then fills in what's missing (or replaces everything), plus the cover from the Cover Art Archive and
+  synced lyrics from LRCLIB.
+- **Mini player (Ctrl+M).** A compact bar that stays on top. On Wayland, which has no "always on top",
+  it runs through XWayland so it can.
 - **Desktop integration.** MPRIS on Linux (media keys, GNOME/KDE media controls, `playerctl`) and System Media Transport Controls on Windows. Drag and drop files to play them, or pass them on the command line.
 - **Remembers where you were.** On restart, Lychee restores your queue, the track you were on and its position.
 
@@ -28,6 +38,8 @@
 | ![Albums](docs/screenshots/albums.jpg) | ![Songs and synced lyrics](docs/screenshots/lyrics.jpg) |
 | **Command palette** | **Light theme** |
 | ![Command palette](docs/screenshots/palette.jpg) | ![Light theme](docs/screenshots/light.jpg) |
+| **Tag editor** | **Online lookup** |
+| ![Tag editor](docs/screenshots/editor.jpg) | ![Online lookup](docs/screenshots/editor-lookup.jpg) |
 
 Mini player: ![Mini player](docs/screenshots/mini.png)
 
@@ -83,6 +95,8 @@ Then click **Connect**, approve Lychee in the browser page that opens, and you'r
 | Toggle the side panel | `Ctrl Q` |
 | Settings | `Ctrl ,` |
 | Back / close | `Esc` |
+| Tag editor: save / undo / redo | `Ctrl S` / `Ctrl Z` / `Ctrl Shift Z` |
+| Tag editor: select all files | `Ctrl A` |
 
 ## Where Lychee keeps things
 
@@ -93,7 +107,7 @@ Then click **Connect**, approve Lychee in the browser page that opens, and you'r
 | Artwork cache | `~/.cache/lychee/` | `%LOCALAPPDATA%\Lychee\cache\` |
 
 Set `LYCHEE_HOME=/some/folder` to keep everything in one place (portable installs, testing).
-Lychee never modifies your music files.
+Lychee only changes your music files when you save in the tag editor.
 
 ## Project layout
 
@@ -104,6 +118,8 @@ crates/
   lychee-library   scanning, tags (lofty), artwork + colors, SQLite store, fuzzy search, lyrics
   lychee-lastfm    Last.fm auth, now playing, scrobbling with an offline queue
   lychee-platform  MPRIS (Linux) and System Media Transport Controls (Windows)
+  lychee-tagger    tag editor engine: lossless tag writing, EasyTAG masks, text clean-up, undo
+  lychee-lookup    MusicBrainz, Cover Art Archive and LRCLIB clients, album detection and matching
   lychee           the app: Slint UI (ui/), controller, settings, mini player
 design/            interactive design prototypes (the app implements direction D, "Flow")
 docs/              features, architecture and technology notes
@@ -113,8 +129,10 @@ The design is documented in [`docs/architecture.md`](docs/architecture.md). Ever
 action handled by one controller, and each subsystem sits behind its own crate so it can be extended or
 replaced.
 
-**Developer tip:** `LYCHEE_SCREENSHOT=out.png LYCHEE_SCREENSHOT_SCENE="page:songs" cargo run` renders the
+**Developer tips:** `LYCHEE_SCREENSHOT=out.png LYCHEE_SCREENSHOT_SCENE="page:songs" cargo run` renders the
 UI headlessly to a PNG (see `crates/lychee/src/screenshot.rs`).
+`cargo run -p lychee-tagger --example tag -- FILE title=Hi` prints or edits a file's tags, and
+`cargo run -p lychee-lookup --example lookup -- "Artist" "Album"` tries a live lookup.
 
 ## License
 
@@ -127,3 +145,6 @@ Lychee is licensed under the [Apache License 2.0](LICENSE).
 - Bundled fonts: [Geist and Geist Mono](https://github.com/vercel/geist-font), SIL Open Font License 1.1 (`crates/lychee/ui/fonts/OFL.txt`).
 - Icons are Feather-style outlines drawn for Lychee.
 - Notable dependencies: Symphonia (MPL-2.0), cpal, rubato, lofty, rusqlite, opus-decoder, mpris-server (MPL-2.0), nucleo-matcher (MPL-2.0).
+- Online data comes from [MusicBrainz](https://musicbrainz.org) (CC0), the
+  [Cover Art Archive](https://coverartarchive.org) and [LRCLIB](https://lrclib.net). Lookups only run when you ask
+  for them, and Lychee respects MusicBrainz's limit of one request per second.

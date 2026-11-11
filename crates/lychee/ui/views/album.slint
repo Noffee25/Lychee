@@ -132,6 +132,12 @@ export component AlbumPage inherits Rectangle {
                     tooltip: "Show in folder";
                     clicked => { Actions.album-action("show-folder", AppState.album.id); }
                 }
+                IconButton {
+                    icon: Icons.edit;
+                    size: 40px;
+                    tooltip: "Edit tags, artwork and lyrics";
+                    clicked => { Actions.album-action("edit-tags", AppState.album.id); }
+                }
             }
             VerticalLayout {
                 padding-left: Grid.side-padding - 4px;

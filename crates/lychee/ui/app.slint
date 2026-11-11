@@ -21,9 +21,11 @@ import { ListPage } from "views/tracks.slint";
 import { ArtistsPage, ArtistPage, GenresPage } from "views/browse.slint";
 import { SettingsPage } from "views/settings.slint";
 import { CommandPalette, Welcome, Toast } from "views/overlays.slint";
+import { EditorPage, ScannerDialog, LookupDialog, QuitPrompt } from "views/editor.slint";
+import { Editor } from "editor-state.slint";
 import { MiniWindow } from "mini.slint";
 
-export { AppState, Player, Actions, Theme, Icons, MiniWindow }
+export { AppState, Player, Actions, Theme, Icons, MiniWindow, Editor }
 
 component Toolbar inherits Rectangle {
     height: 52px;
@@ -76,6 +78,13 @@ export component AppWindow inherits Window {
     forward-focus: keys;
 
     property <bool> dark: Theme.dark;
+    // Give the keyboard back to the shortcuts when an editor dialog closes.
+    property <bool> editor-dialog: Editor.scanner-open || Editor.lookup-open || Editor.quit-prompt;
+    changed editor-dialog => {
+        if (!self.editor-dialog) {
+            keys.focus();
+        }
+    }
     changed dark => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
     init => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
 
@@ -136,6 +145,46 @@ export component AppWindow inherits Window {
             keys: @keys(Escape);
             activated => { Actions.go-back(); }
         }
+        KeyBinding {
+            keys: @keys(Control + S);
+            activated => {
+                if (AppState.page == "editor") {
+                    Editor.save();
+                }
+            }
+        }
+        KeyBinding {
+            keys: @keys(Control + Z);
+            activated => {
+                if (AppState.page == "editor") {
+                    Editor.undo();
+                }
+            }
+        }
+        KeyBinding {
+            keys: @keys(Control + Shift + Z);
+            activated => {
+                if (AppState.page == "editor") {
+                    Editor.redo();
+                }
+            }
+        }
+        KeyBinding {
+            keys: @keys(Control + Y);
+            activated => {
+                if (AppState.page == "editor") {
+                    Editor.redo();
+                }
+            }
+        }
+        KeyBinding {
+            keys: @keys(Control + A);
+            activated => {
+                if (AppState.page == "editor") {
+                    Editor.select-all();
+                }
+            }
+        }
 
         VerticalLayout {
             HorizontalLayout {
@@ -151,13 +200,14 @@ export component AppWindow inherits Window {
                     if AppState.page == "artist": ArtistPage { }
                     if AppState.page == "genres": GenresPage { }
                     if AppState.page == "settings": SettingsPage { }
-                    if AppState.library-empty && AppState.page != "settings": Welcome { }
+                    if AppState.page == "editor": EditorPage { }
+                    if AppState.library-empty && AppState.page != "settings" && AppState.page != "editor": Welcome { }
                     Toolbar {
                         y: 0px;
                         width: parent.width;
                     }
                 }
-                if AppState.right-panel: RightPanel { }
+                if AppState.right-panel && AppState.page != "editor": RightPanel { }
             }
             PlayerBar { }
         }
@@ -166,6 +216,21 @@ export component AppWindow inherits Window {
             x: (parent.width - self.width) / 2;
             y: parent.height - 84px - self.height - 18px;
             text: AppState.toast;
+        }
+
+        if Editor.scanner-open: ScannerDialog {
+            width: parent.width;
+            height: parent.height;
+        }
+
+        if Editor.lookup-open: LookupDialog {
+            width: parent.width;
+            height: parent.height;
+        }
+
+        if Editor.quit-prompt: QuitPrompt {
+            width: parent.width;
+            height: parent.height;
         }
 
         if AppState.palette-open: CommandPalette {

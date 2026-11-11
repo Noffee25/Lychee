@@ -108,7 +108,7 @@ export component SettingsPage inherits Rectangle {
 
                     Section {
                         title: "Library";
-                        description: "Lychee indexes these folders and keeps watching for changes when you rescan. Your files are never modified.";
+                        description: "Lychee indexes these folders and picks up changes when you rescan. It only changes your files when you save in the tag editor.";
                         for folder in AppState.folders: Rectangle {
                             height: 40px;
                             border-radius: 8px;
@@ -338,6 +338,17 @@ export component SettingsPage inherits Rectangle {
                                 toggled(on) => { Actions.set-dynamic-accent(on); }
                             }
                         }
+                        Divider { }
+                        SettingRow {
+                            label: "Keep the mini player on top";
+                            hint: AppState.wayland
+                                ? "Wayland doesn't let apps stay above other windows, so Lychee runs the mini player through XWayland. Turn this off for a native (but not on-top) window."
+                                : "The mini player stays above other windows.";
+                            Toggle {
+                                checked: AppState.mini-on-top;
+                                toggled(on) => { Actions.set-mini-on-top(on); }
+                            }
+                        }
                     }
 
                     Section {
@@ -351,11 +362,13 @@ export component SettingsPage inherits Rectangle {
                         ShortcutRow { action: "Toggle the queue panel"; keys: "Ctrl Q"; }
                         ShortcutRow { action: "Settings"; keys: "Ctrl ,"; }
                         ShortcutRow { action: "Back / close"; keys: "Esc"; }
+                        ShortcutRow { action: "Tag editor: save / undo / redo"; keys: "Ctrl S / Ctrl Z / Ctrl Shift Z"; }
+                        ShortcutRow { action: "Tag editor: select all files"; keys: "Ctrl A"; }
                     }
 
                     Section {
                         title: "About";
-                        description: "Lychee is free software licensed under the Apache License 2.0. Fonts: Geist and Geist Mono (SIL Open Font License 1.1). Decoding by Symphonia, tags by Lofty.";
+                        description: "Lychee is free software licensed under the Apache License 2.0. Fonts: Geist and Geist Mono (SIL Open Font License 1.1). Decoding by Symphonia, tags by Lofty. Online lookups use MusicBrainz, the Cover Art Archive and LRCLIB.";
                         HorizontalLayout {
                             cross-axis-alignment: center;
                             spacing: 10px;

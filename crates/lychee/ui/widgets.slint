@@ -48,7 +48,7 @@ export component IconButton inherits Rectangle {
         mouse-cursor: pointer;
         clicked => { root.clicked(); }
     }
-    Tooltip {
+    if root.tooltip != "": Tooltip {
         Bubble { text: root.tooltip; }
     }
 }

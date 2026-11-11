@@ -23,6 +23,7 @@ pub enum Command {
     AddFolder,
     Rescan,
     Lastfm,
+    TagEditor,
 }
 
 pub struct CommandInfo {
@@ -52,6 +53,7 @@ pub const COMMANDS: &[CommandInfo] = &[
     CommandInfo { command: Command::AddFolder, title: "Add music folder…", subtitle: "Library", hint: "", icon: "folder-plus" },
     CommandInfo { command: Command::Rescan, title: "Rescan library", subtitle: "Pick up new and changed files", hint: "", icon: "refresh" },
     CommandInfo { command: Command::Lastfm, title: "Connect Last.fm", subtitle: "Scrobbling", hint: "", icon: "scrobble" },
+    CommandInfo { command: Command::TagEditor, title: "Open the tag editor", subtitle: "Edit tags, artwork and lyrics; look albums up online", hint: "", icon: "edit" },
 ];
 
 #[derive(Clone, Debug, PartialEq)]

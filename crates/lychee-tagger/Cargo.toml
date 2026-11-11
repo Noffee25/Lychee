@@ -1,0 +1,15 @@
+[package]
+name = "lychee-tagger"
+description = "Tag reading and writing, file-name masks and text clean-up for Lychee's tag editor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+lofty = "0.25"
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

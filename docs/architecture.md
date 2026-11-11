@@ -27,12 +27,17 @@ crates/
 ├─ lychee-lastfm     Last.fm client (auth, now playing, scrobble, love) and a background Scrobbler
 │                    with a persistent offline queue
 ├─ lychee-platform   MediaControls: MPRIS (mpris-server) on Linux, SMTC (windows crate) on Windows
-└─ lychee            The app: Slint UI (ui/*.slint), controller, settings, image cache, mini player
+├─ lychee-tagger     Tag editor engine: read/write with lofty (lossless split/merge), EasyTAG masks,
+│                    text clean-up, a Session with pending changes, multi-selection and undo
+├─ lychee-lookup     MusicBrainz (rate-limited), Cover Art Archive and LRCLIB clients; album
+│                    detection from tags and folder names; candidate scoring and track matching
+└─ lychee            The app: Slint UI (ui/*.slint), controller, settings, image cache, mini player,
+                     tag editor page (editor.rs)
 ```
 
 Only `lychee` depends on Slint, and only `lychee-platform` has OS-specific code. Everything else is plain,
-testable Rust: `cargo test --workspace` runs 34 tests, including an end-to-end scan of a temporary
-music folder.
+testable Rust: `cargo test --workspace` runs 73 tests. They include an end-to-end scan of a temporary
+music folder and tag round trips through seven container formats.
 
 ## Runtime
 
@@ -57,6 +62,41 @@ music folder.
 - **Album handles.** Album ids are 63-bit hashes and Slint ints are 32-bit, so the UI uses session-local
   handles that map back to ids.
 
+## Tag editor
+
+`EditorCtl` (`crates/lychee/src/editor.rs`) owns a `lychee_tagger::Session` and mirrors it into the
+`Editor` global. Reading and saving run on worker threads, and so do lookups. Their results come back
+through a channel polled on the tick, and they refer to files by path because indices change when files
+are added or closed. Edits live in memory until saved:
+
+```
+ select / type ─► Session::set_field (one undo step per field while typing)
+ Scanner ───────► Session::fill_from_names / rename_from_tags / cleanup
+ Look up ───────► matching::guess ─► find_candidates (MusicBrainz) ─► Session::apply
+                   └─► Cover Art Archive / LRCLIB downloads ─► Session::set_pictures / apply
+ Save ──────────► SaveJob::run (write tags, then rename) ─► Library::refresh_files ─► views refresh
+```
+
+- **Lossless writing.** lofty's generic `Tag` can't hold every ID3v2 frame or MP4 atom, so MP3, WAV, AIFF,
+  AAC and MP4 files are edited through `SplitTag`/`MergeTag`. The editor changes the part it understands
+  and the rest goes back untouched. The main tag is made to match the editor exactly; secondary tags
+  (ID3v1, APE) only receive the fields that changed.
+- **Library identity.** `Library::refresh_files` moves the database row to the new path before re-reading
+  the tags, so track ids (and with them likes, play counts and playlists) survive renames.
+- **Inputs.** Text inputs are filled from Rust only when `Editor.generation` changes (selection, undo, a
+  tool), never while the user types, so model updates can't fight with the cursor.
+
+## Mini player
+
+On X11 and Windows the mini player is a second Slint window. Wayland has no way for an app to stay above
+other windows, so on a Wayland session Lychee starts itself again as `lychee --mini-player`. That helper
+forces winit's X11 backend (XWayland), where the window manager honours "keep above". The parent sends
+the player state as JSON lines on the helper's stdin and gets button presses back as words on its stdout.
+When the parent goes away, the helper's stdin closes and it quits. If XWayland isn't there, the app falls
+back to the in-process window. Two Wayland limits shape the rest: a minimised window can't be restored
+by the app, and an app can't focus itself. So the main window is hidden rather than minimised while the
+mini player is open, and showing it again maps a fresh window.
+
 ## Extension points
 
 | To add… | Implement / touch |
@@ -65,7 +105,9 @@ music folder.
 | A DSP stage (ReplayGain, EQ, crossfade) | the decode → push path in `engine.rs::fill` (before the ring buffer) |
 | A library source (Subsonic, Jellyfin) | a sibling of `Library` producing `Track`s; the index and UI are source-agnostic |
 | A scrobbler (ListenBrainz) | a sibling of `lychee-lastfm::Scrobbler`; the controller already tracks listens (`lastfm.rs::Listen`) |
-| A lyrics or artwork provider | `lychee-library::lyrics::load` / `ArtIngest` |
+| A lyrics or artwork provider | `lychee-library::lyrics::load` / `ArtIngest`; online ones in `lychee-lookup` |
+| A metadata source (Discogs, AcoustID) | a sibling of `musicbrainz.rs` producing `Release`s; `matching` scores any source |
+| A tag editor tool | a `Session` method (one undo step through `Session::edit`) and a scanner mode |
 | OS integration (macOS Now Playing) | a backend in `lychee-platform` |
 | A new page or panel | a `.slint` view, a `Page` variant and a `refresh_page` arm |
 | A command | `palette::Command` + `App::run_command` (it then appears in Ctrl+K) |
@@ -96,5 +138,10 @@ cover's most vivid colour; the tint is its dominant one. Both are computed once 
 - **Library:** schema, upserts that keep user data, playlists, LRC parsing, accent/tint, fuzzy ranking,
   and an end-to-end scan of a generated folder.
 - **Last.fm:** request signatures and error classification.
+- **Tagger:** masks, renaming, case rules, undo, and round trips through FLAC, MP3, Ogg Vorbis, Opus, M4A,
+  WAV and AIFF fixtures (every field, pictures, clearing). Also checks that a private ID3 frame survives
+  an edit and that a save renames the file and moves its `.lrc`. `examples/tag.rs` prints or edits a file.
+- **Lookup:** MusicBrainz JSON parsing, folder-name guesses, duration/title matching and scoring, LRCLIB
+  hit selection (offline fixtures). `examples/lookup.rs` runs a live search.
 - **Platform:** `examples/mpris_check.rs` registers the MPRIS service for a quick check with `playerctl`.
 - **UI:** headless screenshots (`LYCHEE_SCREENSHOT`, see `crates/lychee/src/screenshot.rs`).

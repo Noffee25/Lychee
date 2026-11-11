@@ -78,3 +78,48 @@ fn scans_rescans_and_keeps_user_data() {
     assert!(index.track(ids[0]).is_some());
     assert_eq!(index.stats().tracks, 1);
 }
+
+#[test]
+fn edited_and_renamed_files_keep_their_identity() {
+    use lofty::config::WriteOptions;
+    use lofty::file::TaggedFileExt;
+    use lofty::prelude::{Accessor, TagExt};
+    use lofty::tag::Tag;
+
+    let root = tempfile::tempdir().unwrap();
+    let music = root.path().join("Music");
+    let album = music.join("Album");
+    std::fs::create_dir_all(&album).unwrap();
+    let old = album.join("track.wav");
+    write_wav(&old, 0.3);
+
+    let lib = Library::open(&root.path().join("data"), &root.path().join("cache")).unwrap();
+    lib.add_folder(&music).unwrap();
+    lib.scan(&|_| {}).unwrap();
+    let id = lib.index().tracks(lychee_library::TrackSort::Title).first().map(|t| t.id).unwrap();
+    lib.set_liked(id, true).unwrap();
+
+    // What the tag editor does: write tags, then rename.
+    let tagged = lofty::read_from_path(&old).unwrap();
+    let mut tag = Tag::new(tagged.primary_tag_type());
+    tag.set_title("New Title".into());
+    tag.set_artist("Someone".into());
+    tag.save_to_path(&old, WriteOptions::default()).unwrap();
+    let new = album.join("01 - New Title.wav");
+    std::fs::rename(&old, &new).unwrap();
+
+    assert_eq!(lib.refresh_files(&[(old.clone(), new.clone())]).unwrap(), 1);
+    let index = lib.index();
+    let t = index.track(id).expect("same id after the rename");
+    assert_eq!(t.title, "New Title");
+    assert_eq!(t.artist, "Someone");
+    assert_eq!(t.path, new);
+    assert!(t.liked, "likes survive");
+    assert_eq!(index.stats().tracks, 1);
+    drop(index);
+
+    // A rescan sees nothing new: the stored file stamps are current.
+    assert_eq!(lib.scan(&|_| {}).unwrap().added_or_updated, 0);
+    // Files outside the library are ignored.
+    assert_eq!(lib.refresh_files(&[(root.path().join("x.wav"), root.path().join("y.wav"))]).unwrap(), 0);
+}

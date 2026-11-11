@@ -17,6 +17,8 @@ lychee-audio = { path = "crates/lychee-audio" }
 lychee-library = { path = "crates/lychee-library" }
 lychee-lastfm = { path = "crates/lychee-lastfm" }
 lychee-platform = { path = "crates/lychee-platform" }
+lychee-tagger = { path = "crates/lychee-tagger" }
+lychee-lookup = { path = "crates/lychee-lookup" }
 
 anyhow = "1"
 thiserror = "2"

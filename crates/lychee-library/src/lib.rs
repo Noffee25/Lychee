@@ -18,7 +18,7 @@ use parking_lot::{Mutex, RwLock};
 use rayon::prelude::*;
 use walkdir::WalkDir;
 
-pub use artwork::{ArtworkCache, Colors, LARGE, THUMB};
+pub use artwork::{ArtworkCache, Colors, LARGE, THUMB, folder_image};
 pub use db::TrackRecord;
 pub use index::{AlbumSort, LibraryIndex, SearchResults, Stats, TrackSort, sort_key};
 
@@ -236,6 +236,53 @@ impl Library {
             self.reload()?;
         }
         Ok(ids.into_iter().flatten().collect())
+    }
+
+    /// Re-read files whose tags changed outside a scan (the tag editor), following renames.
+    /// Each pair is (old path, new path). Track ids, likes, play counts and playlists stay.
+    /// Files the library doesn't know are left alone.
+    pub fn refresh_files(&self, files: &[(PathBuf, PathBuf)]) -> anyhow::Result<usize> {
+        let mut known = Vec::new();
+        {
+            let db = self.db.lock();
+            for (old, new) in files {
+                if old != new {
+                    if let Err(e) = db.rename_path(old, new) {
+                        tracing::warn!("could not move {} in the library: {e}", old.display());
+                    }
+                }
+                if db.track_id_for_path(new)?.is_some() {
+                    known.push(new.clone());
+                }
+            }
+        }
+        if known.is_empty() {
+            return Ok(0);
+        }
+        let art = ArtIngest::new(&self.artwork);
+        let mut records = Vec::with_capacity(known.len());
+        for path in &known {
+            match tags::read(path) {
+                Ok(meta) => {
+                    let mut record = meta.record;
+                    record.artwork = match meta.picture {
+                        Some(bytes) => art.ingest(&bytes),
+                        None => path.parent().and_then(|dir| art.folder(dir)),
+                    };
+                    records.push(record);
+                }
+                Err(e) => tracing::warn!("could not re-read {}: {e}", path.display()),
+            }
+        }
+        {
+            let mut db = self.db.lock();
+            db.upsert_tracks(&records, false)?;
+            for (key, colors) in art.into_new() {
+                db.put_artwork(&key, colors)?;
+            }
+        }
+        self.reload()?;
+        Ok(records.len())
     }
 
     // ---- user data -----------------------------------------------------------------------

@@ -262,6 +262,15 @@ impl Db {
         rows.collect()
     }
 
+    /// A file moved: keep its row (and so its id, likes and plays) under the new path.
+    pub fn rename_path(&self, old: &Path, new: &Path) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE tracks SET path = ?2 WHERE path = ?1",
+            params![old.to_string_lossy(), new.to_string_lossy()],
+        )?;
+        Ok(())
+    }
+
     pub fn track_id_for_path(&self, path: &Path) -> rusqlite::Result<Option<TrackId>> {
         self.conn
             .query_row("SELECT id FROM tracks WHERE path = ?1", params![path.to_string_lossy()], |r| r.get(0))

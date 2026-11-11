@@ -16,14 +16,22 @@ export component MiniWindow inherits Window {
     default-font-size: 13.5px;
     property <bool> hovered: drag-ta.has-hover;
 
-    // Drag anywhere on the background to move the window.
+    // Drag the background to move the window. The move starts only once the pointer has
+    // travelled a few pixels, so a plain click never hands the pointer to the window manager.
     drag-ta := TouchArea {
+        property <bool> dragging;
         pointer-event(e) => {
-            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+            if (e.kind == PointerEventKind.down) {
+                self.dragging = false;
+            }
+        }
+        moved => {
+            if (!self.dragging && self.pressed
+                && (Math.abs(self.mouse-x - self.pressed-x) > 3px || Math.abs(self.mouse-y - self.pressed-y) > 3px)) {
+                self.dragging = true;
                 Actions.start-window-drag();
             }
         }
-        double-clicked => { Actions.close-mini(); }
     }
     Rectangle {
         border-width: 1px;
@@ -75,7 +83,6 @@ export component MiniWindow inherits Window {
             IconButton {
                 icon: Icons.prev;
                 icon-size: 17px;
-                tooltip: "Previous";
                 clicked => { Actions.previous(); }
             }
             Rectangle {
@@ -97,7 +104,6 @@ export component MiniWindow inherits Window {
             IconButton {
                 icon: Icons.next;
                 icon-size: 17px;
-                tooltip: "Next";
                 clicked => { Actions.next(); }
             }
         }
@@ -116,15 +122,14 @@ export component MiniWindow inherits Window {
             icon: Icons.expand;
             size: 22px;
             icon-size: 12px;
-            tooltip: "Open Lychee";
-            clicked => { Actions.raise-main(); }
+            // Back to the full window: the mini player closes, like the helper process does.
+            clicked => { Actions.close-mini(); }
         }
         close := IconButton {
             property <bool> has-hover: self.background != transparent;
             icon: Icons.x;
             size: 22px;
             icon-size: 13px;
-            tooltip: "Close mini player";
             clicked => { Actions.close-mini(); }
         }
     }

@@ -91,6 +91,8 @@ pub struct Settings {
     pub right_tab: String,
     pub album_sort: i32,
     pub track_sort: i32,
+    /// Keep the mini player above other windows (on Wayland this runs it on XWayland).
+    pub mini_on_top: bool,
     pub lastfm: LastfmSettings,
 }
 
@@ -108,6 +110,7 @@ impl Default for Settings {
             right_tab: "queue".into(),
             album_sort: 0,
             track_sort: 0,
+            mini_on_top: true,
             lastfm: LastfmSettings::default(),
         }
     }

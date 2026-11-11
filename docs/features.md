@@ -10,7 +10,8 @@ Lychee is a local-library music player for Linux and Windows, written in Rust, w
 - **Plays essentially anything.** Common formats in pure Rust; rarer ones through an optional backend later.
 - **Fast with large libraries.** Lists and grids are virtualised and covers load lazily in the background.
 - **Keyboard-friendly.** Everything is reachable from the keyboard and the Ctrl+K command palette.
-- **Your files are yours.** Lychee never edits your files. The database is a cache that can always be rebuilt.
+- **Your files are yours.** Lychee only writes to your files when you save in the tag editor. Edits stay
+  pending until then, and tag frames it doesn't understand are kept. The database is a cache that can always be rebuilt.
 - **Your library, not a streaming service.** No recommendation feeds, "You might also like" rows or home screens.
 - **Built to be extended.** Each subsystem lives in its own crate behind a small API (see `docs/architecture.md`).
 
@@ -69,9 +70,41 @@ Lychee is a local-library music player for Linux and Windows, written in Rust, w
 - [x] Right-click menus on albums, songs and queue items
 - [x] Toast notifications for actions such as "Added to the queue"
 - [x] Welcome screen for an empty library
-- [x] **Mini player** (Ctrl+M): compact, always-on-top, drag to move
+- [x] **Mini player** (Ctrl+M): compact, drag to move, back to the full window with one click. It stays on top,
+  and on Wayland (which has no "always on top") it runs as a small XWayland helper process to manage that.
 - [ ] Custom title bar (native window decorations for now)
 - [ ] Respect the system "reduce motion" setting
+
+### Tag editor (modelled on EasyTAG)
+- [x] Open a folder (recursively) or single files, use "Edit tags…" on any album or song, or drop files onto the editor
+- [x] File list with markers for unsaved changes, pending renames and read or save errors
+- [x] Multi-selection (Ctrl/Shift-click, Ctrl+A). A field reads "Multiple values" when the files disagree, and typing sets it for all of them
+- [x] Fields: title, artist, album, album artist, year, genre, track and disc numbers with totals, composer, comment,
+  plus original artist, lyricist, label, catalog number, ISRC, copyright, URL, encoded by and the MusicBrainz IDs
+- [x] Number the selected tracks (per disc) and set the totals (EasyTAG's "#" button)
+- [x] Artwork: add, replace, remove, export, change the picture type, use the folder image
+- [x] Lyrics: edit plain or synced (LRC) lyrics per track
+- [x] File info: format, sample rate, bit depth, channels, bitrate, duration, size, tag format
+- [x] Scanner, "Fill tags": read tags from file and folder names with EasyTAG masks (`%a %b %t %n %y %g`…, `/` for a folder), with a live preview
+- [x] Scanner, "Rename files": new names from tags. Renames wait until you save; `.lrc` lyrics move along; names are safe on Windows
+- [x] Scanner, "Clean up": Title Case (keeps acronyms and Roman numerals), Sentence case, UPPER, lower, underscores and `%20` to spaces, tidy spaces, find and replace
+- [x] Undo and redo for every step, and revert per file or for everything
+- [x] Lossless writing: MP3, WAV, AIFF, AAC and MP4 tags are edited in place, so frames the editor doesn't know about survive (Serato/Traktor data, private frames, chapters)
+- [x] Saved files are re-read into the library, keeping play counts, Favorites and playlists, even after renames
+- [x] Asks before quitting with unsaved changes
+- [ ] Playlist generator, "load file names from a text file", converting between ID3v2.3 and v2.4, stripping tags
+
+### Online lookup
+- [x] Works out the album from tags, MusicBrainz IDs or folder names ("Artist - Album (1998) [FLAC]"); untagged file names count as titles
+- [x] MusicBrainz release search. The track lists of the best candidates are compared with the files (durations, titles, track counts) and scored
+- [x] Each file is matched to its track by MusicBrainz ID, then disc and track number, title, and finally duration
+- [x] Fill in what's missing, or replace everything: title, artists, album, year (of the original release), genre,
+  track and disc numbers with totals, label, catalog number, ISRC and MusicBrainz IDs
+- [x] Front cover from the Cover Art Archive (1200 px), falling back to the release group's cover
+- [x] Synced (or plain) lyrics from LRCLIB, matched by duration, for the whole album or any selection
+- [x] Keeps to MusicBrainz's limit of one request per second and identifies itself with a proper User-Agent
+- [ ] AcoustID fingerprinting for files with neither tags nor useful names
+- [ ] Discogs as a second source
 
 ### Desktop integration
 - [x] **Linux: MPRIS** (media keys, GNOME and KDE media controls, `playerctl`) and a `.desktop` file
@@ -104,10 +137,10 @@ Lychee is a local-library music player for Linux and Windows, written in Rust, w
 - [ ] Spectrum analyzer and level meters
 - [ ] Bit-perfect / exclusive output (WASAPI exclusive, direct ALSA) with sample-rate switching
 - [ ] Rarer formats through an optional FFmpeg backend: WMA, APE, WavPack, DSD, Musepack, TTA
-- [ ] CUE sheets; tag editor; library statistics
+- [ ] CUE sheets; library statistics
 
 ## Extensions (the architecture is ready for these)
-- Online lyrics (e.g. LRCLIB), online artwork, MusicBrainz lookup
+- Lyrics and artwork lookups for the playing track outside the tag editor; AcoustID fingerprints
 - ListenBrainz scrobbling alongside Last.fm
 - Remote libraries: Subsonic / Navidrome, Jellyfin
 - Internet radio; podcasts

@@ -1,0 +1,154 @@
+// State and callbacks of the tag editor page. Rust (`src/editor.rs`) owns the data.
+import { InfoRow } from "state.slint";
+
+export struct EditorFile {
+    name: string,
+    // Pending new name from "Rename files", or empty.
+    new-name: string,
+    folder: string,
+    title: string,
+    artist: string,
+    album: string,
+    track: string,
+    modified: bool,
+    selected: bool,
+    error: string,
+}
+
+export struct EditorField {
+    id: string,
+    label: string,
+    value: string,
+    // The selected files disagree; typing replaces the value in all of them.
+    mixed: bool,
+    enabled: bool,
+    changed: bool,
+}
+
+export struct EditorPicture {
+    image: image,
+    kind: string,
+    kind-index: int,
+    detail: string,
+}
+
+export struct ScanRow {
+    before: string,
+    after: string,
+    ok: bool,
+}
+
+export struct LookupItem {
+    title: string,
+    artist: string,
+    detail: string,
+    // "96%" once the track list has been checked against the files.
+    score: string,
+    good: bool,
+}
+
+export struct LookupTrack {
+    file: string,
+    track: string,
+    times: string,
+    ok: bool,
+}
+
+export global Editor {
+    in-out property <[EditorFile]> files;
+    in-out property <int> selected-count;
+    in-out property <int> modified-count;
+    in-out property <string> title: "Tag editor";
+    in-out property <string> summary;
+    // Field order matches `Field::ALL` in lychee-tagger; views index into it.
+    in-out property <[EditorField]> fields;
+    // Bumped whenever Rust reloads the form, so inputs pick up the new values.
+    in-out property <int> generation;
+    in-out property <string> tab: "tags";
+    in-out property <bool> more-fields;
+    in-out property <[EditorPicture]> pictures;
+    in-out property <bool> pictures-mixed;
+    in-out property <bool> pictures-supported: true;
+    in-out property <string> lyrics;
+    in-out property <bool> lyrics-editable;
+    in-out property <[InfoRow]> info;
+    in-out property <bool> can-undo;
+    in-out property <bool> can-redo;
+    in-out property <string> undo-label;
+    in-out property <string> redo-label;
+    // Saving, loading or downloading; `busy-text` says what.
+    in-out property <bool> busy;
+    in-out property <string> busy-text;
+    in-out property <float> busy-progress: -1;
+
+    // Scanner (EasyTAG's three modes): 0 fill tags, 1 rename files, 2 clean up.
+    in-out property <bool> scanner-open;
+    in-out property <int> scanner-mode;
+    in-out property <string> fill-mask: "%n - %t";
+    in-out property <string> rename-mask: "%n - %t";
+    in-out property <bool> fill-overwrite: true;
+    in-out property <[ScanRow]> scan-rows;
+    in-out property <string> scan-status;
+    in-out property <bool> scan-ok;
+    in-out property <int> cleanup-fields;
+    in-out property <int> cleanup-case: 1;
+    in-out property <bool> cleanup-underscores: true;
+    in-out property <bool> cleanup-percent: true;
+    in-out property <bool> cleanup-spaces: true;
+    in-out property <string> cleanup-find;
+    in-out property <string> cleanup-replace;
+
+    // Online lookup.
+    in-out property <bool> lookup-open;
+    // "searching", "results", "empty", "error"
+    in-out property <string> lookup-state;
+    in-out property <string> lookup-message;
+    in-out property <string> lookup-artist;
+    in-out property <string> lookup-album;
+    in-out property <[LookupItem]> lookup-results;
+    in-out property <int> lookup-selected: -1;
+    in-out property <bool> lookup-loading-tracks;
+    in-out property <[LookupTrack]> lookup-tracks;
+    in-out property <image> lookup-cover;
+    in-out property <bool> lookup-has-cover;
+    in-out property <string> lookup-heading;
+    in-out property <string> lookup-subheading;
+    in-out property <string> lookup-summary;
+    in-out property <bool> lookup-tags: true;
+    in-out property <bool> lookup-artwork: true;
+    in-out property <bool> lookup-lyrics: true;
+    in-out property <bool> lookup-overwrite;
+
+    // Closing the window with unsaved tag changes.
+    in-out property <bool> quit-prompt;
+    callback quit-save();
+    callback quit-discard();
+
+    callback open-folder();
+    callback add-files();
+    callback close-files();
+    callback select(int, bool, bool);
+    callback select-all();
+    callback file-action(string, int);
+    callback set-field(string, string);
+    callback number-tracks();
+    callback save();
+    callback revert();
+    callback undo();
+    callback redo();
+    callback add-picture();
+    callback folder-picture();
+    callback remove-picture(int);
+    callback export-picture(int);
+    callback set-picture-kind(int, int);
+    callback set-lyrics(string);
+    callback lyrics-online();
+    callback open-scanner(int);
+    callback scanner-changed();
+    callback scanner-apply();
+    callback lookup-start();
+    callback lookup-search(string, string);
+    callback lookup-pick(int);
+    callback lookup-options-changed();
+    callback lookup-apply();
+}
