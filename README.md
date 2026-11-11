@@ -1,0 +1,129 @@
+<p align="center"><img src="assets/icons/lychee-256.png" width="96" alt="Lychee logo"></p>
+
+<h1 align="center">Lychee</h1>
+
+<p align="center">A modern, beautiful music player for your own library on <b>Linux</b> and <b>Windows</b>, written in <b>Rust</b>.</p>
+
+![Lychee: album page](docs/screenshots/album.jpg)
+
+> **Status: v0.1 (early).** Playback, the library, the Flow interface and Last.fm scrobbling work.
+> See [`docs/features.md`](docs/features.md) for what is done and what comes next.
+
+## Features
+
+- **Plays essentially anything:** MP3, FLAC (up to 24-bit/192 kHz), WAV, AIFF, ALAC, AAC/M4A, Ogg Vorbis, Opus, CAF and MKV/WebM audio. Decoding is pure Rust.
+- **Gapless playback.** High-quality resampling when your device's rate differs from the file's. Clickless pause, seek and volume.
+- **Fast library.** Parallel scanning, incremental rescans, embedded or folder artwork, and compilations grouped as "Various Artists". Browse Albums, Artists, Songs, Genres, Recently Added and Recently Played.
+- **The Flow interface.** A three-pane layout, album pages tinted with the colors of their artwork, and a Queue / Lyrics / Details side panel. Dark, light or follow-the-system themes.
+- **Command palette (Ctrl+K).** Fuzzy-search your whole library and run any command from the keyboard.
+- **Synced lyrics** from `.lrc` files next to your music or embedded in the file. Click a line to jump to it.
+- **Queue and playlists.** Play next, add to queue, reorder, Favorites, and playlists you can create, rename and delete.
+- **Last.fm scrobbling.** Sign in through the browser, send "now playing" updates, scrobble with an offline queue, and optionally love tracks you favorite. A status icon sits in the bottom-right corner.
+- **Mini player (Ctrl+M).** A compact, always-on-top bar.
+- **Desktop integration.** MPRIS on Linux (media keys, GNOME/KDE media controls, `playerctl`) and System Media Transport Controls on Windows. Drag and drop files to play them, or pass them on the command line.
+- **Remembers where you were.** On restart, Lychee restores your queue, the track you were on and its position.
+
+| Albums | Songs and lyrics |
+|---|---|
+| ![Albums](docs/screenshots/albums.jpg) | ![Songs and synced lyrics](docs/screenshots/lyrics.jpg) |
+| **Command palette** | **Light theme** |
+| ![Command palette](docs/screenshots/palette.jpg) | ![Light theme](docs/screenshots/light.jpg) |
+
+Mini player: ![Mini player](docs/screenshots/mini.png)
+
+*(Screenshots are rendered headlessly with Slint's software renderer; the real app draws artwork with rounded corners.)*
+
+## Building
+
+You need **Rust 1.92 or newer** and a C compiler (SQLite is built from source).
+
+**Linux** additionally needs the ALSA and fontconfig development files:
+
+```sh
+# Fedora
+sudo dnf install gcc alsa-lib-devel fontconfig-devel
+# Debian / Ubuntu
+sudo apt install build-essential libasound2-dev libfontconfig1-dev
+# Arch
+sudo pacman -S base-devel alsa-lib fontconfig
+```
+
+**Windows** needs the MSVC build tools (Visual Studio "Desktop development with C++").
+
+Then:
+
+```sh
+cargo run --release
+# or play files and folders straight away:
+cargo run --release -- ~/Music/Some\ Album
+```
+
+On first start, add your music folder. Lychee scans it in the background.
+
+### Last.fm
+
+Scrobbling uses the Last.fm API, which requires an API account (free, takes a minute at
+<https://www.last.fm/api/account/create>). Either:
+
+- **build it in:** set `LYCHEE_LASTFM_API_KEY` and `LYCHEE_LASTFM_API_SECRET` when compiling, or
+- **enter it in the app:** Settings → Last.fm → API account.
+
+Then click **Connect**, approve Lychee in the browser page that opens, and you're done. No password is stored.
+
+## Keyboard shortcuts
+
+| Action | Keys |
+|---|---|
+| Play / pause | `Space` |
+| Previous / next track | `Ctrl ←` / `Ctrl →` |
+| Seek −10 s / +10 s | `←` / `→` |
+| Volume down / up | `Ctrl ↓` / `Ctrl ↑` |
+| Search and commands | `Ctrl K` (or `Ctrl F`) |
+| Mini player | `Ctrl M` |
+| Toggle the side panel | `Ctrl Q` |
+| Settings | `Ctrl ,` |
+| Back / close | `Esc` |
+
+## Where Lychee keeps things
+
+| | Linux | Windows |
+|---|---|---|
+| Settings | `~/.config/lychee/config.toml` | `%APPDATA%\Lychee\config\config.toml` |
+| Library database, scrobble queue | `~/.local/share/lychee/` | `%APPDATA%\Lychee\data\` |
+| Artwork cache | `~/.cache/lychee/` | `%LOCALAPPDATA%\Lychee\cache\` |
+
+Set `LYCHEE_HOME=/some/folder` to keep everything in one place (portable installs, testing).
+Lychee never modifies your music files.
+
+## Project layout
+
+```
+crates/
+  lychee-core      domain model, play queue (shuffle, repeat, play next), formatting helpers
+  lychee-audio     playback engine: Symphonia + pure-Rust Opus, rubato resampling, gapless, cpal output
+  lychee-library   scanning, tags (lofty), artwork + colors, SQLite store, fuzzy search, lyrics
+  lychee-lastfm    Last.fm auth, now playing, scrobbling with an offline queue
+  lychee-platform  MPRIS (Linux) and System Media Transport Controls (Windows)
+  lychee           the app: Slint UI (ui/), controller, settings, mini player
+design/            interactive design prototypes (the app implements direction D, "Flow")
+docs/              features, architecture and technology notes
+```
+
+The design is documented in [`docs/architecture.md`](docs/architecture.md). Every UI callback becomes an
+action handled by one controller, and each subsystem sits behind its own crate so it can be extended or
+replaced.
+
+**Developer tip:** `LYCHEE_SCREENSHOT=out.png LYCHEE_SCREENSHOT_SCENE="page:songs" cargo run` renders the
+UI headlessly to a PNG (see `crates/lychee/src/screenshot.rs`).
+
+## License
+
+Lychee is licensed under the [Apache License 2.0](LICENSE).
+
+- The UI is built with [Slint](https://slint.dev), used under the Slint Royalty-free License 2.0. Its
+  attribution appears in Settings → About.
+
+  [![Made with Slint](https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-whitebg.png)](https://slint.dev)
+- Bundled fonts: [Geist and Geist Mono](https://github.com/vercel/geist-font), SIL Open Font License 1.1 (`crates/lychee/ui/fonts/OFL.txt`).
+- Icons are Feather-style outlines drawn for Lychee.
+- Notable dependencies: Symphonia (MPL-2.0), cpal, rubato, lofty, rusqlite, opus-decoder, mpris-server (MPL-2.0), nucleo-matcher (MPL-2.0).

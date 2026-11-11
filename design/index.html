@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lychee: design directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root { --bg: #0C0C0F; --card: #131318; --border: #24242C; --text: #F4F4F5; --text-2: #A1A1AA; --text-3: #6B6B76; --accent: #F0435F; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 400 15px/1.55 'Geist', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+.wrap { max-width: 1320px; margin: 0 auto; padding: 56px 40px 80px; }
+header { display: flex; gap: 22px; align-items: center; margin-bottom: 18px; }
+header h1 { margin: 0; font-size: 44px; line-height: 1; letter-spacing: -.045em; font-weight: 800; }
+header h1 span { color: var(--text-3); font-weight: 600; }
+.lede { max-width: 820px; color: var(--text-2); font-size: 17px; margin: 0 0 14px; }
+.how { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 44px; }
+.how span { font-size: 13px; color: var(--text-2); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--card); }
+.how kbd { font: 500 11.5px 'Geist Mono', monospace; color: var(--text); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); gap: 28px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; display: flex; flex-direction: column; }
+.shots { position: relative; display: block; aspect-ratio: 16 / 10; overflow: hidden; border-bottom: 1px solid var(--border); background: #000; }
+.shots img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .5s ease, transform .8s cubic-bezier(.2,.8,.2,1); }
+.shots img.b { opacity: 0; }
+.shots:hover img.a { opacity: 0; } .shots:hover img.b { opacity: 1; }
+.shots:hover img { transform: scale(1.015); }
+.shots .hint { position: absolute; right: 12px; bottom: 12px; font: 500 11px 'Geist Mono', monospace; padding: 4px 9px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff; backdrop-filter: blur(8px); }
+.body { padding: 22px 24px 24px; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+.title { display: flex; align-items: baseline; gap: 12px; }
+.title .letter { font: 600 12px 'Geist Mono', monospace; color: var(--text-3); }
+.title h2 { margin: 0; font-size: 26px; letter-spacing: -.03em; font-weight: 750; }
+.title em { font-style: normal; color: var(--text-2); font-size: 15px; }
+.body p { margin: 0; color: var(--text-2); }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.cols h3 { margin: 0 0 6px; font: 600 11px 'Geist Mono', monospace; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.cols ul { margin: 0; padding-left: 18px; color: var(--text-2); font-size: 14px; }
+.cols li { margin: 2px 0; }
+.links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; padding-top: 6px; }
+.links a { text-decoration: none; font-weight: 600; font-size: 13.5px; padding: 8px 14px; border-radius: 999px; border: 1px solid var(--border); transition: background .15s, border-color .15s; }
+.links a:first-child { background: var(--text); color: var(--bg); border-color: var(--text); }
+.links a:hover { border-color: var(--text-3); }
+.extra { margin-top: 28px; display: grid; grid-template-columns: 1.2fr 1fr; gap: 28px; }
+.extra .card .body { gap: 10px; }
+.note { color: var(--text-3); font-size: 13px; margin-top: 44px; max-width: 900px; }
+@media (max-width: 1240px) { .grid, .extra { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><span id="logo"></span><h1>Lychee <span>/ design directions</span></h1></header>
+  <p class="lede">Four directions for a modern music player for Linux and Windows. Each one is an interactive prototype, not a static picture: click albums, play and pause, seek, and open the Now Playing views. Pick the one you like (or a mix), and it becomes the basis for the real Rust implementation.</p>
+  <div class="how">
+    <span>Hover a preview to see its second screen</span>
+    <span><kbd>Space</kbd> play / pause</span>
+    <span><kbd>Esc</kbd> back to library</span>
+    <span>Click any album to "play" it and watch the UI re-theme</span>
+    <span>Resize the window to see the layout adapt</span>
+  </div>
+
+  <div class="grid">
+    <article class="card">
+      <a class="shots" href="aurora/index.html"><img class="a" src="previews/aurora-library.jpg" alt="Aurora library view"><img class="b" src="previews/aurora-now.jpg" alt="Aurora now playing view"><span class="hint">hover: Now Playing</span></a>
+      <div class="body">
+        <div class="title"><span class="letter">A</span><h2>Aurora</h2><em>immersive, album-driven</em></div>
+        <p>The music sets the mood. The current cover becomes a slowly drifting, blurred backdrop, the interface floats on frosted glass, and the accent color comes from the artwork, so every album gives the app a new palette.</p>
+        <div class="cols">
+          <div><h3>Signature details</h3><ul><li>Dynamic color from album art</li><li>Floating glass dock</li><li>Waveform seek bar</li><li>Full-screen synced lyrics</li></ul></div>
+          <div><h3>Trade-offs</h3><ul><li>Heaviest GPU look (blur)</li><li>Very bright covers need contrast handling</li><li>Less dense for huge libraries</li></ul></div>
+        </div>
+        <div class="links"><a href="aurora/index.html">Open prototype</a><a href="aurora/index.html?view=now">Now Playing</a><a href="aurora/index.html?view=now&amp;tab=queue">Up Next</a></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shots" href="folio/index.html"><img class="a" src="previews/folio-library.jpg" alt="Folio library view"><img class="b" src="previews/folio-now.jpg" alt="Folio now playing view"><span class="hint">hover: Now Playing</span></a>
+      <div class="body">
+        <div class="title"><span class="letter">B</span><h2>Folio</h2><em>editorial, typographic</em></div>
+        <p>Your library as a beautifully typeset record catalog: serif display type, hairline rules, generous whitespace and one restrained red. Ships as "Paper" (light) and "Ink" (dark).</p>
+        <div class="cols">
+          <div><h3>Signature details</h3><ul><li>Magazine-spread Now Playing</li><li>Current lyric as a pull quote</li><li>Track index with dotted leaders</li><li>Big serif timeline</li></ul></div>
+          <div><h3>Trade-offs</h3><ul><li>Light-first is unusual for players</li><li>Fewer controls visible at a glance</li><li>Type-heavy layouts need care at small sizes</li></ul></div>
+        </div>
+        <div class="links"><a href="folio/index.html">Open prototype</a><a href="folio/index.html?view=now">Now Playing</a><a href="folio/index.html?theme=ink">Ink theme</a></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shots" href="console/index.html"><img class="a" src="previews/console-library.jpg" alt="Console library view"><img class="b" src="previews/console-display.jpg" alt="Console display view"><span class="hint">hover: Display mode</span></a>
+      <div class="body">
+        <div class="title"><span class="letter">C</span><h2>Console</h2><em>hi-fi hardware</em></div>
+        <p>The tactile appeal of hi-fi gear and synths: a dot-matrix display, an LED spectrum analyzer, physical keys, a rotary volume knob, and a status line that always shows the real output chain.</p>
+        <div class="cols">
+          <div><h3>Signature details</h3><ul><li>Album art as an LED dot matrix</li><li>Live spectrum + VU meters</li><li>Keycaps and knob with real press states</li><li>Output / DSP status bar</li></ul></div>
+          <div><h3>Trade-offs</h3><ul><li>Strongest personality; polarizing</li><li>Dense; dark-only in spirit</li><li>Visualizers cost a little CPU (pausable)</li></ul></div>
+        </div>
+        <div class="links"><a href="console/index.html">Open prototype</a><a href="console/index.html?view=now">Display mode</a></div>
+      </div>
+    </article>
+
+    <article class="card">
+      <a class="shots" href="flow/index.html"><img class="a" src="previews/flow-album.jpg" alt="Flow album view"><img class="b" src="previews/flow-palette.jpg" alt="Flow command palette"><span class="hint">hover: Command palette</span></a>
+      <div class="body">
+        <div class="title"><span class="letter">D</span><h2>Flow</h2><em>modern pro, keyboard-first</em></div>
+        <p>A refined three-pane workhorse (navigation, content, context) with the polish of tools like Linear and Raycast, a Ctrl+K command palette for everything, and dynamic color used with restraint.</p>
+        <div class="cols">
+          <div><h3>Signature details</h3><ul><li>Ctrl+K palette: search + commands</li><li>Album pages with an art-tinted hero</li><li>Queue / Lyrics / Details side panel</li><li>Live library-scan progress</li></ul></div>
+          <div><h3>Trade-offs</h3><ul><li>Most familiar, so least distinctive</li><li>Can drift toward "looks like Spotify"</li><li>Best for big libraries, quickest to build</li></ul></div>
+        </div>
+        <div class="links"><a href="flow/index.html">Open prototype</a><a href="flow/index.html?palette=1">Command palette</a><a href="flow/index.html?theme=light">Light theme</a></div>
+      </div>
+    </article>
+  </div>
+
+  <div class="extra">
+    <article class="card">
+      <a class="shots" href="mini/index.html" style="aspect-ratio:16/9"><img class="a" src="previews/mini.jpg" alt="Mini player concepts"><img class="b" src="previews/mini.jpg" alt=""></a>
+      <div class="body"><div class="title"><h2>Mini players</h2><em>one per direction</em></div><p>A compact, always-on-top mode (Ctrl+M) that keeps each direction's visual language.</p><div class="links"><a href="mini/index.html">Open concepts</a></div></div>
+    </article>
+    <article class="card">
+      <div class="body">
+        <div class="title"><h2>Mixing directions</h2></div>
+        <p>These directions can be combined. The UI will be built from design tokens (color, type, radius, spacing) and swappable views, so for example:</p>
+        <div class="cols" style="grid-template-columns:1fr">
+          <ul>
+            <li><b>Flow</b> layout and command palette with <b>Aurora</b>'s Now Playing screen and dynamic color</li>
+            <li><b>Aurora</b> as the default, with <b>Folio</b> Paper/Ink offered as an alternative theme</li>
+            <li><b>Console</b>'s spectrum and output status line as an optional "audiophile" panel</li>
+          </ul>
+        </div>
+        <p>Brand: the logo is a peeled lychee that is also a vinyl record. The red skin is the disc (with faint grooves), the white flesh is the label, and the seed is the spindle.</p>
+      </div>
+    </article>
+  </div>
+
+  <p class="note">Every artist, album, cover and lyric in these prototypes is invented. Covers are generated procedurally (design/shared/covers.js), so no real artwork is used. Fonts come from Google Fonts (all SIL Open Font License) and would be bundled with the app.</p>
+</div>
+<script src="shared/data.js"></script>
+<script src="shared/icons.js"></script>
+<script>document.getElementById('logo').innerHTML = LYCHEE.logo({ size: 52 });</script>
+</body>
+</html>

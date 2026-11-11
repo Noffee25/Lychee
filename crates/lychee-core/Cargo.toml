@@ -1,0 +1,11 @@
+[package]
+name = "lychee-core"
+description = "Domain model, queue logic and messages shared by every Lychee component"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+fastrand.workspace = true

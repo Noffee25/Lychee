@@ -1,0 +1,186 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, Actions } from "../state.slint";
+import { Cover, Tag, PillButton, IconButton } from "../widgets.slint";
+import { Grid, AlbumGrid } from "albums.slint";
+import { TrackHeader, TrackRowView } from "tracks.slint";
+import { ScrollView } from "std-widgets.slint";
+
+export component AlbumPage inherits Rectangle {
+    property <length> tile-width: (sv.visible-width - 2 * Grid.side-padding - (AppState.grid-columns - 1) * Grid.gap) / Math.max(1, AppState.grid-columns);
+    property <bool> scrolled: sv.content-y < -8px;
+    changed scrolled => { AppState.content-scrolled = root.scrolled; }
+    init => { AppState.content-scrolled = false; }
+    sv := ScrollView {
+        content-width: self.visible-width;
+        content-height: page.preferred-height;
+        page := VerticalLayout {
+            width: sv.visible-width;
+            alignment: start;
+            // Hero, tinted with the album's colour.
+            Rectangle {
+                background: Theme.dark
+                    ? @linear-gradient(180deg, Theme.tint 0%, Theme.tint.with-alpha(0.45) 60%, Theme.bg.with-alpha(0) 100%)
+                    : @linear-gradient(180deg, Theme.accent.with-alpha(0.24) 0%, Theme.bg.with-alpha(0) 100%);
+                HorizontalLayout {
+                    padding-left: Grid.side-padding + 8px;
+                    padding-right: Grid.side-padding;
+                    padding-top: 78px;
+                    padding-bottom: 26px;
+                    spacing: 28px;
+                    Cover {
+                        width: 212px;
+                        height: 212px;
+                        radius: 12px;
+                        source: AppState.album.cover;
+                        has-image: AppState.album.has-cover;
+                        seed: AppState.album.seed;
+                        drop-shadow-blur: 40px;
+                        drop-shadow-offset-y: 18px;
+                        drop-shadow-color: Theme.shadow;
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: end;
+                        spacing: 0px;
+                        Text {
+                            text: "Album";
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: Theme.text-2;
+                        }
+                        Text {
+                            text: AppState.album.title;
+                            font-size: Math.max(34px, Math.min(58px, sv.visible-width / 15));
+                            font-weight: 750;
+                            letter-spacing: -1.6px;
+                            color: Theme.text;
+                            wrap: word-wrap;
+                            max-height: 150px;
+                            overflow: elide;
+                        }
+                        Rectangle { height: 10px; }
+                        HorizontalLayout {
+                            cross-axis-alignment: center;
+                            spacing: 8px;
+                            alignment: start;
+                            Text {
+                                text: AppState.album.artist;
+                                font-weight: 600;
+                                color: artist-ta.has-hover ? Theme.accent : Theme.text;
+                                artist-ta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { Actions.open-artist(AppState.album.artist); }
+                                }
+                            }
+                            Text {
+                                text: AppState.album.meta;
+                                color: Theme.text-2;
+                                overflow: elide;
+                            }
+                        }
+                        Rectangle { height: 14px; }
+                        HorizontalLayout {
+                            cross-axis-alignment: center;
+                            spacing: 6px;
+                            alignment: start;
+                            for tag in AppState.album.tags: Tag {
+                                text: tag;
+                            }
+                            if AppState.album.hires: Tag {
+                                text: "Hi-Res Lossless";
+                                highlight: true;
+                            }
+                        }
+                    }
+                }
+            }
+            HorizontalLayout {
+                cross-axis-alignment: center;
+                padding-left: Grid.side-padding + 8px;
+                padding-right: Grid.side-padding;
+                padding-top: 4px;
+                padding-bottom: 16px;
+                spacing: 10px;
+                alignment: start;
+                PillButton {
+                    text: "Play";
+                    icon: Icons.play;
+                    primary: true;
+                    clicked => { Actions.play-album(AppState.album.id, false); }
+                }
+                PillButton {
+                    text: "Shuffle";
+                    icon: Icons.shuffle;
+                    clicked => { Actions.play-album(AppState.album.id, true); }
+                }
+                IconButton {
+                    icon: Icons.play-next;
+                    size: 40px;
+                    tooltip: "Play next";
+                    clicked => { Actions.album-action("play-next", AppState.album.id); }
+                }
+                IconButton {
+                    icon: Icons.plus-square;
+                    size: 40px;
+                    tooltip: "Add to queue";
+                    clicked => { Actions.album-action("add-queue", AppState.album.id); }
+                }
+                IconButton {
+                    icon: Icons.folder;
+                    size: 40px;
+                    tooltip: "Show in folder";
+                    clicked => { Actions.album-action("show-folder", AppState.album.id); }
+                }
+            }
+            VerticalLayout {
+                padding-left: Grid.side-padding - 4px;
+                padding-right: Grid.side-padding - 4px;
+                TrackHeader { }
+                Rectangle { height: 6px; }
+                for row in AppState.album-tracks: VerticalLayout {
+                    if row.disc-header != "": Text {
+                        text: row.disc-header;
+                        height: 38px;
+                        vertical-alignment: bottom;
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: Theme.text-2;
+                        x: 12px;
+                    }
+                    TrackRowView {
+                        track: row;
+                        context: "album";
+                    }
+                }
+            }
+            Text {
+                x: Grid.side-padding + 8px;
+                width: parent.width - 2 * Grid.side-padding;
+                text: AppState.album.note;
+                font-size: 12px;
+                color: Theme.text-3;
+                wrap: word-wrap;
+                height: self.preferred-height + 36px;
+                vertical-alignment: center;
+            }
+            if AppState.more-albums.length > 0: VerticalLayout {
+                padding-left: Grid.side-padding;
+                padding-right: Grid.side-padding;
+                padding-bottom: 40px;
+                spacing: 14px;
+                Text {
+                    text: AppState.more-title;
+                    font-size: 18px;
+                    font-weight: 650;
+                    letter-spacing: -0.3px;
+                    color: Theme.text;
+                }
+                AlbumGrid {
+                    rows: AppState.more-albums;
+                    tile-width: root.tile-width;
+                }
+            }
+        }
+    }
+}

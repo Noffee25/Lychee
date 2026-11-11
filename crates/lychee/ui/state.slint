@@ -1,0 +1,305 @@
+// Data shown by the UI and the callbacks it sends back to Rust.
+// Rust fills these globals; views only read them and call `Actions`.
+
+export struct AlbumCard {
+    id: int,
+    title: string,
+    artist: string,
+    year: string,
+    cover: image,
+    has-cover: bool,
+    hires: bool,
+    playing: bool,
+    seed: color,
+}
+
+export struct AlbumRow {
+    items: [AlbumCard],
+}
+
+export struct TrackRow {
+    id: int,
+    index: int,
+    number: string,
+    title: string,
+    artist: string,
+    album: string,
+    album-id: int,
+    year: string,
+    duration: string,
+    plays: string,
+    liked: bool,
+    current: bool,
+    cover: image,
+    has-cover: bool,
+    disc-header: string,
+}
+
+export struct QueueItem {
+    index: int,
+    title: string,
+    artist: string,
+    duration: string,
+    cover: image,
+    has-cover: bool,
+}
+
+export struct ArtistCard {
+    name: string,
+    detail: string,
+    cover: image,
+    has-cover: bool,
+    seed: color,
+}
+
+export struct GenreCard {
+    name: string,
+    detail: string,
+    cover: image,
+    has-cover: bool,
+    seed: color,
+}
+
+export struct GenreRow {
+    items: [GenreCard],
+}
+
+export struct NavPlaylist {
+    id: int,
+    name: string,
+    count: int,
+    cover: image,
+    has-cover: bool,
+    seed: color,
+}
+
+export struct PaletteItem {
+    section: string,
+    kind: string,
+    title: string,
+    subtitle: string,
+    hint: string,
+    cover: image,
+    has-cover: bool,
+    icon: image,
+    seed: color,
+}
+
+export struct Lyric {
+    text: string,
+    time-ms: int,
+}
+
+export struct InfoRow {
+    label: string,
+    value: string,
+}
+
+export struct Choice {
+    label: string,
+    selected: bool,
+}
+
+export struct AlbumHeader {
+    id: int,
+    title: string,
+    artist: string,
+    meta: string,
+    cover: image,
+    has-cover: bool,
+    seed: color,
+    tags: [string],
+    hires: bool,
+    note: string,
+}
+
+export struct ListHeader {
+    kind: string,
+    title: string,
+    subtitle: string,
+    cover: image,
+    has-cover: bool,
+    seed: color,
+    id: int,
+    editable: bool,
+}
+
+export struct NowPlaying {
+    has-track: bool,
+    id: int,
+    title: string,
+    artist: string,
+    album: string,
+    album-id: int,
+    cover: image,
+    has-cover: bool,
+    seed: color,
+    format: string,
+    quality: string,
+    liked: bool,
+}
+
+export struct LastfmUi {
+    // "disconnected", "connecting", "idle", "submitting", "offline", "error"
+    state: string,
+    username: string,
+    pending: int,
+    scrobbled: int,
+    last: string,
+    message: string,
+    love-sync: bool,
+    builtin-key: bool,
+    api-key: string,
+    api-secret: string,
+}
+
+export struct ScanUi {
+    active: bool,
+    text: string,
+    progress: float,
+}
+
+export global AppState {
+    // Navigation: "albums", "album", "artists", "artist", "songs", "genres", "genre",
+    // "recent", "favorites", "playlist", "history", "settings".
+    in-out property <string> page: "albums";
+    in-out property <bool> can-go-back;
+    in-out property <bool> right-panel: true;
+    in-out property <string> right-tab: "queue";
+    in-out property <bool> palette-open;
+    in-out property <bool> library-empty;
+    in-out property <bool> mini-open;
+
+    in-out property <[AlbumRow]> album-rows;
+    in-out property <string> albums-title: "Albums";
+    in-out property <string> albums-subtitle;
+    in-out property <int> album-sort;
+    in-out property <bool> albums-sortable: true;
+
+    in-out property <AlbumHeader> album;
+    in-out property <[TrackRow]> album-tracks;
+    in-out property <[AlbumRow]> more-albums;
+    in-out property <string> more-title;
+
+    in-out property <ListHeader> list-header;
+    in-out property <[TrackRow]> tracks;
+    in-out property <int> track-sort;
+    in-out property <bool> tracks-show-album: true;
+
+    in-out property <[ArtistCard]> artists;
+    in-out property <[AlbumRow]> artist-album-rows;
+    in-out property <[GenreRow]> genre-rows;
+    in-out property <string> count-albums;
+    in-out property <string> count-artists;
+    in-out property <string> count-songs;
+    in-out property <bool> content-scrolled;
+    in-out property <[NavPlaylist]> playlists;
+    in-out property <int> favorites-count;
+    in-out property <int> grid-columns: 5;
+
+    in-out property <[QueueItem]> queue-manual;
+    in-out property <[QueueItem]> queue-context;
+    in-out property <string> queue-context-name;
+
+    in-out property <[Lyric]> lyrics;
+    in-out property <bool> lyrics-synced;
+    in-out property <string> lyrics-source;
+    in-out property <int> lyric-index: -1;
+    in-out property <[InfoRow]> details;
+
+    in-out property <string> palette-query;
+    in-out property <[PaletteItem]> palette-items;
+    in-out property <int> palette-selected;
+
+    in-out property <ScanUi> scan;
+    in-out property <string> library-summary;
+    in-out property <[string]> folders;
+    in-out property <[Choice]> devices;
+    in-out property <string> device-name;
+    in-out property <int> theme-mode;
+    in-out property <bool> dynamic-accent: true;
+    in-out property <string> toast;
+    in-out property <string> version;
+}
+
+export global Player {
+    in-out property <NowPlaying> now;
+    in-out property <bool> playing;
+    in-out property <float> progress;
+    in-out property <int> duration-ms;
+    in-out property <string> position-text: "0:00";
+    in-out property <string> duration-text: "0:00";
+    in-out property <float> volume: 0.8;
+    in-out property <bool> muted;
+    in-out property <bool> shuffle;
+    // 0 = off, 1 = all, 2 = one
+    in-out property <int> repeat;
+    in-out property <LastfmUi> lastfm;
+}
+
+export global Actions {
+    callback navigate(string);
+    callback go-back();
+    callback open-album(int);
+    callback open-artist(string);
+    callback open-genre(string);
+    callback open-playlist(int);
+
+    callback play-album(int, bool);
+    callback album-action(string, int);
+    // Play the visible track list ("album" page or the current "list") starting at an index.
+    callback play-from(string, int);
+    callback play-list(bool);
+    callback track-action(string, int);
+    callback add-to-playlist(int, string, int);
+
+    callback toggle-play();
+    callback next();
+    callback previous();
+    callback seek(float);
+    callback seek-by(int);
+    callback set-volume(float);
+    callback toggle-mute();
+    callback toggle-shuffle();
+    callback cycle-repeat();
+    callback toggle-like-current();
+
+    callback queue-jump(int);
+    callback queue-remove(int);
+    callback queue-move(int, int);
+    callback queue-clear();
+    callback lyric-seek(int);
+
+    callback set-grid-columns(int);
+    callback set-album-sort(int);
+    callback set-track-sort(int);
+
+    callback open-palette();
+    callback palette-query-changed(string);
+    callback palette-activate(int, bool);
+
+    callback add-folder();
+    callback remove-folder(string);
+    callback rescan();
+    callback set-device(string);
+    callback set-theme-mode(int);
+    callback set-dynamic-accent(bool);
+
+    callback lastfm-connect();
+    callback lastfm-cancel();
+    callback lastfm-disconnect();
+    callback lastfm-retry();
+    callback lastfm-set-keys(string, string);
+    callback lastfm-set-love-sync(bool);
+    callback lastfm-open-profile();
+
+    callback create-playlist(string);
+    callback rename-playlist(int, string);
+    callback delete-playlist(int);
+
+    callback open-mini();
+    callback close-mini();
+    callback raise-main();
+    callback start-window-drag();
+    callback open-url(string);
+}

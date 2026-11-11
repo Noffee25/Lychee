@@ -1,0 +1,258 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, Actions } from "../state.slint";
+import { NavItem, IconButton, Divider, TextField } from "../widgets.slint";
+import { ScrollView } from "std-widgets.slint";
+
+component GroupLabel inherits Rectangle {
+    in property <string> text;
+    in property <bool> has-add;
+    callback add;
+    height: 30px;
+    HorizontalLayout {
+        cross-axis-alignment: center;
+        padding-left: 10px;
+        padding-right: 2px;
+        Text {
+            text: root.text;
+            font-size: 11.5px;
+            font-weight: 500;
+            color: Theme.text-3;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+        if root.has-add: IconButton {
+            icon: Icons.plus;
+            size: 24px;
+            icon-size: 14px;
+            tooltip: "New playlist";
+            clicked => { root.add(); }
+        }
+    }
+}
+
+export component Sidebar inherits Rectangle {
+    property <bool> creating;
+    width: 236px;
+    background: Theme.side;
+    Rectangle {
+        x: parent.width - 1px;
+        width: 1px;
+        background: Theme.border;
+    }
+    VerticalLayout {
+        padding: 12px;
+        padding-top: 14px;
+        spacing: 2px;
+        HorizontalLayout {
+            cross-axis-alignment: center;
+            height: 36px;
+            padding-left: 6px;
+            spacing: 9px;
+            Image {
+                source: Icons.logo;
+                width: 24px;
+                height: 24px;
+            }
+            Text {
+                text: "Lychee";
+                font-size: 15.5px;
+                font-weight: 700;
+                color: Theme.text;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+        }
+        Rectangle { height: 6px; }
+        Rectangle {
+            height: 34px;
+            border-radius: 9px;
+            border-width: 1px;
+            border-color: search-ta.has-hover ? Theme.text-3 : Theme.border-2;
+            background: Theme.surface;
+            HorizontalLayout {
+                cross-axis-alignment: center;
+                padding-left: 10px;
+                padding-right: 7px;
+                spacing: 8px;
+                Image {
+                    source: Icons.search;
+                    colorize: Theme.text-3;
+                    width: 15px;
+                    height: 15px;
+                }
+                Text {
+                    text: "Search";
+                    color: Theme.text-3;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Rectangle {
+                    height: 20px;
+                    border-radius: 5px;
+                    border-width: 1px;
+                    border-color: Theme.border-2;
+                    background: Theme.surface-2;
+                    HorizontalLayout {
+                        cross-axis-alignment: center;
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        Text {
+                            text: "Ctrl K";
+                            font-family: Theme.mono;
+                            font-size: 11px;
+                            color: Theme.text-3;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+            search-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Actions.open-palette(); }
+            }
+        }
+        Rectangle { height: 10px; }
+        NavItem {
+            label: "Recently Added";
+            icon: Icons.clock;
+            active: AppState.page == "recent";
+            clicked => { Actions.navigate("recent"); }
+        }
+        NavItem {
+            label: "Recently Played";
+            icon: Icons.history;
+            active: AppState.page == "history";
+            clicked => { Actions.navigate("history"); }
+        }
+        GroupLabel { text: "Library"; }
+        NavItem {
+            label: "Albums";
+            icon: Icons.disc;
+            count: AppState.count-albums;
+            active: AppState.page == "albums" || AppState.page == "album";
+            clicked => { Actions.navigate("albums"); }
+        }
+        NavItem {
+            label: "Artists";
+            icon: Icons.user;
+            count: AppState.count-artists;
+            active: AppState.page == "artists" || AppState.page == "artist";
+            clicked => { Actions.navigate("artists"); }
+        }
+        NavItem {
+            label: "Songs";
+            icon: Icons.music;
+            count: AppState.count-songs;
+            active: AppState.page == "songs";
+            clicked => { Actions.navigate("songs"); }
+        }
+        NavItem {
+            label: "Genres";
+            icon: Icons.tag;
+            active: AppState.page == "genres" || AppState.page == "genre";
+            clicked => { Actions.navigate("genres"); }
+        }
+        GroupLabel {
+            text: "Playlists";
+            has-add: true;
+            add => { root.creating = true; }
+        }
+        NavItem {
+            label: "Favorites";
+            liked-tile: true;
+            count: AppState.favorites-count > 0 ? AppState.favorites-count : "";
+            active: AppState.page == "favorites";
+            clicked => { Actions.navigate("favorites"); }
+        }
+        if root.creating: Rectangle {
+            height: 40px;
+            TextField {
+                init => { self.focus(); }
+                y: 3px;
+                height: 32px;
+                has-icon: false;
+                placeholder: "Playlist name, then Enter";
+                accepted(name) => {
+                    if (name != "") {
+                        Actions.create-playlist(name);
+                    }
+                    self.text = "";
+                    root.creating = false;
+                }
+            }
+        }
+        ScrollView {
+            vertical-stretch: 1;
+            min-height: 60px;
+            VerticalLayout {
+                spacing: 2px;
+                alignment: start;
+                for playlist in AppState.playlists: NavItem {
+                    label: playlist.name;
+                    use-cover: true;
+                    cover: playlist.cover;
+                    has-cover: playlist.has-cover;
+                    seed: playlist.seed;
+                    count: playlist.count;
+                    active: AppState.page == "playlist" && AppState.list-header.id == playlist.id;
+                    clicked => { Actions.open-playlist(playlist.id); }
+                }
+            }
+        }
+        Divider {}
+        HorizontalLayout {
+            cross-axis-alignment: center;
+            padding-top: 10px;
+            padding-left: 8px;
+            spacing: 8px;
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 6px;
+                alignment: center;
+                HorizontalLayout {
+                    cross-axis-alignment: center;
+                    spacing: 7px;
+                    Rectangle {
+                        width: 7px;
+                        height: 7px;
+                        border-radius: 3.5px;
+                        background: AppState.scan.active ? Theme.accent : Theme.success;
+                    }
+                    Text {
+                        text: AppState.scan.active ? AppState.scan.text : "Library up to date";
+                        font-size: 12px;
+                        font-weight: 500;
+                        color: Theme.text-2;
+                        overflow: elide;
+                        horizontal-stretch: 1;
+                    }
+                }
+                if AppState.scan.active: Rectangle {
+                    height: 3px;
+                    border-radius: 2px;
+                    background: Theme.border-2;
+                    Rectangle {
+                        x: 0px;
+                        width: parent.width * Math.max(0.04, AppState.scan.progress);
+                        border-radius: 2px;
+                        background: Theme.accent;
+                    }
+                }
+                if !AppState.scan.active: Text {
+                    text: AppState.library-summary;
+                    font-family: Theme.mono;
+                    font-size: 11px;
+                    color: Theme.text-3;
+                    overflow: elide;
+                }
+            }
+            IconButton {
+                icon: Icons.settings;
+                tooltip: "Settings";
+                active: AppState.page == "settings";
+                clicked => { Actions.navigate("settings"); }
+            }
+        }
+    }
+}

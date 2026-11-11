@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lychee: mini player concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Doto:ROND,wght@0..100,100..900&family=JetBrains+Mono:wght@500;700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { font: 500 14px/1.4 'Geist', system-ui, sans-serif; color: #f4f4f5; background: radial-gradient(80% 70% at 15% 10%, #3a4a6b 0%, transparent 60%), radial-gradient(70% 60% at 90% 90%, #6b3a4a 0%, transparent 60%), #15161c; padding: 44px 56px 60px; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+h1 { font: 700 30px/1.1 'Geist', sans-serif; letter-spacing: -.03em; margin: 0 0 6px; display: flex; gap: 12px; align-items: center; }
+.intro { color: rgba(255,255,255,.65); max-width: 760px; margin: 0 0 34px; }
+.wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 40px 48px; align-items: start; }
+.slot h2 { font: 600 12px 'Geist Mono', monospace; letter-spacing: .08em; text-transform: uppercase; color: rgba(255,255,255,.55); margin: 0 0 14px; }
+.slot p { color: rgba(255,255,255,.55); font-size: 13px; margin: 14px 0 0; max-width: 420px; }
+
+/* A: Aurora card */
+.a-card { position: relative; width: 400px; height: 124px; border-radius: 24px; overflow: hidden; display: flex; align-items: center; gap: 14px; padding: 0 16px 0 18px; font-family: 'Plus Jakarta Sans', sans-serif; box-shadow: 0 30px 60px -20px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,255,255,.14); isolation: isolate; }
+.a-card .bg { position: absolute; inset: -40%; background-size: cover; filter: blur(40px) saturate(2); z-index: -2; }
+.a-card::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.12), rgba(0,0,0,.4)); z-index: -1; }
+.a-card img { width: 88px; height: 88px; border-radius: 15px; box-shadow: 0 10px 24px -8px rgba(0,0,0,.6); }
+.a-card .info { flex: 1; min-width: 0; }
+.a-card b { display: block; font-weight: 800; font-size: 16px; letter-spacing: -.02em; }
+.a-card span { color: rgba(255,255,255,.72); font-size: 13px; }
+.a-card .ctl { display: flex; align-items: center; gap: 14px; margin-top: 8px; }
+.a-card .pp { width: 34px; height: 34px; border-radius: 50%; background: #fff; color: #111; display: grid; place-items: center; }
+.a-card .bar { height: 4px; border-radius: 4px; background: rgba(255,255,255,.25); margin-top: 10px; overflow: hidden; }
+.a-card .bar i { display: block; height: 100%; width: 53%; background: #fff; }
+.a-card .x { position: absolute; top: 10px; right: 12px; color: rgba(255,255,255,.6); }
+
+/* A2: Aurora pill */
+.a-pill { width: 330px; height: 58px; border-radius: 999px; display: flex; align-items: center; gap: 10px; padding: 0 10px 0 8px; background: rgba(20,20,26,.72); backdrop-filter: blur(20px); box-shadow: 0 20px 40px -14px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.12); font-family: 'Plus Jakarta Sans', sans-serif; }
+.a-pill img { width: 42px; height: 42px; border-radius: 50%; animation: spin 14s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.a-pill .info { flex: 1; min-width: 0; line-height: 1.2; }
+.a-pill b { display: block; font-size: 13.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.a-pill span { font-size: 12px; color: rgba(255,255,255,.6); }
+.a-pill .eq { display: flex; gap: 2px; align-items: flex-end; height: 16px; margin-right: 4px; }
+.a-pill .eq i { width: 3px; border-radius: 2px; background: #FF7A5C; animation: eq .9s ease-in-out infinite alternate; transform-origin: bottom; }
+.a-pill .eq i:nth-child(1) { height: 60%; } .a-pill .eq i:nth-child(2) { height: 100%; animation-delay: -.4s; } .a-pill .eq i:nth-child(3) { height: 40%; animation-delay: -.2s; }
+@keyframes eq { from { transform: scaleY(.3); } to { transform: scaleY(1); } }
+.a-pill .pp { width: 38px; height: 38px; border-radius: 50%; background: #fff; color: #111; display: grid; place-items: center; }
+
+/* B: Folio */
+.f-card { width: 420px; display: flex; gap: 16px; padding: 14px 18px 14px 14px; background: #F2EEE6; color: #161412; border: 1px solid #161412; box-shadow: 8px 8px 0 rgba(0,0,0,.35); font-family: 'Instrument Sans', sans-serif; }
+.f-card img { width: 76px; height: 76px; }
+.f-card .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.f-card b { font: 400 23px/1 'Instrument Serif', serif; }
+.f-card span { font-size: 12.5px; color: #5C564D; margin-top: 3px; }
+.f-card .row { margin-top: auto; display: flex; align-items: center; gap: 12px; font: 400 11px 'IBM Plex Mono', monospace; color: #5C564D; }
+.f-card .line { position: relative; flex: 1; height: 10px; }
+.f-card .line::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: #9A9286; }
+.f-card .line i { position: absolute; left: 0; top: calc(50% - 1px); height: 2px; width: 53%; background: #161412; }
+.f-card .line u { position: absolute; left: 53%; top: 0; width: 1.5px; height: 10px; background: #CC2B3B; }
+.f-card .btns { display: flex; gap: 10px; color: #161412; }
+
+/* C: Console */
+.c-card { width: 460px; padding: 12px; border-radius: 16px; background: linear-gradient(180deg, #1d1d1c, #161615); box-shadow: inset 0 1px 0 rgba(255,255,255,.05), 0 24px 40px -16px rgba(0,0,0,.8); display: flex; gap: 10px; align-items: stretch; }
+.c-lcd { flex: 1; min-width: 0; border-radius: 9px; background: #0A0A09; padding: 10px 12px; box-shadow: inset 0 0 0 1px #000, inset 0 2px 8px rgba(0,0,0,.9); color: #FF5B2E; text-shadow: 0 0 6px rgba(255,91,46,.6); position: relative; overflow: hidden; }
+.c-lcd .t { font: 800 22px/1 'Doto', monospace; font-variation-settings: 'ROND' 100; white-space: nowrap; overflow: hidden; }
+.c-lcd .s { font: 700 12px/1 'Doto', monospace; font-variation-settings: 'ROND' 100; color: rgba(255,91,46,.65); margin-top: 6px; }
+.c-lcd .b { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.c-lcd .segs { flex: 1; display: flex; gap: 2px; height: 7px; }
+.c-lcd .segs i { flex: 1; background: rgba(255,91,46,.13); }
+.c-lcd .segs i.on { background: #FF5B2E; box-shadow: 0 0 5px rgba(255,91,46,.7); }
+.c-lcd .tm { font: 800 18px/1 'Doto', monospace; font-variation-settings: 'ROND' 100; }
+.c-keys { display: grid; grid-template-columns: repeat(3, 44px); gap: 6px; align-content: center; }
+.c-key { height: 44px; border-radius: 9px; background: linear-gradient(180deg, #2d2d2b, #222220); border: 1px solid #0b0b0a; display: grid; place-items: center; color: #ECE9E2; box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 3px 0 #0a0a09; }
+.c-key.sig { background: linear-gradient(180deg, #FF6B3D, #EE4B17); color: #1d0b04; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 3px 0 #4a1704; }
+
+/* D: Flow */
+.d-card { position: relative; width: 380px; height: 88px; border-radius: 14px; background: #131317; border: 1px solid #2C2C34; display: flex; align-items: center; gap: 12px; padding: 0 12px; overflow: hidden; box-shadow: 0 24px 40px -16px rgba(0,0,0,.7); }
+.d-card img { width: 60px; height: 60px; border-radius: 9px; }
+.d-card .info { flex: 1; min-width: 0; }
+.d-card b { display: block; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.d-card span { color: #A1A1AA; font-size: 12.5px; }
+.d-card .fmt { font: 400 10.5px 'Geist Mono', monospace; color: #6B6B76; margin-top: 3px; white-space: nowrap; }
+.d-card .ctl { display: flex; align-items: center; gap: 4px; color: #A1A1AA; }
+.d-card .ctl button { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; }
+.d-card .pp { width: 36px !important; height: 36px !important; border-radius: 50% !important; background: #F4F4F5; color: #0B0B0D; }
+.d-card .prog { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: #2C2C34; }
+.d-card .prog i { display: block; height: 100%; width: 53%; background: #FF7A5C; }
+</style>
+</head>
+<body>
+<h1 id="h"></h1>
+<p class="intro">Every direction gets a compact, always-on-top mini player (Ctrl M). It keeps the visual language of its direction so switching modes feels like the same app. These are static concepts; they share one playback state with the main window.</p>
+<div class="wall">
+  <div class="slot"><h2>A · Aurora: glass card</h2>
+    <div class="a-card"><div class="bg" id="aBg"></div><img class="cv" alt=""><div class="info"><b>Saltwater Hymn</b><span>Hollow Coast</span>
+      <div class="ctl"><i data-i="prev" data-s="18"></i><span class="pp"><i data-i="pause" data-s="16"></i></span><i data-i="next" data-s="18"></i><i data-i="heartFill" data-s="16" style="color:#FF7A5C;margin-left:auto"></i></div>
+      <div class="bar"><i></i></div></div><i data-i="expand" data-s="14" class="x"></i></div>
+    <p>The blurred art keeps the card in the album's colors; it re-tints on every track change.</p></div>
+  <div class="slot"><h2>A · Aurora: floating pill</h2>
+    <div class="a-pill"><img class="cv" alt=""><div class="info"><b>Saltwater Hymn</b><span>Hollow Coast · 2:14</span></div><div class="eq"><i></i><i></i><i></i></div><span class="pp"><i data-i="pause" data-s="16"></i></span></div>
+    <p>The smallest mode: a spinning disc and one button. Hovering expands it into the card.</p></div>
+  <div class="slot"><h2>B · Folio: index card</h2>
+    <div class="f-card"><img class="cv" alt=""><div class="info"><b>Saltwater Hymn</b><span>Hollow Coast, <i>Tidal Memory</i></span>
+      <div class="row">2:14<div class="line"><i></i><u></u></div>&minus;1:58<span class="btns"><i data-i="prev" data-s="15"></i><i data-i="pause" data-s="15"></i><i data-i="next" data-s="15"></i></span></div></div></div>
+    <p>Paper, hairlines and serif type. In the dark "Ink" theme it turns into a black card.</p></div>
+  <div class="slot"><h2>C · Console: LCD strip</h2>
+    <div class="c-card"><div class="c-lcd"><div class="t">SALTWATER HYMN</div><div class="s">HOLLOW COAST &mdash; FLAC 24/96</div><div class="b"><div class="segs" id="segs"></div><span class="tm">02:14</span></div></div>
+      <div class="c-keys"><span class="c-key"><i data-i="prev" data-s="16"></i></span><span class="c-key sig"><i data-i="pause" data-s="17"></i></span><span class="c-key"><i data-i="next" data-s="16"></i></span></div></div>
+    <p>A tiny piece of hardware for the corner of your screen. The keys depress when clicked.</p></div>
+  <div class="slot"><h2>D · Flow: compact bar</h2>
+    <div class="d-card"><img class="cv" alt=""><div class="info"><b>Saltwater Hymn</b><span>Hollow Coast</span><div class="fmt">FLAC 24/96 · 2:14 / 4:12</div></div>
+      <div class="ctl"><button><i data-i="prev" data-s="17"></i></button><button class="pp"><i data-i="pause" data-s="16"></i></button><button><i data-i="next" data-s="17"></i></button></div><div class="prog"><i></i></div></div>
+    <p>Quiet and dense, the progress bar runs along the bottom edge in the album's accent color.</p></div>
+</div>
+<script src="../shared/data.js"></script>
+<script src="../shared/covers.js"></script>
+<script src="../shared/icons.js"></script>
+<script>
+  const L = LYCHEE, url = L.coverURL('tidal-memory');
+  if (L.params.has('shot')) document.querySelectorAll('*').forEach(e => e.style.animation = 'none');
+  document.getElementById('h').innerHTML = L.logo({ size: 32 }) + 'Mini player concepts';
+  document.querySelectorAll('img.cv').forEach(i => i.src = url);
+  document.getElementById('aBg').style.backgroundImage = `url("${url}")`;
+  document.getElementById('segs').innerHTML = Array.from({ length: 30 }, (_, i) => `<i class="${i < 16 ? 'on' : ''}"></i>`).join('');
+  L.hydrateIcons(document, { stroke: 1.8 });
+</script>
+</body>
+</html>

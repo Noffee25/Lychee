@@ -1,0 +1,43 @@
+//! Lychee's playback engine.
+//!
+//! ```text
+//! file ─► Symphonia demuxer ─► decoder (Symphonia / pure-Rust Opus) ─► channel remix
+//!      ─► rubato resampler (only if the rates differ) ─► lock-free ring buffer ─► cpal callback
+//! ```
+//!
+//! A control thread decodes about a second ahead of the device. The next track can be
+//! pre-loaded so it starts on the exact sample the previous one ends (gapless). The real-time
+//! callback never allocates or blocks; it applies volume and short fades to avoid clicks on pause,
+//! resume and seek.
+
+mod engine;
+mod output;
+mod remix;
+mod resample;
+mod source;
+
+pub use engine::{Engine, EngineEvent};
+pub use output::perceptual;
+pub use source::{Source, StreamInfo};
+
+/// File extensions Lychee can decode.
+pub const SUPPORTED_EXTENSIONS: &[&str] = &[
+    "mp3", "mp2", "mp1", "flac", "wav", "wave", "aif", "aiff", "aifc", "ogg", "oga", "opus", "m4a", "m4b", "mp4", "aac",
+    "caf", "mka", "webm",
+];
+
+pub fn is_supported_extension(ext: &str) -> bool {
+    SUPPORTED_EXTENSIONS.iter().any(|e| e.eq_ignore_ascii_case(ext))
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum AudioError {
+    #[error("could not read the file: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("{0}")]
+    Unsupported(String),
+    #[error("decoding error: {0}")]
+    Decode(String),
+    #[error("audio device error: {0}")]
+    Device(String),
+}

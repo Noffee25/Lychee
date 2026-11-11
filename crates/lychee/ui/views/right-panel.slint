@@ -1,0 +1,352 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, Player, Actions, QueueItem } from "../state.slint";
+import { IconButton, Cover, Segmented, Divider } from "../widgets.slint";
+import { ScrollView } from "std-widgets.slint";
+
+component QueueRow inherits Rectangle {
+    in property <QueueItem> item;
+    height: 52px;
+    border-radius: 9px;
+    background: q-ta.has-hover ? Theme.hover : transparent;
+    q-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Actions.queue-jump(root.item.index); }
+    }
+    HorizontalLayout {
+        cross-axis-alignment: center;
+        padding-left: 6px;
+        padding-right: 6px;
+        spacing: 10px;
+        Cover {
+            width: 40px;
+            height: 40px;
+            radius: 7px;
+            source: root.item.cover;
+            has-image: root.item.has-cover;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.item.title;
+                font-weight: 500;
+                color: Theme.text;
+                overflow: elide;
+            }
+            Text {
+                text: root.item.artist;
+                font-size: 12.5px;
+                color: Theme.text-3;
+                overflow: elide;
+            }
+        }
+        if !q-ta.has-hover && !remove.has-hover: Text {
+            text: root.item.duration;
+            font-family: Theme.mono;
+            font-size: 12px;
+            color: Theme.text-3;
+            vertical-alignment: center;
+        }
+        remove := Rectangle {
+            property <bool> has-hover: rm.has-hover;
+            width: q-ta.has-hover || rm.has-hover ? 28px : 0px;
+            visible: q-ta.has-hover || rm.has-hover;
+            Image {
+                source: Icons.x;
+                colorize: rm.has-hover ? Theme.text : Theme.text-3;
+                width: 15px;
+                height: 15px;
+            }
+            rm := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Actions.queue-remove(root.item.index); }
+            }
+        }
+    }
+    ContextMenuArea {
+        Menu {
+            MenuItem {
+                title: "Play now";
+                activated => { Actions.queue-jump(root.item.index); }
+            }
+            MenuItem {
+                title: "Move up";
+                activated => { Actions.queue-move(root.item.index, root.item.index - 1); }
+            }
+            MenuItem {
+                title: "Move down";
+                activated => { Actions.queue-move(root.item.index, root.item.index + 1); }
+            }
+            MenuSeparator { }
+            MenuItem {
+                title: "Remove from queue";
+                activated => { Actions.queue-remove(root.item.index); }
+            }
+        }
+    }
+}
+
+component SectionTitle inherits HorizontalLayout {
+    in property <string> text;
+    in property <bool> clearable;
+    height: 34px;
+    padding-left: 4px;
+    padding-right: 4px;
+    Text {
+        text: root.text;
+        font-size: 12px;
+        font-weight: 500;
+        color: Theme.text-3;
+        vertical-alignment: center;
+        overflow: elide;
+        horizontal-stretch: 1;
+    }
+    if root.clearable: Text {
+        text: "Clear";
+        font-size: 12px;
+        color: clear-ta.has-hover ? Theme.text : Theme.text-2;
+        vertical-alignment: center;
+        clear-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Actions.queue-clear(); }
+        }
+    }
+}
+
+component EmptyNote inherits VerticalLayout {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> text;
+    alignment: center;
+    spacing: 8px;
+    padding: 24px;
+    Image {
+        source: root.icon;
+        colorize: Theme.text-3;
+        width: 28px;
+        height: 28px;
+        x: (parent.width - self.width) / 2;
+    }
+    Text {
+        text: root.title;
+        font-weight: 600;
+        font-size: 14px;
+        color: Theme.text;
+        horizontal-alignment: center;
+    }
+    Text {
+        text: root.text;
+        font-size: 12.5px;
+        color: Theme.text-3;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+}
+
+component QueueTab inherits ScrollView {
+    content-width: self.visible-width;
+    content-height: content.preferred-height;
+    content := VerticalLayout {
+        width: root.visible-width;
+        padding: 12px;
+        padding-top: 4px;
+        spacing: 2px;
+        alignment: start;
+        if Player.now.has-track: VerticalLayout {
+            spacing: 0px;
+            Cover {
+                height: self.width;
+                radius: 12px;
+                source: Player.now.cover;
+                has-image: Player.now.has-cover;
+                seed: Player.now.seed;
+                drop-shadow-blur: 24px;
+                drop-shadow-offset-y: 10px;
+                drop-shadow-color: Theme.shadow;
+            }
+            HorizontalLayout {
+                cross-axis-alignment: center;
+                padding-top: 12px;
+                spacing: 6px;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    Text {
+                        text: Player.now.title;
+                        font-size: 17px;
+                        font-weight: 650;
+                        color: Theme.text;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: Player.now.artist;
+                        color: Theme.text-2;
+                        overflow: elide;
+                    }
+                }
+                IconButton {
+                    icon: Player.now.liked ? Icons.heart-fill : Icons.heart;
+                    active: Player.now.liked;
+                    tooltip: Player.now.liked ? "Remove from Favorites" : "Add to Favorites";
+                    clicked => { Actions.toggle-like-current(); }
+                }
+            }
+            Text {
+                text: Player.now.quality;
+                font-family: Theme.mono;
+                font-size: 11px;
+                color: Theme.text-3;
+                height: 24px;
+                vertical-alignment: center;
+            }
+        }
+        if !Player.now.has-track: EmptyNote {
+            height: 220px;
+            icon: Icons.music;
+            title: "Nothing playing";
+            text: "Pick an album or song to start. The queue shows up here.";
+        }
+        if AppState.queue-manual.length > 0: SectionTitle {
+            text: "Queued by you";
+        }
+        for item in AppState.queue-manual: QueueRow {
+            item: item;
+        }
+        if AppState.queue-context.length > 0: SectionTitle {
+            text: "Next from " + AppState.queue-context-name;
+            clearable: true;
+        }
+        for item in AppState.queue-context: QueueRow {
+            item: item;
+        }
+    }
+}
+
+component LyricsTab inherits Rectangle {
+    if AppState.lyrics.length == 0: EmptyNote {
+        icon: Icons.lyrics;
+        title: Player.now.has-track ? "No lyrics for this track" : "Nothing playing";
+        text: "Lychee reads lyrics embedded in your files and .lrc files that sit next to them.";
+    }
+    if AppState.lyrics.length > 0: flick := Flickable {
+        content-width: self.width;
+        content-height: lines.preferred-height;
+        animate content-y { duration: 450ms; easing: ease-out; }
+        function scroll-to(line-y: length) {
+            self.content-y = Math.min(0px, Math.max(self.height - lines.preferred-height, -(line-y - self.height * 0.32)));
+        }
+        lines := VerticalLayout {
+            width: flick.width;
+            padding: 20px;
+            padding-top: flick.height * 0.3;
+            padding-bottom: flick.height * 0.5;
+            spacing: 6px;
+            for line[i] in AppState.lyrics: Rectangle {
+                property <bool> current: AppState.lyrics-synced && i == AppState.lyric-index;
+                changed current => {
+                    if (self.current) {
+                        flick.scroll-to(self.y);
+                    }
+                }
+                init => {
+                    if (self.current) {
+                        flick.scroll-to(self.y);
+                    }
+                }
+                min-height: lyric-text.preferred-height + 8px;
+                lyric-text := Text {
+                    width: 100%;
+                    text: line.text == "" ? "♪" : line.text;
+                    wrap: word-wrap;
+                    font-size: AppState.lyrics-synced ? 19px : 15px;
+                    font-weight: AppState.lyrics-synced ? 650 : 450;
+                    color: !AppState.lyrics-synced ? Theme.text-2
+                        : parent.current ? Theme.text
+                        : i < AppState.lyric-index ? Theme.text-3
+                        : (line-ta.has-hover ? Theme.text-2 : Theme.text-3.mix(Theme.text-2, 0.4));
+                    animate color { duration: 300ms; }
+                }
+                line-ta := TouchArea {
+                    enabled: AppState.lyrics-synced;
+                    mouse-cursor: AppState.lyrics-synced ? pointer : default;
+                    clicked => { Actions.lyric-seek(line.time-ms); }
+                }
+            }
+            Text {
+                text: AppState.lyrics-source;
+                font-family: Theme.mono;
+                font-size: 10.5px;
+                color: Theme.text-3;
+            }
+        }
+    }
+}
+
+component DetailsTab inherits ScrollView {
+    content-width: self.visible-width;
+    content-height: details.preferred-height;
+    details := VerticalLayout {
+        width: root.visible-width;
+        padding: 16px;
+        spacing: 0px;
+        alignment: start;
+        if AppState.details.length == 0: EmptyNote {
+            height: 200px;
+            icon: Icons.info;
+            title: "No track";
+            text: "File and format details for the current track appear here.";
+        }
+        for row in AppState.details: VerticalLayout {
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 2px;
+            Text {
+                text: row.label;
+                font-size: 11.5px;
+                font-weight: 500;
+                color: Theme.text-3;
+            }
+            Text {
+                text: row.value;
+                color: Theme.text;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+export component RightPanel inherits Rectangle {
+    width: 332px;
+    background: Theme.side;
+    Rectangle {
+        x: 0px;
+        width: 1px;
+        background: Theme.border;
+    }
+    VerticalLayout {
+        padding-top: 10px;
+        spacing: 8px;
+        HorizontalLayout {
+            cross-axis-alignment: center;
+            padding-left: 12px;
+            padding-right: 12px;
+            Segmented {
+                horizontal-stretch: 1;
+                options: ["Queue", "Lyrics", "Details"];
+                selected: AppState.right-tab == "lyrics" ? 1 : AppState.right-tab == "details" ? 2 : 0;
+                changed(i) => {
+                    AppState.right-tab = i == 1 ? "lyrics" : i == 2 ? "details" : "queue";
+                }
+            }
+        }
+        if AppState.right-tab == "queue": QueueTab {
+            vertical-stretch: 1;
+        }
+        if AppState.right-tab == "lyrics": LyricsTab {
+            vertical-stretch: 1;
+        }
+        if AppState.right-tab == "details": DetailsTab {
+            vertical-stretch: 1;
+        }
+    }
+}

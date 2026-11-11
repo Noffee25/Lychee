@@ -1,0 +1,38 @@
+// Design tokens for the "Flow" design direction. Views never hard-code colours or sizes;
+// they read them from here, so themes (and dynamic album colours) apply everywhere.
+
+export global Theme {
+    in-out property <bool> dark: true;
+    // Accent colour: taken from the current album's artwork when dynamic colour is on.
+    in-out property <color> accent: #FF6B7D;
+    // Dark tint used behind album headers.
+    in-out property <color> tint: #1B2A44;
+
+    out property <color> bg: dark ? #0B0B0D : #FFFFFF;
+    out property <color> side: dark ? #0E0E11 : #F7F7F8;
+    out property <color> surface: dark ? #131317 : #FFFFFF;
+    out property <color> surface-2: dark ? #19191E : #F3F3F5;
+    out property <color> hover: dark ? #1E1E24 : #EDEDF0;
+    out property <color> pressed: dark ? #26262D : #E4E4E8;
+    out property <color> border: dark ? #222228 : #E6E6EA;
+    out property <color> border-2: dark ? #2C2C34 : #D9D9DE;
+    out property <color> text: dark ? #F4F4F5 : #0B0B0D;
+    out property <color> text-2: dark ? #A1A1AA : #55555F;
+    out property <color> text-3: dark ? #6B6B76 : #8B8B95;
+    out property <color> on-accent: #16100F;
+    out property <color> danger: #F2555A;
+    out property <color> success: #3CCB7F;
+    out property <color> warning: #F5A524;
+    out property <color> scrim: dark ? #000000a0 : #14141e40;
+    out property <color> shadow: dark ? #00000090 : #0000002a;
+
+    out property <string> font: "Geist";
+    out property <string> mono: "Geist Mono";
+
+    out property <length> radius-s: 7px;
+    out property <length> radius-m: 10px;
+    out property <length> radius-l: 14px;
+
+    out property <duration> fast: 120ms;
+    out property <duration> medium: 220ms;
+}

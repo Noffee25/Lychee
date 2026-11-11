@@ -1,0 +1,18 @@
+[package]
+name = "lychee-audio"
+description = "Lychee's playback engine: decoding, resampling, gapless playback and output"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+symphonia = { version = "0.6", features = ["all"] }
+opus-decoder = "0.1"
+cpal = "0.18"
+rtrb = "0.4"
+rubato = "5"
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+tracing.workspace = true

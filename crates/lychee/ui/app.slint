@@ -1,0 +1,180 @@
+// Lychee: the "Flow" design. Main window and mini player.
+
+import "fonts/Geist-Regular.ttf";
+import "fonts/Geist-Medium.ttf";
+import "fonts/Geist-SemiBold.ttf";
+import "fonts/Geist-Bold.ttf";
+import "fonts/GeistMono-Regular.ttf";
+import "fonts/GeistMono-Medium.ttf";
+
+import { Palette } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Icons } from "icons.slint";
+import { AppState, Player, Actions } from "state.slint";
+import { IconButton } from "widgets.slint";
+import { Sidebar } from "views/sidebar.slint";
+import { PlayerBar } from "views/player-bar.slint";
+import { RightPanel } from "views/right-panel.slint";
+import { AlbumsPage } from "views/albums.slint";
+import { AlbumPage } from "views/album.slint";
+import { ListPage } from "views/tracks.slint";
+import { ArtistsPage, ArtistPage, GenresPage } from "views/browse.slint";
+import { SettingsPage } from "views/settings.slint";
+import { CommandPalette, Welcome, Toast } from "views/overlays.slint";
+import { MiniWindow } from "mini.slint";
+
+export { AppState, Player, Actions, Theme, Icons, MiniWindow }
+
+component Toolbar inherits Rectangle {
+    height: 52px;
+    background: AppState.content-scrolled ? Theme.bg.with-alpha(0.97) : transparent;
+    animate background { duration: Theme.fast; }
+    if AppState.content-scrolled: Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border;
+    }
+    HorizontalLayout {
+        cross-axis-alignment: center;
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 6px;
+        alignment: start;
+        IconButton {
+            icon: Icons.chev-l;
+            enabled: AppState.can-go-back;
+            tooltip: "Back";
+            clicked => { Actions.go-back(); }
+        }
+        Rectangle { horizontal-stretch: 1; }
+        IconButton {
+            icon: Theme.dark ? Icons.sun : Icons.moon;
+            icon-size: 17px;
+            tooltip: Theme.dark ? "Light theme" : "Dark theme";
+            clicked => { Actions.set-theme-mode(Theme.dark ? 2 : 1); }
+        }
+        IconButton {
+            icon: Icons.sidebar;
+            icon-size: 17px;
+            active: AppState.right-panel;
+            tooltip: AppState.right-panel ? "Hide side panel" : "Show side panel";
+            clicked => { AppState.right-panel = !AppState.right-panel; }
+        }
+    }
+}
+
+export component AppWindow inherits Window {
+    title: Player.now.has-track ? Player.now.title + " · " + Player.now.artist + " — Lychee" : "Lychee";
+    icon: @image-url("icons/logo.svg");
+    preferred-width: 1320px;
+    preferred-height: 840px;
+    min-width: 980px;
+    min-height: 620px;
+    background: Theme.bg;
+    default-font-family: "Geist";
+    default-font-size: 13.5px;
+    forward-focus: keys;
+
+    property <bool> dark: Theme.dark;
+    changed dark => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+    init => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+
+    public function focus-shortcuts() {
+        keys.focus();
+    }
+
+    keys := FocusScope {
+        KeyBinding {
+            keys: @keys(Control + K);
+            activated => { Actions.open-palette(); }
+        }
+        KeyBinding {
+            keys: @keys(Control + F);
+            activated => { Actions.open-palette(); }
+        }
+        KeyBinding {
+            keys: @keys(Space);
+            activated => { Actions.toggle-play(); }
+        }
+        KeyBinding {
+            keys: @keys(Control + RightArrow);
+            activated => { Actions.next(); }
+        }
+        KeyBinding {
+            keys: @keys(Control + LeftArrow);
+            activated => { Actions.previous(); }
+        }
+        KeyBinding {
+            keys: @keys(RightArrow);
+            activated => { Actions.seek-by(10000); }
+        }
+        KeyBinding {
+            keys: @keys(LeftArrow);
+            activated => { Actions.seek-by(-10000); }
+        }
+        KeyBinding {
+            keys: @keys(Control + UpArrow);
+            activated => { Actions.set-volume(Math.min(1, Player.volume + 0.05)); }
+        }
+        KeyBinding {
+            keys: @keys(Control + DownArrow);
+            activated => { Actions.set-volume(Math.max(0, Player.volume - 0.05)); }
+        }
+        KeyBinding {
+            keys: @keys(Control + M);
+            activated => { Actions.open-mini(); }
+        }
+        KeyBinding {
+            keys: @keys(Control + Q);
+            activated => { AppState.right-panel = !AppState.right-panel; }
+        }
+        KeyBinding {
+            keys: @keys(Control + ",");
+            activated => { Actions.navigate("settings"); }
+        }
+        KeyBinding {
+            keys: @keys(Escape);
+            activated => { Actions.go-back(); }
+        }
+
+        VerticalLayout {
+            HorizontalLayout {
+                vertical-stretch: 1;
+                Sidebar { }
+                content := Rectangle {
+                    horizontal-stretch: 1;
+                    clip: true;
+                    if AppState.page == "albums" || AppState.page == "recent" || AppState.page == "genre": AlbumsPage { }
+                    if AppState.page == "album": AlbumPage { }
+                    if AppState.page == "songs" || AppState.page == "favorites" || AppState.page == "playlist" || AppState.page == "history": ListPage { }
+                    if AppState.page == "artists": ArtistsPage { }
+                    if AppState.page == "artist": ArtistPage { }
+                    if AppState.page == "genres": GenresPage { }
+                    if AppState.page == "settings": SettingsPage { }
+                    if AppState.library-empty && AppState.page != "settings": Welcome { }
+                    Toolbar {
+                        y: 0px;
+                        width: parent.width;
+                    }
+                }
+                if AppState.right-panel: RightPanel { }
+            }
+            PlayerBar { }
+        }
+
+        if AppState.toast != "": Toast {
+            x: (parent.width - self.width) / 2;
+            y: parent.height - 84px - self.height - 18px;
+            text: AppState.toast;
+        }
+
+        if AppState.palette-open: CommandPalette {
+            width: parent.width;
+            height: parent.height;
+            close => {
+                AppState.palette-open = false;
+                keys.focus();
+            }
+        }
+    }
+}

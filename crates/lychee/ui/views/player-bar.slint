@@ -1,0 +1,430 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, Player, Actions } from "../state.slint";
+import { IconButton, Cover, SeekBar, Bubble, PillButton, Divider } from "../widgets.slint";
+
+// Bottom-right Last.fm indicator with a status popover.
+component LastfmButton inherits Rectangle {
+    property <string> state: Player.lastfm.state;
+    property <color> dot: state == "idle" || state == "submitting" ? Theme.success : state == "offline" || state == "connecting" ? Theme.warning : state == "error" ? Theme.danger : transparent;
+    property <string> summary: state == "disconnected" ? "Last.fm: not connected"
+        : state == "connecting" ? "Last.fm: waiting for approval in your browser…"
+        : state == "offline" ? "Last.fm: offline, \{Player.lastfm.pending} scrobbles queued"
+        : state == "error" ? "Last.fm: reconnect needed"
+        : "Last.fm: scrobbling as \{Player.lastfm.username}";
+    width: 32px;
+    height: 32px;
+    IconButton {
+        icon: Icons.scrobble;
+        active: root.state == "idle" || root.state == "submitting";
+        tooltip: root.summary;
+        clicked => { popup.show(); }
+    }
+    if root.state != "disconnected": Rectangle {
+        x: 20px;
+        y: 5px;
+        width: 9px;
+        height: 9px;
+        border-radius: 4.5px;
+        background: root.dot;
+        border-width: 2px;
+        border-color: Theme.side;
+    }
+    popup := PopupWindow {
+        x: root.width - 296px;
+        y: -226px;
+        width: 296px;
+        height: 214px;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.surface;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.border-2;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: Theme.shadow;
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+                HorizontalLayout {
+                    cross-axis-alignment: center;
+                    spacing: 10px;
+                    Rectangle {
+                        width: 30px;
+                        height: 30px;
+                        border-radius: 8px;
+                        background: #D51007;
+                        Image {
+                            source: Icons.scrobble;
+                            colorize: #ffffff;
+                            width: 18px;
+                            height: 18px;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Text {
+                            text: "Last.fm";
+                            font-weight: 600;
+                            font-size: 14px;
+                            color: Theme.text;
+                        }
+                        Text {
+                            text: root.state == "disconnected" ? "Not connected"
+                                : root.state == "connecting" ? "Waiting for approval…"
+                                : root.state == "error" ? "Connection problem"
+                                : root.state == "offline" ? "Offline, will retry"
+                                : "Scrobbling as \{Player.lastfm.username}";
+                            font-size: 12px;
+                            color: root.state == "error" ? Theme.danger : Theme.text-2;
+                        }
+                    }
+                }
+                Text {
+                    text: root.state == "disconnected" ? "Connect your account to scrobble what you play in Lychee."
+                        : Player.lastfm.message != "" ? Player.lastfm.message
+                        : Player.lastfm.last != "" ? "Last scrobbled: \{Player.lastfm.last}"
+                        : "Tracks are scrobbled after you listen to half of them (or 4 minutes).";
+                    wrap: word-wrap;
+                    font-size: 12.5px;
+                    color: Theme.text-2;
+                    vertical-stretch: 1;
+                }
+                if Player.lastfm.pending > 0: Text {
+                    text: "\{Player.lastfm.pending} scrobble(s) waiting to be sent";
+                    font-family: Theme.mono;
+                    font-size: 11px;
+                    color: Theme.text-3;
+                }
+                HorizontalLayout {
+                    cross-axis-alignment: center;
+                    spacing: 8px;
+                    alignment: start;
+                    if root.state == "disconnected": PillButton {
+                        text: "Connect";
+                        icon: Icons.link;
+                        primary: true;
+                        pill-height: 32px;
+                        clicked => {
+                            Actions.lastfm-connect();
+                            popup.close();
+                        }
+                    }
+                    if root.state == "offline" || root.state == "error": PillButton {
+                        text: root.state == "error" ? "Reconnect" : "Retry now";
+                        icon: Icons.refresh;
+                        pill-height: 32px;
+                        clicked => {
+                            if (root.state == "error") {
+                                Actions.lastfm-connect();
+                            } else {
+                                Actions.lastfm-retry();
+                            }
+                            popup.close();
+                        }
+                    }
+                    if root.state == "idle" || root.state == "submitting" || root.state == "offline": PillButton {
+                        text: "Profile";
+                        icon: Icons.external;
+                        pill-height: 32px;
+                        clicked => {
+                            Actions.lastfm-open-profile();
+                            popup.close();
+                        }
+                    }
+                    PillButton {
+                        text: "Settings";
+                        has-icon: false;
+                        pill-height: 32px;
+                        clicked => {
+                            Actions.navigate("settings");
+                            popup.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+component DeviceButton inherits Rectangle {
+    width: 34px;
+    height: 32px;
+    IconButton {
+        icon: Icons.device;
+        tooltip: "Output: " + AppState.device-name;
+        clicked => { popup.show(); }
+    }
+    popup := PopupWindow {
+        x: root.width - 300px;
+        y: -Math.min(320px, 52px + AppState.devices.length * 34px) - 10px;
+        width: 300px;
+        height: Math.min(320px, 52px + AppState.devices.length * 34px);
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.surface;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.border-2;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: Theme.shadow;
+            clip: true;
+            VerticalLayout {
+                padding: 8px;
+                spacing: 2px;
+                Text {
+                    text: "Output device";
+                    font-size: 11.5px;
+                    font-weight: 500;
+                    color: Theme.text-3;
+                    height: 28px;
+                    vertical-alignment: center;
+                    x: 8px;
+                }
+                for device in AppState.devices: Rectangle {
+                    height: 32px;
+                    border-radius: 8px;
+                    background: dev-ta.has-hover ? Theme.hover : transparent;
+                    HorizontalLayout {
+                        cross-axis-alignment: center;
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 8px;
+                        Text {
+                            text: device.label;
+                            color: device.selected ? Theme.accent : Theme.text;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                        if device.selected: Image {
+                            source: Icons.check;
+                            colorize: Theme.accent;
+                            width: 15px;
+                            height: 15px;
+                        }
+                    }
+                    dev-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            Actions.set-device(device.label);
+                            popup.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component PlayerBar inherits Rectangle {
+    height: 84px;
+    background: Theme.side;
+    Divider {
+        y: 0px;
+        width: 100%;
+    }
+    HorizontalLayout {
+        cross-axis-alignment: center;
+        padding-left: 16px;
+        padding-right: 12px;
+        spacing: 20px;
+        // Now playing
+        HorizontalLayout {
+            cross-axis-alignment: center;
+            horizontal-stretch: 1;
+            min-width: 240px;
+            spacing: 12px;
+            alignment: start;
+            if Player.now.has-track: Rectangle {
+                width: 52px;
+                height: 52px;
+                Cover {
+                    width: 52px;
+                    height: 52px;
+                    radius: 9px;
+                    source: Player.now.cover;
+                    has-image: Player.now.has-cover;
+                    seed: Player.now.seed;
+                }
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Actions.open-album(Player.now.album-id); }
+                }
+            }
+            if Player.now.has-track: VerticalLayout {
+                alignment: center;
+                spacing: 1px;
+                max-width: 260px;
+                Text {
+                    text: Player.now.title;
+                    font-weight: 600;
+                    font-size: 14px;
+                    color: Theme.text;
+                    overflow: elide;
+                }
+                artist-text := Text {
+                    text: Player.now.artist;
+                    font-size: 12.5px;
+                    color: artist-ta.has-hover ? Theme.text : Theme.text-2;
+                    overflow: elide;
+                    artist-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Actions.open-artist(Player.now.artist); }
+                    }
+                }
+            }
+            if Player.now.has-track: IconButton {
+                icon: Player.now.liked ? Icons.heart-fill : Icons.heart;
+                active: Player.now.liked;
+                icon-size: 17px;
+                tooltip: Player.now.liked ? "Remove from Favorites" : "Add to Favorites";
+                clicked => { Actions.toggle-like-current(); }
+            }
+            if !Player.now.has-track: Text {
+                text: "Nothing playing";
+                color: Theme.text-3;
+                vertical-alignment: center;
+            }
+        }
+        // Transport
+        VerticalLayout {
+            horizontal-stretch: 1.4;
+            max-width: 640px;
+            alignment: center;
+            spacing: 2px;
+            HorizontalLayout {
+                cross-axis-alignment: center;
+                alignment: center;
+                spacing: 8px;
+                IconButton {
+                    icon: Icons.shuffle;
+                    active: Player.shuffle;
+                    icon-size: 17px;
+                    tooltip: Player.shuffle ? "Shuffle on" : "Shuffle off";
+                    clicked => { Actions.toggle-shuffle(); }
+                }
+                IconButton {
+                    icon: Icons.prev;
+                    size: 34px;
+                    icon-size: 19px;
+                    tooltip: "Previous";
+                    clicked => { Actions.previous(); }
+                }
+                Rectangle {
+                    width: 38px;
+                    height: 38px;
+                    border-radius: 19px;
+                    background: play-ta.has-hover ? Theme.text.mix(Theme.accent, 0.8) : Theme.text;
+                    Image {
+                        source: Player.playing ? Icons.pause : Icons.play;
+                        colorize: Theme.bg;
+                        width: 18px;
+                        height: 18px;
+                    }
+                    play-ta := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => { Actions.toggle-play(); }
+                    }
+                }
+                IconButton {
+                    icon: Icons.next;
+                    size: 34px;
+                    icon-size: 19px;
+                    tooltip: "Next";
+                    clicked => { Actions.next(); }
+                }
+                IconButton {
+                    icon: Player.repeat == 2 ? Icons.repeat1 : Icons.repeat;
+                    active: Player.repeat != 0;
+                    icon-size: 17px;
+                    tooltip: Player.repeat == 0 ? "Repeat off" : Player.repeat == 1 ? "Repeat all" : "Repeat one";
+                    clicked => { Actions.cycle-repeat(); }
+                }
+            }
+            HorizontalLayout {
+                cross-axis-alignment: center;
+                spacing: 10px;
+                Text {
+                    width: 42px;
+                    text: Player.position-text;
+                    font-family: Theme.mono;
+                    font-size: 11.5px;
+                    color: Theme.text-3;
+                    horizontal-alignment: right;
+                    vertical-alignment: center;
+                }
+                SeekBar {
+                    horizontal-stretch: 1;
+                    value: Player.progress;
+                    duration-ms: Player.duration-ms;
+                    changed(v) => { Actions.seek(v); }
+                }
+                Text {
+                    width: 42px;
+                    text: Player.duration-text;
+                    font-family: Theme.mono;
+                    font-size: 11.5px;
+                    color: Theme.text-3;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        // Extras
+        HorizontalLayout {
+            cross-axis-alignment: center;
+            horizontal-stretch: 1;
+            min-width: 300px;
+            alignment: end;
+            spacing: 2px;
+            IconButton {
+                icon: Icons.lyrics;
+                icon-size: 17px;
+                active: AppState.right-panel && AppState.right-tab == "lyrics";
+                tooltip: "Lyrics";
+                clicked => {
+                    if (AppState.right-panel && AppState.right-tab == "lyrics") {
+                        AppState.right-panel = false;
+                    } else {
+                        AppState.right-panel = true;
+                        AppState.right-tab = "lyrics";
+                    }
+                }
+            }
+            IconButton {
+                icon: Icons.queue;
+                active: AppState.right-panel && AppState.right-tab == "queue";
+                tooltip: "Queue";
+                clicked => {
+                    if (AppState.right-panel && AppState.right-tab == "queue") {
+                        AppState.right-panel = false;
+                    } else {
+                        AppState.right-panel = true;
+                        AppState.right-tab = "queue";
+                    }
+                }
+            }
+            DeviceButton { }
+            IconButton {
+                icon: Player.muted || Player.volume == 0 ? Icons.mute : Player.volume < 0.5 ? Icons.volume1 : Icons.volume;
+                icon-size: 17px;
+                tooltip: Player.muted ? "Unmute" : "Mute";
+                clicked => { Actions.toggle-mute(); }
+            }
+            SeekBar {
+                width: 96px;
+                value: Player.muted ? 0 : Player.volume;
+                changed(v) => { Actions.set-volume(v); }
+                preview(v) => { Actions.set-volume(v); }
+            }
+            Rectangle { width: 6px; }
+            IconButton {
+                icon: Icons.mini;
+                icon-size: 17px;
+                tooltip: "Mini player (Ctrl+M)";
+                clicked => { Actions.open-mini(); }
+            }
+            LastfmButton { }
+        }
+    }
+}

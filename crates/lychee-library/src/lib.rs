@@ -1,0 +1,364 @@
+//! Lychee's music library: scanning folders, reading tags and artwork, storing everything in
+//! SQLite, and serving a fast in-memory index to the UI.
+
+mod artwork;
+mod db;
+mod index;
+pub mod lyrics;
+mod tags;
+
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+use anyhow::Context;
+use lychee_core::{PlaylistId, TrackId, now_unix};
+use parking_lot::{Mutex, RwLock};
+use rayon::prelude::*;
+use walkdir::WalkDir;
+
+pub use artwork::{ArtworkCache, Colors, LARGE, THUMB};
+pub use db::TrackRecord;
+pub use index::{AlbumSort, LibraryIndex, SearchResults, Stats, TrackSort, sort_key};
+
+/// Progress reported while scanning.
+#[derive(Clone, Copy, Debug)]
+pub enum ScanProgress {
+    /// Walking folders; `found` audio files so far.
+    Discovering { found: usize },
+    /// Reading tags of new or changed files.
+    Reading { done: usize, total: usize },
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ScanSummary {
+    pub added_or_updated: usize,
+    pub removed: usize,
+    pub total: usize,
+}
+
+pub struct Library {
+    db: Mutex<db::Db>,
+    index: RwLock<Arc<LibraryIndex>>,
+    artwork: ArtworkCache,
+    scanning: AtomicBool,
+}
+
+impl Library {
+    /// Open (or create) the library database in `data_dir`, with artwork cached in `cache_dir`.
+    pub fn open(data_dir: &Path, cache_dir: &Path) -> anyhow::Result<Library> {
+        std::fs::create_dir_all(data_dir).context("creating the data directory")?;
+        let db = db::Db::open(&data_dir.join("library.db")).context("opening the library database")?;
+        let artwork = ArtworkCache::new(cache_dir.join("artwork")).context("creating the artwork cache")?;
+        let library = Library { db: Mutex::new(db), index: RwLock::new(Arc::default()), artwork, scanning: AtomicBool::new(false) };
+        library.reload()?;
+        Ok(library)
+    }
+
+    /// A consistent snapshot of the library. Cheap to call; hold it only briefly.
+    pub fn index(&self) -> Arc<LibraryIndex> {
+        self.index.read().clone()
+    }
+
+    /// Rebuild the in-memory index from the database.
+    pub fn reload(&self) -> anyhow::Result<()> {
+        let (tracks, playlists, accents) = {
+            let db = self.db.lock();
+            let accents: HashMap<String, Colors> = db.artwork_colors()?.into_iter().collect();
+            (db.all_tracks()?, db.playlists()?, accents)
+        };
+        let index = LibraryIndex::build(tracks, playlists, accents);
+        *self.index.write() = Arc::new(index);
+        Ok(())
+    }
+
+    pub fn artwork_thumb(&self, key: &str) -> PathBuf {
+        self.artwork.thumb_path(key)
+    }
+
+    pub fn artwork_large(&self, key: &str) -> PathBuf {
+        self.artwork.large_path(key)
+    }
+
+    // ---- folders and scanning ------------------------------------------------------------
+
+    pub fn folders(&self) -> Vec<PathBuf> {
+        self.db.lock().folders().unwrap_or_default()
+    }
+
+    pub fn add_folder(&self, path: &Path) -> anyhow::Result<()> {
+        self.db.lock().add_folder(path)?;
+        Ok(())
+    }
+
+    /// Forget a folder. Its tracks disappear on the next scan.
+    pub fn remove_folder(&self, path: &Path) -> anyhow::Result<()> {
+        self.db.lock().remove_folder(path)?;
+        Ok(())
+    }
+
+    pub fn is_scanning(&self) -> bool {
+        self.scanning.load(Ordering::Relaxed)
+    }
+
+    /// Bring the database in line with the library folders. Only new or changed files are read.
+    pub fn scan(&self, progress: &(dyn Fn(ScanProgress) + Sync)) -> anyhow::Result<ScanSummary> {
+        if self.scanning.swap(true, Ordering::SeqCst) {
+            return Ok(ScanSummary::default());
+        }
+        let result = self.scan_inner(progress);
+        self.scanning.store(false, Ordering::SeqCst);
+        result
+    }
+
+    fn scan_inner(&self, progress: &(dyn Fn(ScanProgress) + Sync)) -> anyhow::Result<ScanSummary> {
+        let folders = self.folders();
+        let existing = self.db.lock().file_stamps()?;
+
+        let mut found: Vec<(PathBuf, i64, u64)> = Vec::new();
+        for folder in &folders {
+            for entry in WalkDir::new(folder).follow_links(true).into_iter().filter_map(Result::ok) {
+                if !entry.file_type().is_file() || !is_audio(entry.path()) {
+                    continue;
+                }
+                let Ok(meta) = entry.metadata() else { continue };
+                let mtime = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                found.push((entry.into_path(), mtime, meta.len()));
+                if found.len() % 250 == 0 {
+                    progress(ScanProgress::Discovering { found: found.len() });
+                }
+            }
+        }
+        progress(ScanProgress::Discovering { found: found.len() });
+
+        let known: HashMap<&Path, (i64, u64)> = existing.iter().map(|(_, p, m, s)| (p.as_path(), (*m, *s))).collect();
+        let found_paths: HashSet<&Path> = found.iter().map(|(p, _, _)| p.as_path()).collect();
+        let removed: Vec<TrackId> = existing.iter().filter(|(_, p, _, _)| !found_paths.contains(p.as_path())).map(|(id, ..)| *id).collect();
+        let to_read: Vec<&PathBuf> = found
+            .iter()
+            .filter(|(p, m, s)| known.get(p.as_path()) != Some(&(*m, *s)))
+            .map(|(p, _, _)| p)
+            .collect();
+
+        let total = to_read.len();
+        let done = AtomicUsize::new(0);
+        let art = ArtIngest::new(&self.artwork);
+        let records: Vec<TrackRecord> = to_read
+            .par_iter()
+            .filter_map(|path| {
+                let meta = match tags::read(path) {
+                    Ok(meta) => meta,
+                    Err(e) => {
+                        tracing::warn!("skipping {}: {e}", path.display());
+                        return None;
+                    }
+                };
+                let mut record = meta.record;
+                record.artwork = match meta.picture {
+                    Some(bytes) => art.ingest(&bytes),
+                    None => path.parent().and_then(|dir| art.folder(dir)),
+                };
+                let n = done.fetch_add(1, Ordering::Relaxed) + 1;
+                if n % 20 == 0 || n == total {
+                    progress(ScanProgress::Reading { done: n, total });
+                }
+                Some(record)
+            })
+            .collect();
+
+        {
+            let mut db = self.db.lock();
+            db.upsert_tracks(&records, true)?;
+            db.delete_tracks(&removed)?;
+            for (key, colors) in art.into_new() {
+                db.put_artwork(&key, colors)?;
+            }
+        }
+        self.reload()?;
+        Ok(ScanSummary { added_or_updated: records.len(), removed: removed.len(), total: found.len() })
+    }
+
+    /// Make files that aren't in the library playable ("Open with…", drag and drop, CLI).
+    /// Folders are expanded. Returns track ids in a sensible play order.
+    pub fn import_paths(&self, paths: &[PathBuf]) -> anyhow::Result<Vec<TrackId>> {
+        let mut files = Vec::new();
+        for p in paths {
+            if p.is_dir() {
+                let mut inner: Vec<PathBuf> = WalkDir::new(p)
+                    .into_iter()
+                    .filter_map(Result::ok)
+                    .filter(|e| e.file_type().is_file() && is_audio(e.path()))
+                    .map(|e| e.into_path())
+                    .collect();
+                inner.sort();
+                files.extend(inner);
+            } else if p.is_file() {
+                files.push(p.clone());
+            }
+        }
+        let mut ids = Vec::with_capacity(files.len());
+        let mut to_insert = Vec::new();
+        let art = ArtIngest::new(&self.artwork);
+        for f in &files {
+            if let Some(id) = self.db.lock().track_id_for_path(f)? {
+                ids.push(Some(id));
+                continue;
+            }
+            match tags::read(f) {
+                Ok(meta) => {
+                    let mut record = meta.record;
+                    record.artwork = match meta.picture {
+                        Some(bytes) => art.ingest(&bytes),
+                        None => f.parent().and_then(|dir| art.folder(dir)),
+                    };
+                    to_insert.push(record);
+                    ids.push(None);
+                }
+                Err(e) => tracing::warn!("cannot open {}: {e}", f.display()),
+            }
+        }
+        if !to_insert.is_empty() {
+            let mut db = self.db.lock();
+            let mut inserted = db.upsert_tracks(&to_insert, false)?.into_iter();
+            for (key, colors) in art.into_new() {
+                db.put_artwork(&key, colors)?;
+            }
+            drop(db);
+            for slot in ids.iter_mut().filter(|s| s.is_none()) {
+                *slot = inserted.next();
+            }
+            self.reload()?;
+        }
+        Ok(ids.into_iter().flatten().collect())
+    }
+
+    // ---- user data -----------------------------------------------------------------------
+
+    pub fn set_liked(&self, id: TrackId, liked: bool) -> anyhow::Result<()> {
+        self.db.lock().set_liked(id, liked)?;
+        let now = now_unix();
+        let mut index = self.index.write();
+        Arc::make_mut(&mut index).update_track(id, |t| {
+            t.liked = liked;
+            t.liked_at = liked.then_some(now);
+        });
+        Ok(())
+    }
+
+    pub fn record_play(&self, id: TrackId) -> anyhow::Result<()> {
+        let now = now_unix();
+        self.db.lock().record_play(id, now)?;
+        let mut index = self.index.write();
+        Arc::make_mut(&mut index).update_track(id, |t| {
+            t.play_count += 1;
+            t.last_played = Some(now);
+        });
+        Ok(())
+    }
+
+    fn refresh_playlists(&self) -> anyhow::Result<()> {
+        let playlists = self.db.lock().playlists()?;
+        let mut index = self.index.write();
+        Arc::make_mut(&mut index).set_playlists(playlists);
+        Ok(())
+    }
+
+    pub fn create_playlist(&self, name: &str, tracks: &[TrackId]) -> anyhow::Result<PlaylistId> {
+        let id = {
+            let mut db = self.db.lock();
+            let id = db.create_playlist(name)?;
+            db.set_playlist_tracks(id, tracks)?;
+            id
+        };
+        self.refresh_playlists()?;
+        Ok(id)
+    }
+
+    pub fn rename_playlist(&self, id: PlaylistId, name: &str) -> anyhow::Result<()> {
+        self.db.lock().rename_playlist(id, name)?;
+        self.refresh_playlists()
+    }
+
+    pub fn delete_playlist(&self, id: PlaylistId) -> anyhow::Result<()> {
+        self.db.lock().delete_playlist(id)?;
+        self.refresh_playlists()
+    }
+
+    pub fn set_playlist_tracks(&self, id: PlaylistId, tracks: &[TrackId]) -> anyhow::Result<()> {
+        self.db.lock().set_playlist_tracks(id, tracks)?;
+        self.refresh_playlists()
+    }
+
+    pub fn add_to_playlist(&self, id: PlaylistId, tracks: &[TrackId]) -> anyhow::Result<()> {
+        let mut all = self.index().playlist(id).map(|p| p.tracks.clone()).unwrap_or_default();
+        all.extend_from_slice(tracks);
+        self.set_playlist_tracks(id, &all)
+    }
+
+    pub fn get_kv(&self, key: &str) -> Option<String> {
+        self.db.lock().get_kv(key).ok().flatten()
+    }
+
+    pub fn set_kv(&self, key: &str, value: &str) {
+        if let Err(e) = self.db.lock().set_kv(key, value) {
+            tracing::warn!("could not save {key}: {e}");
+        }
+    }
+}
+
+/// Artwork deduplication during a scan: every distinct image is decoded once.
+struct ArtIngest<'a> {
+    cache: &'a ArtworkCache,
+    seen: Mutex<HashSet<String>>,
+    folders: Mutex<HashMap<PathBuf, Option<String>>>,
+    new: Mutex<Vec<(String, Colors)>>,
+}
+
+impl<'a> ArtIngest<'a> {
+    fn new(cache: &'a ArtworkCache) -> Self {
+        ArtIngest { cache, seen: Mutex::default(), folders: Mutex::default(), new: Mutex::default() }
+    }
+
+    fn ingest(&self, bytes: &[u8]) -> Option<String> {
+        let key = ArtworkCache::key_for(bytes);
+        if !self.seen.lock().insert(key.clone()) {
+            return Some(key);
+        }
+        if self.cache.has(&key) {
+            return Some(key);
+        }
+        match self.cache.store(&key, bytes) {
+            Ok(colors) => {
+                self.new.lock().push((key.clone(), colors));
+                Some(key)
+            }
+            Err(e) => {
+                tracing::debug!("unreadable artwork: {e}");
+                None
+            }
+        }
+    }
+
+    fn folder(&self, dir: &Path) -> Option<String> {
+        if let Some(cached) = self.folders.lock().get(dir) {
+            return cached.clone();
+        }
+        let key = artwork::folder_image(dir).and_then(|p| std::fs::read(p).ok()).and_then(|bytes| self.ingest(&bytes));
+        self.folders.lock().insert(dir.to_path_buf(), key.clone());
+        key
+    }
+
+    fn into_new(self) -> Vec<(String, Colors)> {
+        self.new.into_inner()
+    }
+}
+
+fn is_audio(path: &Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(lychee_audio::is_supported_extension)
+}

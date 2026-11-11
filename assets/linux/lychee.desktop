@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Lychee
+GenericName=Music Player
+Comment=Play and organise your music library
+Exec=lychee %U
+Icon=lychee
+Terminal=false
+Categories=AudioVideo;Audio;Player;Music;
+Keywords=music;audio;player;flac;mp3;library;
+MimeType=audio/mpeg;audio/flac;audio/x-flac;audio/wav;audio/x-wav;audio/aiff;audio/x-aiff;audio/ogg;audio/x-vorbis+ogg;audio/opus;audio/mp4;audio/x-m4a;audio/aac;audio/webm;audio/x-matroska;inode/directory;
+StartupWMClass=lychee

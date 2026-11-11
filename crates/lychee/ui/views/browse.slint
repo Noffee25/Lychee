@@ -1,0 +1,262 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, Actions, ArtistCard, GenreCard } from "../state.slint";
+import { Cover, PillButton } from "../widgets.slint";
+import { Grid, AlbumGrid, PageHeader } from "albums.slint";
+import { TrackHeader, TrackRowView } from "tracks.slint";
+import { ListView, ScrollView } from "std-widgets.slint";
+
+component ArtistRowView inherits Rectangle {
+    in property <ArtistCard> artist;
+    height: 60px;
+    border-radius: 10px;
+    background: ar-ta.has-hover ? Theme.hover : transparent;
+    ar-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Actions.open-artist(root.artist.name); }
+    }
+    HorizontalLayout {
+        cross-axis-alignment: center;
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 14px;
+        Cover {
+            width: 44px;
+            height: 44px;
+            round: true;
+            source: root.artist.cover;
+            has-image: root.artist.has-cover;
+            seed: root.artist.seed;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.artist.name;
+                font-weight: 600;
+                font-size: 14px;
+                color: Theme.text;
+                overflow: elide;
+            }
+            Text {
+                text: root.artist.detail;
+                font-size: 12.5px;
+                color: Theme.text-3;
+                overflow: elide;
+            }
+        }
+        Image {
+            source: Icons.chev-r;
+            colorize: Theme.text-3;
+            width: 16px;
+            height: 16px;
+            opacity: ar-ta.has-hover ? 1 : 0;
+        }
+    }
+}
+
+export component ArtistsPage inherits Rectangle {
+    VerticalLayout {
+        padding-top: 52px;
+        PageHeader {
+            title: "Artists";
+            subtitle: AppState.count-artists + " album artists in your library";
+        }
+        ListView {
+            vertical-stretch: 1;
+            for artist in AppState.artists: Rectangle {
+                height: 60px;
+                ArtistRowView {
+                    x: Grid.side-padding - 12px;
+                    width: parent.width - 2 * (Grid.side-padding - 12px);
+                    artist: artist;
+                }
+            }
+        }
+    }
+}
+
+export component ArtistPage inherits Rectangle {
+    property <length> tile-width: (sv.visible-width - 2 * Grid.side-padding - (AppState.grid-columns - 1) * Grid.gap) / Math.max(1, AppState.grid-columns);
+    property <bool> scrolled: sv.content-y < -8px;
+    changed scrolled => { AppState.content-scrolled = root.scrolled; }
+    init => { AppState.content-scrolled = false; }
+    sv := ScrollView {
+        content-width: self.visible-width;
+        content-height: page.preferred-height;
+        page := VerticalLayout {
+            width: sv.visible-width;
+            alignment: start;
+            Rectangle {
+                background: Theme.dark
+                    ? @linear-gradient(180deg, Theme.tint.with-alpha(0.85) 0%, Theme.bg.with-alpha(0) 100%)
+                    : @linear-gradient(180deg, Theme.accent.with-alpha(0.2) 0%, Theme.bg.with-alpha(0) 100%);
+                HorizontalLayout {
+                    padding-left: Grid.side-padding + 8px;
+                    padding-right: Grid.side-padding;
+                    padding-top: 78px;
+                    padding-bottom: 24px;
+                    spacing: 26px;
+                    Cover {
+                        width: 168px;
+                        height: 168px;
+                        round: true;
+                        source: AppState.list-header.cover;
+                        has-image: AppState.list-header.has-cover;
+                        seed: AppState.list-header.seed;
+                        drop-shadow-blur: 30px;
+                        drop-shadow-offset-y: 14px;
+                        drop-shadow-color: Theme.shadow;
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        alignment: end;
+                        spacing: 6px;
+                        Text {
+                            text: "Artist";
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: Theme.text-2;
+                        }
+                        Text {
+                            text: AppState.list-header.title;
+                            font-size: Math.max(32px, Math.min(56px, sv.visible-width / 15));
+                            font-weight: 750;
+                            letter-spacing: -1.4px;
+                            color: Theme.text;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: AppState.list-header.subtitle;
+                            color: Theme.text-2;
+                        }
+                        HorizontalLayout {
+                            cross-axis-alignment: center;
+                            padding-top: 10px;
+                            spacing: 10px;
+                            alignment: start;
+                            PillButton {
+                                text: "Play";
+                                icon: Icons.play;
+                                primary: true;
+                                clicked => { Actions.play-list(false); }
+                            }
+                            PillButton {
+                                text: "Shuffle";
+                                icon: Icons.shuffle;
+                                clicked => { Actions.play-list(true); }
+                            }
+                        }
+                    }
+                }
+            }
+            if AppState.tracks.length > 0: VerticalLayout {
+                padding-left: Grid.side-padding - 4px;
+                padding-right: Grid.side-padding - 4px;
+                padding-bottom: 20px;
+                Text {
+                    text: "Most played";
+                    font-size: 18px;
+                    font-weight: 650;
+                    color: Theme.text;
+                    height: 40px;
+                    x: 8px;
+                }
+                for row in AppState.tracks: TrackRowView {
+                    track: row;
+                    context: "list";
+                    show-cover: true;
+                    show-album: true;
+                }
+            }
+            VerticalLayout {
+                padding-left: Grid.side-padding;
+                padding-right: Grid.side-padding;
+                padding-bottom: 40px;
+                spacing: 14px;
+                Text {
+                    text: "Albums";
+                    font-size: 18px;
+                    font-weight: 650;
+                    color: Theme.text;
+                }
+                AlbumGrid {
+                    rows: AppState.artist-album-rows;
+                    tile-width: root.tile-width;
+                }
+            }
+        }
+    }
+}
+
+component GenreTile inherits Rectangle {
+    in property <GenreCard> genre;
+    border-radius: 12px;
+    clip: true;
+    background: @linear-gradient(135deg, root.genre.seed 0%, root.genre.seed.darker(0.55) 100%);
+    drop-shadow-blur: g-ta.has-hover ? 20px : 10px;
+    drop-shadow-offset-y: 6px;
+    drop-shadow-color: Theme.shadow;
+    g-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Actions.open-genre(root.genre.name); }
+    }
+    if root.genre.has-cover: Cover {
+        x: parent.width - parent.height * 0.62;
+        y: parent.height * 0.32;
+        width: parent.height * 0.78;
+        height: parent.height * 0.78;
+        radius: 8px;
+        source: root.genre.cover;
+        has-image: true;
+        transform-rotation: 18deg;
+        drop-shadow-blur: 14px;
+        drop-shadow-color: #00000060;
+    }
+    VerticalLayout {
+        padding: 16px;
+        alignment: start;
+        spacing: 2px;
+        Text {
+            text: root.genre.name;
+            font-size: 18px;
+            font-weight: 700;
+            color: #ffffff;
+            overflow: elide;
+        }
+        Text {
+            text: root.genre.detail;
+            font-size: 12.5px;
+            color: #ffffffb0;
+        }
+    }
+}
+
+export component GenresPage inherits Rectangle {
+    property <length> tile-width: (list.width - 2 * Grid.side-padding - (AppState.grid-columns - 1) * Grid.gap) / Math.max(1, AppState.grid-columns);
+    VerticalLayout {
+        padding-top: 52px;
+        PageHeader {
+            title: "Genres";
+            subtitle: AppState.genre-rows.length > 0 ? "Browse your library by genre" : "No genre tags found in your files";
+        }
+        list := ListView {
+            vertical-stretch: 1;
+            for row in AppState.genre-rows: Rectangle {
+                height: root.tile-width * 0.62 + Grid.gap;
+                HorizontalLayout {
+                    cross-axis-alignment: center;
+                    x: Grid.side-padding;
+                    y: 0px;
+                    height: root.tile-width * 0.62;
+                    spacing: Grid.gap;
+                    alignment: start;
+                    for genre in row.items: GenreTile {
+                        genre: genre;
+                        width: root.tile-width;
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,378 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, Player, Actions } from "../state.slint";
+import { PillButton, IconButton, Toggle, Segmented, TextField, Divider } from "../widgets.slint";
+import { PageHeader } from "albums.slint";
+import { ScrollView, AboutSlint } from "std-widgets.slint";
+
+component Section inherits Rectangle {
+    in property <string> title;
+    in property <string> description;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.surface;
+    VerticalLayout {
+        padding: 20px;
+        spacing: 12px;
+        Text {
+            text: root.title;
+            font-size: 16px;
+            font-weight: 650;
+            color: Theme.text;
+        }
+        if root.description != "": Text {
+            text: root.description;
+            color: Theme.text-2;
+            wrap: word-wrap;
+        }
+        @children
+    }
+}
+
+component SettingRow inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> hint;
+    spacing: 16px;
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: center;
+        spacing: 2px;
+        Text {
+            text: root.label;
+            font-weight: 500;
+            color: Theme.text;
+            wrap: word-wrap;
+        }
+        if root.hint != "": Text {
+            text: root.hint;
+            font-size: 12.5px;
+            color: Theme.text-3;
+            wrap: word-wrap;
+        }
+    }
+    @children
+}
+
+component ShortcutRow inherits HorizontalLayout {
+    in property <string> keys;
+    in property <string> action;
+    height: 28px;
+    Text {
+        text: root.action;
+        color: Theme.text-2;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+    }
+    Rectangle {
+        border-radius: 6px;
+        border-width: 1px;
+        border-color: Theme.border-2;
+        background: Theme.surface-2;
+        height: 22px;
+        width: key-text.preferred-width + 14px;
+        key-text := Text {
+            text: root.keys;
+            font-family: Theme.mono;
+            font-size: 11.5px;
+            color: Theme.text;
+        }
+    }
+}
+
+export component SettingsPage inherits Rectangle {
+    property <bool> scrolled: sv.content-y < -8px;
+    changed scrolled => { AppState.content-scrolled = root.scrolled; }
+    init => { AppState.content-scrolled = false; }
+    sv := ScrollView {
+        content-width: self.visible-width;
+        content-height: page.preferred-height;
+        page := VerticalLayout {
+            width: sv.visible-width;
+            padding-top: 52px;
+            padding-bottom: 40px;
+            alignment: start;
+            PageHeader {
+                title: "Settings";
+                subtitle: "Lychee " + AppState.version;
+            }
+            HorizontalLayout {
+                cross-axis-alignment: center;
+                padding-left: 24px;
+                padding-right: 24px;
+                alignment: start;
+                VerticalLayout {
+                    max-width: 780px;
+                    horizontal-stretch: 1;
+                    spacing: 18px;
+
+                    Section {
+                        title: "Library";
+                        description: "Lychee indexes these folders and keeps watching for changes when you rescan. Your files are never modified.";
+                        for folder in AppState.folders: Rectangle {
+                            height: 40px;
+                            border-radius: 8px;
+                            background: Theme.surface-2;
+                            HorizontalLayout {
+                                cross-axis-alignment: center;
+                                padding-left: 12px;
+                                padding-right: 4px;
+                                spacing: 10px;
+                                Image {
+                                    source: Icons.folder;
+                                    colorize: Theme.text-2;
+                                    width: 16px;
+                                    height: 16px;
+                                }
+                                Text {
+                                    text: folder;
+                                    font-family: Theme.mono;
+                                    font-size: 12.5px;
+                                    color: Theme.text;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                                IconButton {
+                                    icon: Icons.x;
+                                    tooltip: "Remove folder";
+                                    clicked => { Actions.remove-folder(folder); }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            cross-axis-alignment: center;
+                            spacing: 10px;
+                            alignment: start;
+                            PillButton {
+                                text: "Add folder…";
+                                icon: Icons.folder-plus;
+                                primary: AppState.folders.length == 0;
+                                pill-height: 36px;
+                                clicked => { Actions.add-folder(); }
+                            }
+                            PillButton {
+                                text: AppState.scan.active ? "Scanning…" : "Rescan library";
+                                icon: Icons.refresh;
+                                enabled: !AppState.scan.active && AppState.folders.length > 0;
+                                pill-height: 36px;
+                                clicked => { Actions.rescan(); }
+                            }
+                        }
+                        Text {
+                            text: AppState.scan.active ? AppState.scan.text : AppState.library-summary;
+                            font-family: Theme.mono;
+                            font-size: 12px;
+                            color: Theme.text-3;
+                        }
+                    }
+
+                    Section {
+                        title: "Playback";
+                        description: "Lychee plays gaplessly and converts sample rates in high quality when your device needs it.";
+                        Text {
+                            text: "Output device";
+                            font-weight: 500;
+                            color: Theme.text;
+                        }
+                        for device in AppState.devices: Rectangle {
+                            height: 34px;
+                            border-radius: 8px;
+                            background: dev-ta.has-hover ? Theme.hover : device.selected ? Theme.surface-2 : transparent;
+                            HorizontalLayout {
+                                cross-axis-alignment: center;
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                spacing: 10px;
+                                Rectangle {
+                                    width: 16px;
+                                    height: 16px;
+                                    border-radius: 8px;
+                                    border-width: device.selected ? 5px : 1.5px;
+                                    border-color: device.selected ? Theme.accent : Theme.border-2;
+                                }
+                                Text {
+                                    text: device.label;
+                                    color: Theme.text;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                            dev-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { Actions.set-device(device.label); }
+                            }
+                        }
+                    }
+
+                    Section {
+                        title: "Last.fm";
+                        description: "Scrobble what you listen to and keep your Last.fm profile up to date. Scrobbles are queued while you're offline.";
+                        if Player.lastfm.state != "disconnected" && Player.lastfm.state != "connecting": SettingRow {
+                            label: Player.lastfm.state == "error" ? "Connection needs attention" : "Connected as " + Player.lastfm.username;
+                            hint: Player.lastfm.state == "error" ? Player.lastfm.message
+                                : Player.lastfm.state == "offline" ? "Offline: \{Player.lastfm.pending} scrobble(s) queued, retrying automatically."
+                                : Player.lastfm.scrobbled > 0 ? "\{Player.lastfm.scrobbled} scrobbled this session" + (Player.lastfm.last != "" ? ". Last: " + Player.lastfm.last : "")
+                                : "Scrobbling is on.";
+                            if Player.lastfm.state == "error": PillButton {
+                                text: "Reconnect";
+                                icon: Icons.link;
+                                primary: true;
+                                pill-height: 34px;
+                                clicked => { Actions.lastfm-connect(); }
+                            }
+                            PillButton {
+                                text: "Profile";
+                                icon: Icons.external;
+                                pill-height: 34px;
+                                clicked => { Actions.lastfm-open-profile(); }
+                            }
+                            PillButton {
+                                text: "Disconnect";
+                                icon: Icons.logout;
+                                danger: true;
+                                pill-height: 34px;
+                                clicked => { Actions.lastfm-disconnect(); }
+                            }
+                        }
+                        if Player.lastfm.state == "connecting": SettingRow {
+                            label: "Waiting for approval…";
+                            hint: "A Last.fm page opened in your browser. Approve Lychee there and this will finish automatically.";
+                            PillButton {
+                                text: "Cancel";
+                                has-icon: false;
+                                pill-height: 34px;
+                                clicked => { Actions.lastfm-cancel(); }
+                            }
+                        }
+                        if Player.lastfm.state == "disconnected": SettingRow {
+                            label: "Not connected";
+                            hint: Player.lastfm.builtin-key || (Player.lastfm.api-key != "" && Player.lastfm.api-secret != "")
+                                ? "You'll approve Lychee in your browser; no password is stored."
+                                : "This build has no Last.fm API key. Add your own below to connect.";
+                            PillButton {
+                                text: "Connect";
+                                icon: Icons.link;
+                                primary: true;
+                                pill-height: 34px;
+                                enabled: Player.lastfm.builtin-key || (Player.lastfm.api-key != "" && Player.lastfm.api-secret != "");
+                                clicked => { Actions.lastfm-connect(); }
+                            }
+                        }
+                        if Player.lastfm.message != "" && Player.lastfm.state == "disconnected": Text {
+                            text: Player.lastfm.message;
+                            color: Theme.danger;
+                            wrap: word-wrap;
+                        }
+                        Divider { }
+                        SettingRow {
+                            label: "Love tracks on Last.fm";
+                            hint: "Adding a song to Favorites also loves it on Last.fm.";
+                            Toggle {
+                                checked: Player.lastfm.love-sync;
+                                toggled(on) => { Actions.lastfm-set-love-sync(on); }
+                            }
+                        }
+                        if !Player.lastfm.builtin-key: VerticalLayout {
+                            spacing: 8px;
+                            Divider { }
+                            Text {
+                                text: "API account";
+                                font-weight: 500;
+                                color: Theme.text;
+                            }
+                            Text {
+                                text: "Create one at last.fm/api/account/create (any name and callback work), then paste the key and shared secret.";
+                                font-size: 12.5px;
+                                color: Theme.text-3;
+                                wrap: word-wrap;
+                            }
+                            key-field := TextField {
+                                has-icon: false;
+                                placeholder: "API key";
+                                text: Player.lastfm.api-key;
+                            }
+                            secret-field := TextField {
+                                has-icon: false;
+                                password: true;
+                                placeholder: "Shared secret";
+                                text: Player.lastfm.api-secret;
+                            }
+                            HorizontalLayout {
+                                cross-axis-alignment: center;
+                                spacing: 10px;
+                                alignment: start;
+                                PillButton {
+                                    text: "Save";
+                                    has-icon: false;
+                                    pill-height: 34px;
+                                    clicked => { Actions.lastfm-set-keys(key-field.text, secret-field.text); }
+                                }
+                                PillButton {
+                                    text: "Open last.fm/api";
+                                    icon: Icons.external;
+                                    pill-height: 34px;
+                                    clicked => { Actions.open-url("https://www.last.fm/api/account/create"); }
+                                }
+                            }
+                        }
+                    }
+
+                    Section {
+                        title: "Appearance";
+                        SettingRow {
+                            label: "Theme";
+                            Segmented {
+                                options: ["System", "Dark", "Light"];
+                                selected: AppState.theme-mode;
+                                changed(i) => { Actions.set-theme-mode(i); }
+                            }
+                        }
+                        Divider { }
+                        SettingRow {
+                            label: "Colours from album art";
+                            hint: "Tint the interface with the colours of what's playing or open.";
+                            Toggle {
+                                checked: AppState.dynamic-accent;
+                                toggled(on) => { Actions.set-dynamic-accent(on); }
+                            }
+                        }
+                    }
+
+                    Section {
+                        title: "Keyboard shortcuts";
+                        ShortcutRow { action: "Play / pause"; keys: "Space"; }
+                        ShortcutRow { action: "Previous / next track"; keys: "Ctrl ← / Ctrl →"; }
+                        ShortcutRow { action: "Seek back / forward 10 seconds"; keys: "← / →"; }
+                        ShortcutRow { action: "Volume down / up"; keys: "Ctrl ↓ / Ctrl ↑"; }
+                        ShortcutRow { action: "Search and commands"; keys: "Ctrl K"; }
+                        ShortcutRow { action: "Mini player"; keys: "Ctrl M"; }
+                        ShortcutRow { action: "Toggle the queue panel"; keys: "Ctrl Q"; }
+                        ShortcutRow { action: "Settings"; keys: "Ctrl ,"; }
+                        ShortcutRow { action: "Back / close"; keys: "Esc"; }
+                    }
+
+                    Section {
+                        title: "About";
+                        description: "Lychee is free software licensed under the Apache License 2.0. Fonts: Geist and Geist Mono (SIL Open Font License 1.1). Decoding by Symphonia, tags by Lofty.";
+                        HorizontalLayout {
+                            cross-axis-alignment: center;
+                            spacing: 10px;
+                            alignment: start;
+                            PillButton {
+                                text: "Source code";
+                                icon: Icons.external;
+                                pill-height: 34px;
+                                clicked => { Actions.open-url("https://github.com/Y2Kwastaken/Lychee"); }
+                            }
+                        }
+                        AboutSlint {
+                            height: 150px;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

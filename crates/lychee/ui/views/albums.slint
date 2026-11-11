@@ -1,0 +1,231 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, Actions, AlbumCard, AlbumRow } from "../state.slint";
+import { Cover, PlayingBars, Segmented } from "../widgets.slint";
+import { ListView } from "std-widgets.slint";
+
+export global Grid {
+    out property <length> gap: 20px;
+    out property <length> min-tile: 168px;
+    out property <length> side-padding: 24px;
+}
+
+export component AlbumTile inherits Rectangle {
+    in property <AlbumCard> card;
+    property <bool> hovered: tile-ta.has-hover || fab-ta.has-hover;
+    tile-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Actions.open-album(root.card.id); }
+    }
+    VerticalLayout {
+        spacing: 0px;
+        Rectangle {
+            height: self.width;
+            border-radius: Theme.radius-m;
+            drop-shadow-blur: root.hovered ? 26px : 16px;
+            drop-shadow-offset-y: root.hovered ? 12px : 8px;
+            drop-shadow-color: Theme.shadow;
+            animate drop-shadow-blur, drop-shadow-offset-y { duration: Theme.medium; }
+            Cover {
+                width: parent.width;
+                height: parent.height;
+                source: root.card.cover;
+                has-image: root.card.has-cover;
+                seed: root.card.seed;
+            }
+            if root.card.playing: Rectangle {
+                x: 10px;
+                y: parent.height - 34px;
+                width: 30px;
+                height: 24px;
+                border-radius: 7px;
+                background: #000000a8;
+                PlayingBars { }
+            }
+            Rectangle {
+                x: parent.width - 52px;
+                y: parent.height - 52px;
+                width: 42px;
+                height: 42px;
+                border-radius: 21px;
+                background: fab-ta.has-hover ? Theme.accent.brighter(0.1) : Theme.accent;
+                opacity: root.hovered ? 1 : 0;
+                drop-shadow-blur: 12px;
+                drop-shadow-color: #00000060;
+                animate opacity { duration: Theme.medium; }
+                Image {
+                    source: Icons.play;
+                    colorize: Theme.on-accent;
+                    width: 18px;
+                    height: 18px;
+                }
+                fab-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { Actions.play-album(root.card.id, false); }
+                }
+            }
+        }
+        Rectangle { height: 10px; }
+        Text {
+            text: root.card.title;
+            font-weight: 600;
+            font-size: 14px;
+            color: root.card.playing ? Theme.accent : Theme.text;
+            overflow: elide;
+        }
+        HorizontalLayout {
+            cross-axis-alignment: center;
+            spacing: 6px;
+            Text {
+                text: root.card.artist;
+                font-size: 12.5px;
+                color: Theme.text-2;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            if root.card.hires: Rectangle {
+                height: 16px;
+                width: hr.preferred-width + 8px;
+                border-radius: 4px;
+                background: Theme.surface-2;
+                border-width: 1px;
+                border-color: Theme.border-2;
+                hr := Text {
+                    text: "HI-RES";
+                    font-family: Theme.mono;
+                    font-size: 9px;
+                    font-weight: 500;
+                    color: Theme.text-2;
+                }
+            }
+        }
+    }
+    ContextMenuArea {
+        Menu {
+            MenuItem {
+                title: "Play";
+                activated => { Actions.play-album(root.card.id, false); }
+            }
+            MenuItem {
+                title: "Shuffle";
+                activated => { Actions.play-album(root.card.id, true); }
+            }
+            MenuItem {
+                title: "Play next";
+                activated => { Actions.album-action("play-next", root.card.id); }
+            }
+            MenuItem {
+                title: "Add to queue";
+                activated => { Actions.album-action("add-queue", root.card.id); }
+            }
+            Menu {
+                title: "Add to playlist";
+                MenuItem {
+                    title: "New playlist";
+                    activated => { Actions.add-to-playlist(-1, "album", root.card.id); }
+                }
+                MenuSeparator { }
+                for playlist in AppState.playlists: MenuItem {
+                    title: playlist.name;
+                    activated => { Actions.add-to-playlist(playlist.id, "album", root.card.id); }
+                }
+            }
+            MenuSeparator { }
+            MenuItem {
+                title: "Go to artist";
+                activated => { Actions.album-action("go-artist", root.card.id); }
+            }
+            MenuItem {
+                title: "Show in folder";
+                activated => { Actions.album-action("show-folder", root.card.id); }
+            }
+        }
+    }
+}
+
+// A row of tiles; the caller decides the tile width.
+export component TileRow inherits HorizontalLayout {
+    in property <AlbumRow> tiles;
+    in property <length> tile-width;
+    spacing: Grid.gap;
+    alignment: start;
+    for card in root.tiles.items: AlbumTile {
+        card: card;
+        width: root.tile-width;
+    }
+}
+
+// Non-virtualised grid for short lists (artist pages, "More by").
+export component AlbumGrid inherits VerticalLayout {
+    in property <[AlbumRow]> rows;
+    in property <length> tile-width;
+    spacing: 26px;
+    for row in root.rows: TileRow {
+        tiles: row;
+        tile-width: root.tile-width;
+    }
+}
+
+export component PageHeader inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> subtitle;
+    padding-left: Grid.side-padding;
+    padding-right: Grid.side-padding;
+    padding-top: 4px;
+    padding-bottom: 18px;
+    spacing: 16px;
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: end;
+        spacing: 4px;
+        Text {
+            text: root.title;
+            font-size: 30px;
+            font-weight: 700;
+            letter-spacing: -0.6px;
+            color: Theme.text;
+            overflow: elide;
+        }
+        if root.subtitle != "": Text {
+            text: root.subtitle;
+            color: Theme.text-2;
+            overflow: elide;
+        }
+    }
+    @children
+}
+
+export component AlbumsPage inherits Rectangle {
+    property <int> columns: Math.max(2, Math.floor((list.width - 2 * Grid.side-padding + Grid.gap) / (Grid.min-tile + Grid.gap)));
+    property <length> tile-width: (list.width - 2 * Grid.side-padding - (root.columns - 1) * Grid.gap) / root.columns;
+    changed columns => { Actions.set-grid-columns(root.columns); }
+    init => { Actions.set-grid-columns(root.columns); }
+    VerticalLayout {
+        padding-top: 52px;
+        PageHeader {
+            title: AppState.albums-title;
+            subtitle: AppState.albums-subtitle;
+            if AppState.albums-sortable: VerticalLayout {
+                alignment: end;
+                Segmented {
+                    options: ["Artist", "Title", "Year", "Added"];
+                    selected: AppState.album-sort;
+                    changed(i) => { Actions.set-album-sort(i); }
+                }
+            }
+        }
+        list := ListView {
+            vertical-stretch: 1;
+            for row in AppState.album-rows: Rectangle {
+                height: root.tile-width + 72px;
+                TileRow {
+                    x: Grid.side-padding;
+                    y: 0px;
+                    height: root.tile-width + 48px;
+                    tiles: row;
+                    tile-width: root.tile-width;
+                }
+            }
+        }
+    }
+}

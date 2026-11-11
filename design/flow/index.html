@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lychee: Flow (design direction D)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0B0B0D; --side: #0E0E11; --surface: #131317; --surface-2: #19191E; --hover: #1E1E24; --border: #222228; --border-2: #2C2C34;
+  --text: #F4F4F5; --text-2: #A1A1AA; --text-3: #6B6B76;
+  --accent: #FF7A5C; --tint: #1B3A55; --on-accent: #1A0A05;
+  --font: 'Geist', system-ui, sans-serif; --mono: 'Geist Mono', ui-monospace, monospace;
+  --ease: cubic-bezier(.2,.8,.2,1);
+}
+.light { --bg: #FFFFFF; --side: #F7F7F8; --surface: #FFFFFF; --surface-2: #F3F3F5; --hover: #EDEDF0; --border: #E6E6EA; --border-2: #D9D9DE; --text: #0B0B0D; --text-2: #55555F; --text-3: #8B8B95; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body { background: var(--bg); color: var(--text); font: 400 13.5px/1.45 var(--font); -webkit-font-smoothing: antialiased; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.shot *, .shot *::before, .shot *::after { animation: none !important; transition: none !important; }
+kbd { font: 500 11px var(--mono); padding: 1px 6px; border-radius: 5px; border: 1px solid var(--border-2); color: var(--text-3); background: var(--surface-2); }
+
+.app { display: grid; grid-template-columns: 244px minmax(0, 1fr) 332px; grid-template-rows: minmax(0, 1fr) 84px; height: 100%; }
+
+/* Sidebar */
+.side { background: var(--side); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: 12px 10px; min-height: 0; }
+.brand { display: flex; align-items: center; gap: 9px; padding: 4px 8px 14px; font-weight: 700; font-size: 15.5px; letter-spacing: -.01em; }
+.brand .sp { flex: 1; }
+.ib { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: var(--text-2); transition: background .15s, color .15s; }
+.ib:hover { background: var(--hover); color: var(--text); }
+.ib.on { color: var(--accent); }
+.cmdk { display: flex; align-items: center; gap: 8px; width: 100%; height: 34px; padding: 0 8px 0 10px; border-radius: 9px; border: 1px solid var(--border-2); background: var(--surface); color: var(--text-3); margin-bottom: 14px; transition: border-color .15s; }
+.cmdk:hover { border-color: var(--text-3); }
+.cmdk span { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grp { font-size: 11.5px; font-weight: 500; color: var(--text-3); padding: 12px 10px 4px; display: flex; justify-content: space-between; align-items: center; }
+.nav a { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 8px; color: var(--text-2); cursor: pointer; font-weight: 500; transition: background .15s, color .15s; text-decoration: none; }
+.nav a:hover { background: var(--hover); color: var(--text); }
+.nav a.on { background: var(--surface-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--border); }
+.nav a .n { margin-left: auto; font: 400 11.5px var(--mono); color: var(--text-3); }
+.nav a .sw { width: 18px; height: 18px; border-radius: 5px; flex: none; overflow: hidden; display: grid; grid-template-columns: 1fr 1fr; }
+.nav a .sw img { width: 100%; height: 100%; display: block; }
+.nav a .sw.liked { display: grid; place-items: center; grid-template-columns: 1fr; background: linear-gradient(135deg, var(--accent), #8B5CF6); color: #fff; }
+.scan { margin-top: auto; padding: 12px 10px 4px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.scan .row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); font-weight: 500; white-space: nowrap; }
+.scan .row b { margin-left: auto; font: 400 11px var(--mono); color: var(--text-3); }
+.scan .bar { height: 3px; border-radius: 3px; background: var(--border-2); overflow: hidden; }
+.scan .bar i { display: block; height: 100%; width: 41%; background: var(--accent); border-radius: inherit; }
+.scan .path { font: 400 11px var(--mono); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spin { animation: spin 1.2s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }
+
+/* Content */
+.content { position: relative; min-width: 0; min-height: 0; overflow: auto; scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--text) 14%, transparent) transparent; }
+.toolbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 6px; height: 52px; padding: 0 20px 0 16px; }
+.crumb { display: flex; align-items: center; gap: 6px; margin-left: 8px; color: var(--text-2); font-weight: 500; }
+.crumb b { color: var(--text); font-weight: 600; }
+.toolbar .sp { flex: 1; }
+.hero { position: relative; margin-top: -52px; padding: 84px 32px 26px; display: flex; gap: 28px; align-items: flex-end; }
+.hero::before { content: ''; position: absolute; inset: 0 0 -120px; background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 92%, transparent) 0%, color-mix(in srgb, var(--tint) 45%, transparent) 55%, transparent 100%); z-index: -1; transition: background .6s; }
+.light .hero::before { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 26%, transparent), transparent); }
+.hero img { width: 212px; height: 212px; border-radius: 12px; box-shadow: 0 24px 50px -18px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06); flex: none; }
+.hero .k { font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--text-2); }
+.hero h1 { margin: 6px 0 14px; font-size: clamp(40px, 4.4vw, 60px); line-height: .98; font-weight: 750; letter-spacing: -.045em; }
+.meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--text-2); font-weight: 500; }
+.meta .av { width: 22px; height: 22px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--tint)); display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; }
+.meta b { color: var(--text); font-weight: 600; }
+.meta .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-3); }
+.tagrow { display: flex; gap: 6px; margin-top: 14px; }
+.tag { font: 500 11px var(--mono); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border-2); color: var(--text-2); background: color-mix(in srgb, var(--surface) 60%, transparent); }
+.tag.hi { border-color: color-mix(in srgb, var(--accent) 50%, transparent); color: var(--accent); }
+.actions { display: flex; align-items: center; gap: 10px; padding: 6px 32px 18px; }
+.btn { height: 40px; padding: 0 18px; border-radius: 999px; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; transition: transform .12s, background .15s, filter .15s; }
+.btn.primary { background: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.primary:active { transform: scale(.97); }
+.btn.ghost { border: 1px solid var(--border-2); color: var(--text); }
+.btn.ghost:hover { background: var(--hover); }
+.actions .sp { flex: 1; }
+.sortsel { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-weight: 500; font-size: 13px; padding: 6px 10px; border-radius: 8px; }
+.sortsel:hover { background: var(--hover); color: var(--text); }
+
+.tracks { padding: 0 20px 8px; }
+.thead, .tr { display: grid; grid-template-columns: 44px minmax(0, 1fr) 90px 70px 64px; align-items: center; gap: 8px; padding: 0 12px; }
+.thead { height: 34px; color: var(--text-3); font-size: 12px; font-weight: 500; border-bottom: 1px solid var(--border); margin-bottom: 6px; }
+.thead .r, .tr .r { text-align: right; }
+.tr { height: 48px; border-radius: 10px; cursor: pointer; transition: background .12s; }
+.tr:hover { background: var(--hover); }
+.tr .num { color: var(--text-3); font: 400 13px var(--mono); text-align: center; position: relative; }
+.tr .num .pl { display: none; color: var(--text); }
+.tr:hover .num .v { display: none; } .tr:hover .num .pl { display: inline-grid; }
+.tr .ti { font-weight: 550; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tr .ti small { display: block; color: var(--text-3); font-weight: 400; font-size: 12.5px; }
+.tr .pc { color: var(--text-3); font: 400 12.5px var(--mono); text-align: right; }
+.tr .lk { display: flex; justify-content: center; color: var(--text-3); opacity: 0; }
+.tr .lk.on { opacity: 1; color: var(--accent); }
+.tr:hover .lk { opacity: 1; }
+.tr .du { color: var(--text-2); font: 400 12.5px var(--mono); text-align: right; }
+.tr.cur { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.tr.cur .ti { color: var(--accent); }
+.bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 14px; }
+.bars i { width: 3px; background: var(--accent); border-radius: 1px; animation: eqb .9s ease-in-out infinite alternate; transform-origin: bottom; }
+.bars i:nth-child(1) { height: 55%; animation-delay: -.2s; } .bars i:nth-child(2) { height: 100%; animation-delay: -.6s; } .bars i:nth-child(3) { height: 70%; animation-delay: -.4s; }
+@keyframes eqb { from { transform: scaleY(.35); } to { transform: scaleY(1); } }
+.tr.cur:hover .num .bars { display: none; }
+.foot-note { padding: 14px 32px 4px; color: var(--text-3); font-size: 12px; line-height: 1.6; }
+.more { padding: 18px 32px 40px; }
+.more h3 { margin: 0 0 14px; font-size: 18px; letter-spacing: -.02em; font-weight: 650; display: flex; justify-content: space-between; align-items: baseline; }
+.more h3 a { font-size: 12.5px; color: var(--text-2); font-weight: 500; cursor: pointer; }
+.row-covers { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 18px; }
+.mc { cursor: pointer; }
+.mc img { width: 100%; aspect-ratio: 1; border-radius: 10px; display: block; box-shadow: 0 0 0 1px rgba(255,255,255,.05); transition: transform .25s var(--ease); }
+.mc:hover img { transform: translateY(-3px); }
+.mc b { display: block; margin-top: 8px; font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mc span { color: var(--text-3); font-size: 12.5px; }
+
+/* Right panel */
+.panel { border-left: 1px solid var(--border); background: var(--side); display: flex; flex-direction: column; min-height: 0; }
+.ptabs { display: flex; gap: 2px; margin: 10px 12px 0; padding: 3px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+.ptabs button { flex: 1; height: 28px; border-radius: 7px; font-weight: 550; color: var(--text-2); font-size: 12.5px; }
+.ptabs button.on { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.25), inset 0 0 0 1px var(--border); }
+.pbody { flex: 1; overflow: auto; padding: 14px 12px 12px; scrollbar-width: none; }
+.npcard img { width: 100%; aspect-ratio: 1; border-radius: 12px; display: block; box-shadow: 0 20px 40px -20px rgba(0,0,0,.7); }
+.npcard .r1 { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; }
+.npcard .r1 div { flex: 1; min-width: 0; }
+.npcard b { display: block; font-size: 17px; font-weight: 650; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.npcard span { color: var(--text-2); }
+.npcard .fmt { margin-top: 8px; font: 400 11px var(--mono); color: var(--text-3); }
+.qh { display: flex; justify-content: space-between; align-items: center; margin: 20px 4px 6px; font-size: 12px; font-weight: 500; color: var(--text-3); }
+.qh button { color: var(--text-2); font-size: 12px; } .qh button:hover { color: var(--text); }
+.qi { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 6px; border-radius: 9px; }
+.qi:hover { background: var(--hover); }
+.qi img { width: 40px; height: 40px; border-radius: 7px; display: block; }
+.qi b { display: block; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qi span { color: var(--text-3); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.qi time { font: 400 12px var(--mono); color: var(--text-3); }
+.qi .grip { color: var(--text-3); display: none; }
+.qi:hover time { display: none; } .qi:hover .grip { display: grid; }
+
+/* Player bar */
+.player { grid-column: 1 / -1; border-top: 1px solid var(--border); background: var(--side); display: grid; grid-template-columns: minmax(260px, 1fr) minmax(420px, 1.5fr) minmax(260px, 1fr); align-items: center; gap: 20px; padding: 0 16px; }
+.pl-now { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.pl-now img { width: 52px; height: 52px; border-radius: 9px; display: block; }
+.pl-now div { min-width: 0; }
+.pl-now b { display: block; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl-now span { color: var(--text-2); font-size: 12.5px; }
+.pl-mid { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.ctl { display: flex; align-items: center; gap: 8px; }
+.ctl .ib { width: 34px; height: 34px; }
+.pbtn { width: 38px; height: 38px; border-radius: 50%; background: var(--text); color: var(--bg); display: grid; place-items: center; margin: 0 4px; transition: transform .12s; }
+.pbtn:hover { transform: scale(1.06); } .pbtn:active { transform: scale(.95); }
+.prog { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 600px; }
+.prog time { font: 400 11.5px var(--mono); color: var(--text-3); width: 38px; text-align: center; }
+.track { position: relative; flex: 1; height: 16px; display: flex; align-items: center; cursor: pointer; }
+.track .rail { position: absolute; left: 0; right: 0; height: 4px; border-radius: 4px; background: var(--border-2); }
+.track .fill { position: absolute; left: 0; height: 4px; border-radius: 4px; background: var(--text); }
+.track:hover .fill { background: var(--accent); }
+.track .knob { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--text); transform: translateX(-50%) scale(0); transition: transform .15s; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.track:hover .knob { transform: translateX(-50%) scale(1); }
+.track .tip { position: absolute; bottom: 22px; transform: translateX(-50%); font: 500 11px var(--mono); padding: 3px 7px; border-radius: 6px; background: var(--text); color: var(--bg); opacity: 0; pointer-events: none; transition: opacity .15s; white-space: nowrap; }
+.track:hover .tip { opacity: 1; }
+.pl-right { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.devbtn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px; color: var(--text-2); font-weight: 500; font-size: 12.5px; }
+.devbtn:hover { background: var(--hover); color: var(--text); }
+.volw { display: flex; align-items: center; gap: 8px; width: 120px; margin-left: 4px; color: var(--text-2); }
+.volw .track .fill { width: 72%; }
+
+/* Command palette */
+.scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); backdrop-filter: blur(3px); opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 20; }
+.light .scrim { background: rgba(20,20,30,.25); }
+.palette { position: fixed; left: 50%; top: 96px; width: min(680px, 90vw); transform: translateX(-50%) translateY(-8px) scale(.98); opacity: 0; pointer-events: none; transition: all .2s var(--ease); z-index: 21; background: color-mix(in srgb, var(--surface) 96%, transparent); border: 1px solid var(--border-2); border-radius: 16px; box-shadow: 0 40px 80px -20px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.03); overflow: hidden; }
+.show-palette .scrim { opacity: 1; pointer-events: auto; }
+.show-palette .palette { opacity: 1; pointer-events: auto; transform: translateX(-50%); }
+.pin { display: flex; align-items: center; gap: 12px; height: 58px; padding: 0 18px; border-bottom: 1px solid var(--border); color: var(--text-3); }
+.pin .q { flex: 1; font-size: 17px; color: var(--text); font-weight: 450; }
+.pin .q .caret { display: inline-block; width: 1.5px; height: 20px; background: var(--accent); vertical-align: -4px; margin-left: 1px; animation: bl 1s steps(1) infinite; }
+@keyframes bl { 50% { opacity: 0; } }
+.pin .scope { font-size: 12px; padding: 3px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); }
+.pres { max-height: 470px; overflow: auto; padding: 8px; scrollbar-width: thin; scrollbar-color: var(--border-2) transparent; }
+.psec { font-size: 11.5px; font-weight: 500; color: var(--text-3); padding: 10px 10px 4px; }
+.pr { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 7px 10px; border-radius: 10px; cursor: pointer; }
+.pr.sel { background: var(--hover); box-shadow: inset 0 0 0 1px var(--border-2); }
+.pr img { width: 36px; height: 36px; border-radius: 7px; display: block; }
+.pr .ico { width: 36px; height: 36px; border-radius: 8px; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); }
+.pr b { display: block; font-weight: 550; }
+.pr b mark { background: none; color: var(--accent); }
+.pr span { color: var(--text-3); font-size: 12.5px; }
+.pr .hint { display: flex; gap: 6px; align-items: center; color: var(--text-3); font-size: 12px; }
+.pfoot { display: flex; gap: 16px; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border); color: var(--text-3); font-size: 12px; background: var(--surface-2); }
+.pfoot .sp { flex: 1; }
+.pfoot span { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 1260px) { .app { grid-template-columns: 220px minmax(0, 1fr) 300px; } .devbtn span { display: none; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand" id="brand"></div>
+    <button class="cmdk" data-act="palette"><i data-i="search" data-s="15"></i><span>Search</span><kbd>Ctrl K</kbd></button>
+    <nav class="nav">
+      <a><i data-i="clock" data-s="17"></i>Recently Added</a>
+      <a><i data-i="history" data-s="17"></i>Recently Played</a>
+    </nav>
+    <div class="grp">Library</div>
+    <nav class="nav">
+      <a class="on"><i data-i="disc" data-s="17"></i>Albums<span class="n">214</span></a>
+      <a><i data-i="user" data-s="17"></i>Artists<span class="n">88</span></a>
+      <a><i data-i="music" data-s="17"></i>Songs<span class="n">2,931</span></a>
+      <a><i data-i="tag" data-s="17"></i>Genres<span class="n">23</span></a>
+      <a><i data-i="folder" data-s="17"></i>Folders</a>
+    </nav>
+    <div class="grp">Playlists <button class="ib" style="width:22px;height:22px"><i data-i="plus" data-s="14"></i></button></div>
+    <nav class="nav" id="pls"></nav>
+    <div class="scan">
+      <div class="row"><i data-i="refresh" data-s="13" class="spin"></i>Scanning<b>1,204 / 2,931</b></div>
+      <div class="bar"><i></i></div>
+      <div class="path">~/Music/Hollow Coast/Tidal Memory</div>
+    </div>
+  </aside>
+
+  <main class="content" id="content">
+    <div class="toolbar">
+      <button class="ib"><i data-i="chevL" data-s="18"></i></button><button class="ib"><i data-i="chevR" data-s="18"></i></button>
+      <div class="crumb">Albums <i data-i="chevR" data-s="14"></i><b id="crumb"></b></div>
+      <div class="sp"></div>
+      <button class="ib" id="theme" title="Light / dark"><i data-i="sun" data-s="17"></i></button>
+      <button class="ib"><i data-i="more" data-s="18"></i></button>
+    </div>
+    <section class="hero">
+      <img id="heroArt" alt="">
+      <div>
+        <div class="k">Album</div>
+        <h1 id="heroTitle"></h1>
+        <div class="meta" id="heroMeta"></div>
+        <div class="tagrow" id="heroTags"></div>
+      </div>
+    </section>
+    <div class="actions">
+      <button class="btn primary" data-act="playalbum"><i data-i="play" data-s="16"></i>Play</button>
+      <button class="btn ghost"><i data-i="shuffle" data-s="16"></i>Shuffle</button>
+      <button class="ib" style="width:40px;height:40px;border-radius:50%"><i data-i="heart" data-s="18"></i></button>
+      <button class="ib" style="width:40px;height:40px;border-radius:50%"><i data-i="plusSquare" data-s="18"></i></button>
+      <button class="ib" style="width:40px;height:40px;border-radius:50%"><i data-i="more" data-s="18"></i></button>
+      <div class="sp"></div>
+      <button class="sortsel"><i data-i="sort" data-s="14"></i>Track number<i data-i="chevD" data-s="14"></i></button>
+    </div>
+    <div class="tracks">
+      <div class="thead"><span style="text-align:center">#</span><span>Title</span><span class="r">Plays</span><span></span><span class="r"><i data-i="clock" data-s="14"></i></span></div>
+      <div id="rows"></div>
+    </div>
+    <div class="foot-note" id="footNote"></div>
+  </main>
+
+  <aside class="panel">
+    <div class="ptabs"><button class="on">Queue</button><button>Lyrics</button><button>Details</button></div>
+    <div class="pbody">
+      <div class="npcard">
+        <img id="pArt" alt="">
+        <div class="r1"><div><b id="pTitle"></b><span id="pArtist"></span></div><button class="ib on"><i data-i="heartFill" data-s="18"></i></button><button class="ib"><i data-i="more" data-s="18"></i></button></div>
+        <div class="fmt" id="pFmt"></div>
+      </div>
+      <div class="qh"><span>Next from <b style="color:var(--text-2)">Tidal Memory</b></span><button>Clear</button></div>
+      <div id="q1"></div>
+      <div class="qh"><span>Queued by you</span></div>
+      <div id="q2"></div>
+    </div>
+  </aside>
+
+  <footer class="player">
+    <div class="pl-now"><img id="bArt" alt=""><div><b id="bTitle"></b><span id="bArtist"></span></div><button class="ib on"><i data-i="heartFill" data-s="17"></i></button></div>
+    <div class="pl-mid">
+      <div class="ctl">
+        <button class="ib" data-act="shuffle"><i data-i="shuffle" data-s="17"></i></button>
+        <button class="ib" data-act="prev"><i data-i="prev" data-s="19"></i></button>
+        <button class="pbtn" data-act="toggle" id="pp"></button>
+        <button class="ib" data-act="next"><i data-i="next" data-s="19"></i></button>
+        <button class="ib on" data-act="repeat"><i data-i="repeat" data-s="17"></i></button>
+      </div>
+      <div class="prog"><time id="tCur"></time><div class="track" id="seek"><div class="rail"></div><div class="fill" id="fill"></div><div class="knob" id="knob"></div><div class="tip" id="tip"></div></div><time id="tLen"></time></div>
+    </div>
+    <div class="pl-right">
+      <button class="ib"><i data-i="lyrics" data-s="17"></i></button>
+      <button class="ib on"><i data-i="queue" data-s="18"></i></button>
+      <button class="devbtn"><i data-i="device" data-s="16"></i><span>Speakers</span></button>
+      <div class="volw"><i data-i="volume" data-s="17"></i><div class="track"><div class="rail"></div><div class="fill"></div></div></div>
+      <button class="ib"><i data-i="mini" data-s="17"></i></button>
+    </div>
+  </footer>
+</div>
+
+<div class="scrim" data-act="closepalette"></div>
+<div class="palette">
+  <div class="pin"><i data-i="search" data-s="18"></i><div class="q">tid<span class="caret"></span></div><span class="scope">Everything</span><kbd>Esc</kbd></div>
+  <div class="pres" id="pres"></div>
+  <div class="pfoot"><span><kbd>&uarr;</kbd><kbd>&darr;</kbd>Navigate</span><span><kbd>&crarr;</kbd>Play</span><span><kbd>Ctrl &crarr;</kbd>Play next</span><span><kbd>Tab</kbd>Actions</span><span class="sp"></span><span>Type <kbd>&gt;</kbd> for commands</span></div>
+</div>
+
+<script src="../shared/data.js"></script>
+<script src="../shared/covers.js"></script>
+<script src="../shared/icons.js"></script>
+<script>
+(function () {
+  const L = LYCHEE, $ = s => document.querySelector(s), body = document.body;
+  const shot = L.params.has('shot');
+  if (shot) document.documentElement.classList.add('shot');
+  if (L.params.get('theme') === 'light') document.documentElement.classList.add('light');
+  const S = Object.assign({}, L.state);
+  let playing = L.album(S.albumId), pTracks = L.tracksFor(playing); // what is playing
+  let page = playing;                                                // which album page is open
+
+  $('#brand').innerHTML = L.logo({ size: 24 }) + '<span>Lychee</span><span class="sp"></span><button class="ib">' + L.icon('sidebar', { size: 17 }) + '</button>';
+  $('#pls').innerHTML = L.playlists.map(p => `<a>${p.kind === 'liked' ? `<span class="sw liked">${L.icon('heartFill', { size: 10 })}</span>` : `<span class="sw">${p.albums.map(id => `<img src="${L.coverURL(id)}" alt="">`).join('')}</span>`}${L.esc(p.name)}<span class="n">${p.count}</span></a>`).join('');
+
+  function renderPage() {
+    const a = page, tr = L.tracksFor(a);
+    document.documentElement.style.setProperty('--accent', a.accent);
+    document.documentElement.style.setProperty('--tint', a.tint);
+    $('#crumb').textContent = a.title; $('#heroArt').src = L.coverURL(a); $('#heroTitle').textContent = a.title;
+    const initials = a.artist.split(/\s+/).filter(w => /^[A-Z]/.test(w)).map(w => w[0]).slice(0, 2).join('');
+    $('#heroMeta').innerHTML = `<span class="av">${initials}</span><b>${L.esc(a.artist)}</b><span class="dot"></span>${a.year}<span class="dot"></span>${a.tracks} songs, ${a.minutes} min<span class="dot"></span>${L.esc(a.genre)}`;
+    $('#heroTags').innerHTML = `<span class="tag">${a.format}</span><span class="tag">${a.res}</span>${a.hires ? '<span class="tag hi">Hi-Res Lossless</span>' : ''}<span class="tag">${a.kbps.toLocaleString('en-US')} kbps</span>`;
+    $('#rows').innerHTML = tr.map((t, i) => {
+      const cur = a.id === playing.id && i === S.trackIndex;
+      return `<div class="tr${cur ? ' cur' : ''}" data-i="${i}"><span class="num">${cur ? '<span class="v bars"><i></i><i></i><i></i></span>' : `<span class="v">${t.n}</span>`}<span class="pl">${L.icon('play', { size: 14 })}</span></span>
+        <span class="ti">${L.esc(t.title)}</span><span class="pc">${t.plays}</span><span class="lk${t.liked ? ' on' : ''}">${L.icon(t.liked ? 'heartFill' : 'heart', { size: 15 })}</span><span class="du">${L.fmt(t.len)}</span></div>`;
+    }).join('');
+    $('#footNote').innerHTML = `Released March 14, ${a.year} &middot; ${L.esc(a.label)} &middot; Catalogue ${a.code}<br>Added to your library ${a.added} &middot; ~/Music/${L.esc(a.artist)}/${L.esc(a.title)}`;
+  }
+  function renderNow() {
+    const t = pTracks[S.trackIndex], url = L.coverURL(playing);
+    $('#pArt').src = url; $('#bArt').src = url; $('#pTitle').textContent = t.title; $('#bTitle').textContent = t.title;
+    $('#pArtist').textContent = playing.artist; $('#bArtist').textContent = playing.artist;
+    $('#pFmt').textContent = `${playing.format} · ${playing.res} · ${playing.kbps.toLocaleString('en-US')} kbps`;
+    const qi = (q, i) => { const a = L.album(q.albumId); return `<div class="qi"><img src="${L.coverURL(a)}" alt=""><div style="min-width:0"><b>${L.esc(q.title)}</b><span>${L.esc(a.artist)}</span></div><time>${L.fmt(q.len)}</time><span class="grip">${L.icon('grip', { size: 16 })}</span></div>`; };
+    $('#q1').innerHTML = L.queue.filter(q => !q.manual).map(qi).join('');
+    $('#q2').innerHTML = L.queue.filter(q => q.manual).map(qi).join('');
+    tick();
+  }
+  function tick() {
+    const t = pTracks[S.trackIndex], pct = Math.min(1, S.position / t.len);
+    $('#tCur').textContent = L.fmt(S.position); $('#tLen').textContent = L.fmt(t.len);
+    $('#fill').style.width = pct * 100 + '%'; $('#knob').style.left = pct * 100 + '%';
+  }
+  function renderPlay() { $('#pp').innerHTML = L.icon(S.playing ? 'pause' : 'play', { size: 18 }); }
+
+  // Command palette results (static demo for the query "tid")
+  const hl = (s, q) => s.replace(new RegExp('(' + q + ')', 'i'), '<mark>$1</mark>');
+  const tm = L.album('tidal-memory');
+  $('#pres').innerHTML = `
+    <div class="psec">Top result</div>
+    <div class="pr sel"><img src="${L.coverURL(tm)}" alt=""><div><b>${hl('Tidal Memory', 'tid')}</b><span>Album · Hollow Coast · 2024 · FLAC 24/96</span></div><span class="hint"><kbd>&crarr;</kbd> Play</span></div>
+    <div class="psec">Songs</div>
+    <div class="pr"><img src="${L.coverURL(tm)}" alt=""><div><b>${hl('Tidal Memory', 'tid')}</b><span>Hollow Coast · Tidal Memory · 6:21</span></div><span class="hint">Song</span></div>
+    <div class="pr"><img src="${L.coverURL(tm)}" alt=""><div><b>Low ${hl('Tide', 'tid')} Choir</b><span>Hollow Coast · Tidal Memory · 3:48</span></div><span class="hint">Song</span></div>
+    <div class="pr"><img src="${L.coverURL('undertow')}" alt=""><div><b>${hl('Riptide Lullaby', 'tid')}</b><span>Coral Theory · Undertow · 8:02</span></div><span class="hint">Song</span></div>
+    <div class="psec">Commands</div>
+    <div class="pr"><span class="ico">${L.icon('playNext', { size: 17 })}</span><div><b>Play “Tidal Memory” next</b><span>Insert after the current track</span></div><span class="hint"><kbd>Ctrl &crarr;</kbd></span></div>
+    <div class="pr"><span class="ico">${L.icon('shuffle', { size: 17 })}</span><div><b>Toggle shuffle</b><span>Currently off</span></div><span class="hint"><kbd>S</kbd></span></div>
+    <div class="pr"><span class="ico">${L.icon('mini', { size: 17 })}</span><div><b>Open mini player</b><span>Compact, always-on-top window</span></div><span class="hint"><kbd>Ctrl M</kbd></span></div>
+    <div class="pr"><span class="ico">${L.icon('refresh', { size: 17 })}</span><div><b>Rescan library</b><span>2 watched folders</span></div><span class="hint"><kbd>&gt;</kbd> rescan</span></div>`;
+
+  document.addEventListener('click', e => {
+    const mc = e.target.closest('.mc');
+    if (mc) { page = L.album(mc.dataset.id); renderPage(); $('#content').scrollTo({ top: 0, behavior: 'smooth' }); return; }
+    const tr = e.target.closest('.tr');
+    if (tr && !e.target.closest('.lk')) { playing = page; pTracks = L.tracksFor(page); S.trackIndex = +tr.dataset.i; S.position = 0; S.playing = true; renderPlay(); renderPage(); renderNow(); return; }
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const a = b.dataset.act;
+    if (a === 'toggle') { S.playing = !S.playing; renderPlay(); }
+    if (a === 'playalbum') { playing = page; pTracks = L.tracksFor(page); S.trackIndex = 0; S.position = 0; S.playing = true; renderPlay(); renderPage(); renderNow(); }
+    if (a === 'next') { S.trackIndex = (S.trackIndex + 1) % pTracks.length; S.position = 0; renderPage(); renderNow(); }
+    if (a === 'prev') { if (S.position > 3) S.position = 0; else { S.trackIndex = (S.trackIndex - 1 + pTracks.length) % pTracks.length; S.position = 0; } renderPage(); renderNow(); }
+    if (a === 'shuffle' || a === 'repeat') b.classList.toggle('on');
+    if (a === 'palette') body.classList.add('show-palette');
+    if (a === 'closepalette') body.classList.remove('show-palette');
+  });
+  $('#seek').addEventListener('click', e => { const r = e.currentTarget.getBoundingClientRect(); S.position = (e.clientX - r.left) / r.width * pTracks[S.trackIndex].len; tick(); });
+  $('#seek').addEventListener('mousemove', e => { const r = e.currentTarget.getBoundingClientRect(), x = Math.max(0, Math.min(r.width, e.clientX - r.left)); $('#tip').style.left = x + 'px'; $('#tip').textContent = L.fmt(x / r.width * pTracks[S.trackIndex].len); });
+  $('#theme').addEventListener('click', () => { document.documentElement.classList.toggle('light'); });
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); body.classList.toggle('show-palette'); }
+    else if (e.key === 'Escape') body.classList.remove('show-palette');
+    else if (e.code === 'Space' && !body.classList.contains('show-palette')) { e.preventDefault(); S.playing = !S.playing; renderPlay(); }
+  });
+
+  L.hydrateIcons(document, { stroke: 1.75 });
+  renderPlay(); renderPage(); renderNow();
+  if (L.params.get('palette')) body.classList.add('show-palette');
+  if (!shot) setInterval(() => { if (!S.playing) return; S.position += 0.25; if (S.position >= pTracks[S.trackIndex].len) { S.trackIndex = (S.trackIndex + 1) % pTracks.length; S.position = 0; renderPage(); renderNow(); } tick(); }, 250);
+})();
+</script>
+</body>
+</html>

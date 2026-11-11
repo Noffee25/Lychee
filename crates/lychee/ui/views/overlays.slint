@@ -1,0 +1,286 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, Actions } from "../state.slint";
+import { Cover, PillButton, Divider } from "../widgets.slint";
+
+component Kbd inherits Rectangle {
+    in property <string> text;
+    height: 20px;
+    width: kbd-text.preferred-width + 12px;
+    border-radius: 5px;
+    border-width: 1px;
+    border-color: Theme.border-2;
+    background: Theme.surface-2;
+    kbd-text := Text {
+        text: root.text;
+        font-family: Theme.mono;
+        font-size: 11px;
+        color: Theme.text-3;
+    }
+}
+
+export component CommandPalette inherits Rectangle {
+    callback close();
+    function activate(play-next: bool) {
+        if (AppState.palette-items.length > 0) {
+            Actions.palette-activate(AppState.palette-selected, play-next);
+        }
+    }
+    background: Theme.scrim;
+    TouchArea {
+        clicked => { root.close(); }
+    }
+    panel := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: Math.min(96px, parent.height * 0.12);
+        width: Math.min(680px, parent.width - 80px);
+        height: layout.preferred-height;
+        background: Theme.surface;
+        border-radius: 16px;
+        border-width: 1px;
+        border-color: Theme.border-2;
+        drop-shadow-blur: 60px;
+        drop-shadow-offset-y: 24px;
+        drop-shadow-color: #00000090;
+        clip: true;
+        TouchArea { }
+        keys := FocusScope {
+            capture-key-pressed(event) => {
+                if (event.text == Key.Escape) {
+                    root.close();
+                    return accept;
+                }
+                if (event.text == Key.DownArrow) {
+                    AppState.palette-selected = Math.min(AppState.palette-items.length - 1, AppState.palette-selected + 1);
+                    return accept;
+                }
+                if (event.text == Key.UpArrow) {
+                    AppState.palette-selected = Math.max(0, AppState.palette-selected - 1);
+                    return accept;
+                }
+                if (event.text == Key.Return) {
+                    root.activate(event.modifiers.control);
+                    return accept;
+                }
+                reject
+            }
+            layout := VerticalLayout {
+                HorizontalLayout {
+                    cross-axis-alignment: center;
+                    height: 58px;
+                    padding-left: 18px;
+                    padding-right: 14px;
+                    spacing: 12px;
+                    Image {
+                        source: Icons.search;
+                        colorize: Theme.text-3;
+                        width: 18px;
+                        height: 18px;
+                    }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        input := TextInput {
+                            width: 100%;
+                            height: 100%;
+                            vertical-alignment: center;
+                            font-size: 17px;
+                            color: Theme.text;
+                            single-line: true;
+                            text: AppState.palette-query;
+                            selection-background-color: Theme.accent.with-alpha(0.35);
+                            init => { self.focus(); }
+                            edited => {
+                                AppState.palette-selected = 0;
+                                Actions.palette-query-changed(self.text);
+                            }
+                        }
+                        if input.text == "": Text {
+                            x: 0px;
+                            height: 100%;
+                            text: "Search songs, albums, artists, or type > for commands";
+                            font-size: 17px;
+                            color: Theme.text-3;
+                            vertical-alignment: center;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Kbd { text: "Esc"; }
+                    }
+                }
+                Divider { }
+                VerticalLayout {
+                    padding: 8px;
+                    spacing: 0px;
+                    if AppState.palette-items.length == 0: Text {
+                        height: 64px;
+                        text: AppState.palette-query == "" ? "Start typing to search your library." : "No matches for “" + AppState.palette-query + "”.";
+                        color: Theme.text-3;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    for item[i] in AppState.palette-items: VerticalLayout {
+                        if item.section != "": Text {
+                            height: 28px;
+                            text: item.section;
+                            font-size: 11.5px;
+                            font-weight: 500;
+                            color: Theme.text-3;
+                            vertical-alignment: bottom;
+                            x: 10px;
+                        }
+                        Rectangle {
+                            height: 50px;
+                            border-radius: 10px;
+                            background: i == AppState.palette-selected ? Theme.hover : transparent;
+                            border-width: i == AppState.palette-selected ? 1px : 0px;
+                            border-color: Theme.border-2;
+                            HorizontalLayout {
+                                cross-axis-alignment: center;
+                                padding-left: 10px;
+                                padding-right: 12px;
+                                spacing: 12px;
+                                if item.kind == "command": Rectangle {
+                                    width: 36px;
+                                    height: 36px;
+                                    border-radius: 8px;
+                                    background: Theme.surface-2;
+                                    border-width: 1px;
+                                    border-color: Theme.border;
+                                    Image {
+                                        source: item.icon;
+                                        colorize: Theme.text-2;
+                                        width: 17px;
+                                        height: 17px;
+                                    }
+                                }
+                                if item.kind != "command": Cover {
+                                    width: 36px;
+                                    height: 36px;
+                                    radius: 7px;
+                                    round: item.kind == "artist";
+                                    source: item.cover;
+                                    has-image: item.has-cover;
+                                    seed: item.seed;
+                                }
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    alignment: center;
+                                    Text {
+                                        text: item.title;
+                                        font-weight: 500;
+                                        color: Theme.text;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: item.subtitle;
+                                        font-size: 12.5px;
+                                        color: Theme.text-3;
+                                        overflow: elide;
+                                    }
+                                }
+                                Text {
+                                    text: item.hint;
+                                    font-size: 12px;
+                                    color: Theme.text-3;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            TouchArea {
+                                mouse-cursor: pointer;
+                                moved => { AppState.palette-selected = i; }
+                                clicked => {
+                                    AppState.palette-selected = i;
+                                    root.activate(false);
+                                }
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: 40px;
+                    background: Theme.surface-2;
+                    Divider {
+                        y: 0px;
+                        width: 100%;
+                    }
+                    HorizontalLayout {
+                        cross-axis-alignment: center;
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 14px;
+                        HorizontalLayout { spacing: 4px; VerticalLayout { alignment: center; Kbd { text: "↑↓"; } } Text { text: "Navigate"; font-size: 12px; color: Theme.text-3; vertical-alignment: center; } }
+                        HorizontalLayout { spacing: 4px; VerticalLayout { alignment: center; Kbd { text: "Enter"; } } Text { text: "Open / run"; font-size: 12px; color: Theme.text-3; vertical-alignment: center; } }
+                        HorizontalLayout { spacing: 4px; VerticalLayout { alignment: center; Kbd { text: "Ctrl Enter"; } } Text { text: "Play next"; font-size: 12px; color: Theme.text-3; vertical-alignment: center; } }
+                        Rectangle { horizontal-stretch: 1; }
+                        HorizontalLayout { spacing: 4px; Text { text: "Type"; font-size: 12px; color: Theme.text-3; vertical-alignment: center; } VerticalLayout { alignment: center; Kbd { text: ">"; } } Text { text: "for commands"; font-size: 12px; color: Theme.text-3; vertical-alignment: center; } }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component Welcome inherits Rectangle {
+    background: Theme.bg;
+    TouchArea { }
+    VerticalLayout {
+        alignment: center;
+        spacing: 14px;
+        Image {
+            source: Icons.logo;
+            width: 84px;
+            height: 84px;
+            x: (parent.width - self.width) / 2;
+        }
+        Text {
+            text: "Welcome to Lychee";
+            font-size: 30px;
+            font-weight: 750;
+            letter-spacing: -0.8px;
+            color: Theme.text;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: "Add the folder where you keep your music. Lychee indexes it in the background\nand never changes your files.";
+            color: Theme.text-2;
+            horizontal-alignment: center;
+            font-size: 14px;
+        }
+        HorizontalLayout {
+            cross-axis-alignment: center;
+            alignment: center;
+            padding-top: 8px;
+            PillButton {
+                text: "Add music folder";
+                icon: Icons.folder-plus;
+                primary: true;
+                pill-height: 44px;
+                clicked => { Actions.add-folder(); }
+            }
+        }
+        Text {
+            text: "MP3 · FLAC · WAV · AIFF · ALAC · AAC · Ogg Vorbis · Opus";
+            font-family: Theme.mono;
+            font-size: 11.5px;
+            color: Theme.text-3;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+export component Toast inherits Rectangle {
+    in property <string> text;
+    height: 40px;
+    width: toast-text.preferred-width + 32px;
+    border-radius: 20px;
+    background: Theme.dark ? #F4F4F5 : #18181B;
+    drop-shadow-blur: 24px;
+    drop-shadow-offset-y: 8px;
+    drop-shadow-color: #00000060;
+    toast-text := Text {
+        text: root.text;
+        color: Theme.dark ? #0B0B0D : #F4F4F5;
+        font-weight: 500;
+    }
+}

@@ -1,0 +1,80 @@
+//! End-to-end scan of a temporary music folder.
+use std::path::Path;
+
+use lychee_library::{AlbumSort, Library};
+
+fn write_wav(path: &Path, seconds: f32) {
+    let rate = 44_100u32;
+    let frames = (rate as f32 * seconds) as u32;
+    let data_len = frames * 4;
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    bytes.extend_from_slice(&2u16.to_le_bytes()); // stereo
+    bytes.extend_from_slice(&rate.to_le_bytes());
+    bytes.extend_from_slice(&(rate * 4).to_le_bytes());
+    bytes.extend_from_slice(&4u16.to_le_bytes());
+    bytes.extend_from_slice(&16u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_len.to_le_bytes());
+    for i in 0..frames {
+        let s = ((i as f32 * 440.0 * std::f32::consts::TAU / rate as f32).sin() * 8000.0) as i16;
+        bytes.extend_from_slice(&s.to_le_bytes());
+        bytes.extend_from_slice(&s.to_le_bytes());
+    }
+    std::fs::write(path, bytes).unwrap();
+}
+
+#[test]
+fn scans_rescans_and_keeps_user_data() {
+    let root = tempfile::tempdir().unwrap();
+    let music = root.path().join("Music");
+    let album = music.join("Test Album");
+    std::fs::create_dir_all(&album).unwrap();
+    write_wav(&album.join("01 First.wav"), 0.5);
+    write_wav(&album.join("02 Second.wav"), 0.5);
+    let cover = image::RgbImage::from_fn(64, 64, |x, _| if x < 40 { image::Rgb([210, 60, 40]) } else { image::Rgb([30, 30, 30]) });
+    cover.save(album.join("cover.png")).unwrap();
+
+    let lib = Library::open(&root.path().join("data"), &root.path().join("cache")).unwrap();
+    lib.add_folder(&music).unwrap();
+    let summary = lib.scan(&|_| {}).unwrap();
+    assert_eq!(summary.added_or_updated, 2);
+
+    let index = lib.index();
+    assert_eq!(index.stats().tracks, 2);
+    let albums = index.albums(AlbumSort::Title);
+    assert_eq!(albums.len(), 1);
+    let a = albums[0];
+    assert_eq!(a.title, "Test Album", "untagged files are grouped by folder");
+    assert_eq!(a.artist, "Unknown Artist");
+    let key = a.artwork.clone().expect("cover.png is picked up");
+    assert!(lib.artwork_thumb(&key).exists() && lib.artwork_large(&key).exists());
+    assert!(a.accent.is_some(), "a red cover yields an accent colour");
+    let first = index.album_tracks(a.id)[0].clone();
+    assert_eq!(first.title, "01 First");
+    assert!(first.duration_ms >= 450 && first.duration_ms <= 550, "{}", first.duration_ms);
+    drop(index);
+
+    lib.set_liked(first.id, true).unwrap();
+    // Unchanged files are not read again; removed files disappear; likes survive.
+    std::fs::remove_file(album.join("02 Second.wav")).unwrap();
+    let summary = lib.scan(&|_| {}).unwrap();
+    assert_eq!(summary.added_or_updated, 0);
+    assert_eq!(summary.removed, 1);
+    let index = lib.index();
+    assert_eq!(index.stats().tracks, 1);
+    assert!(index.track(first.id).unwrap().liked);
+
+    // Files opened directly are playable but stay out of the library views.
+    let outside = root.path().join("loose.wav");
+    write_wav(&outside, 0.2);
+    let ids = lib.import_paths(&[outside]).unwrap();
+    assert_eq!(ids.len(), 1);
+    let index = lib.index();
+    assert!(index.track(ids[0]).is_some());
+    assert_eq!(index.stats().tracks, 1);
+}

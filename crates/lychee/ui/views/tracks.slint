@@ -1,0 +1,350 @@
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, Actions, TrackRow } from "../state.slint";
+import { Cover, PlayingBars, IconButton, PillButton, Segmented, Divider } from "../widgets.slint";
+import { Grid } from "albums.slint";
+import { ListView, LineEdit } from "std-widgets.slint";
+
+export component TrackHeader inherits Rectangle {
+    in property <bool> show-cover;
+    in property <bool> show-album;
+    height: 34px;
+    HorizontalLayout {
+        cross-axis-alignment: center;
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        Text { width: 28px; text: "#"; horizontal-alignment: center; vertical-alignment: center; color: Theme.text-3; font-size: 12px; }
+        if root.show-cover: Rectangle { width: 36px; }
+        Text { horizontal-stretch: 2; preferred-width: 0px; min-width: 0px; text: "Title"; vertical-alignment: center; color: Theme.text-3; font-size: 12px; }
+        if root.show-album: Text { horizontal-stretch: 1.2; preferred-width: 0px; min-width: 0px; text: "Album"; vertical-alignment: center; color: Theme.text-3; font-size: 12px; }
+        Text { width: 56px; text: "Plays"; horizontal-alignment: right; vertical-alignment: center; color: Theme.text-3; font-size: 12px; }
+        Rectangle { width: 28px; }
+        Rectangle {
+            width: 50px;
+            Image {
+                x: parent.width - 14px;
+                source: Icons.clock;
+                colorize: Theme.text-3;
+                width: 14px;
+                height: 14px;
+            }
+        }
+    }
+    Divider {
+        y: parent.height - 1px;
+        width: 100%;
+    }
+}
+
+export component TrackRowView inherits Rectangle {
+    in property <TrackRow> track;
+    in property <string> context;
+    in property <bool> show-cover;
+    in property <bool> show-album;
+    in property <bool> in-playlist;
+    property <bool> hovered: row-ta.has-hover || like-ta.has-hover;
+    height: 48px;
+    border-radius: 9px;
+    background: root.track.current ? Theme.accent.with-alpha(0.10) : root.hovered ? Theme.hover : transparent;
+    row-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { Actions.play-from(root.context, root.track.index); }
+    }
+    HorizontalLayout {
+        cross-axis-alignment: center;
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 12px;
+        Rectangle {
+            width: 28px;
+            if root.track.current && !root.hovered: PlayingBars { }
+            if root.hovered: Image {
+                source: Icons.play;
+                colorize: Theme.text;
+                width: 14px;
+                height: 14px;
+            }
+            if !root.track.current && !root.hovered: Text {
+                text: root.track.number;
+                font-family: Theme.mono;
+                font-size: 12.5px;
+                color: Theme.text-3;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+        if root.show-cover: Cover {
+            width: 36px;
+            height: 36px;
+            radius: 6px;
+            source: root.track.cover;
+            has-image: root.track.has-cover;
+        }
+        VerticalLayout {
+            horizontal-stretch: 2;
+            preferred-width: 0px;
+            min-width: 0px;
+            alignment: center;
+            Text {
+                text: root.track.title;
+                font-weight: 500;
+                font-size: 14px;
+                color: root.track.current ? Theme.accent : Theme.text;
+                overflow: elide;
+            }
+            if root.track.artist != "": Text {
+                text: root.track.artist;
+                font-size: 12.5px;
+                color: Theme.text-3;
+                overflow: elide;
+            }
+        }
+        if root.show-album: Text {
+            horizontal-stretch: 1.2;
+            preferred-width: 0px;
+            min-width: 0px;
+            text: root.track.album;
+            color: Theme.text-2;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+        Text {
+            width: 56px;
+            text: root.track.plays;
+            font-family: Theme.mono;
+            font-size: 12.5px;
+            color: Theme.text-3;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+        Rectangle {
+            width: 28px;
+            Image {
+                source: root.track.liked ? Icons.heart-fill : Icons.heart;
+                colorize: root.track.liked ? Theme.accent : like-ta.has-hover ? Theme.text : Theme.text-3;
+                width: 15px;
+                height: 15px;
+                opacity: root.track.liked || root.hovered ? 1 : 0;
+            }
+            like-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { Actions.track-action("like", root.track.id); }
+            }
+        }
+        Text {
+            width: 50px;
+            text: root.track.duration;
+            font-family: Theme.mono;
+            font-size: 12.5px;
+            color: Theme.text-2;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+    ContextMenuArea {
+        Menu {
+            MenuItem {
+                title: "Play";
+                activated => { Actions.play-from(root.context, root.track.index); }
+            }
+            MenuItem {
+                title: "Play next";
+                activated => { Actions.track-action("play-next", root.track.id); }
+            }
+            MenuItem {
+                title: "Add to queue";
+                activated => { Actions.track-action("add-queue", root.track.id); }
+            }
+            Menu {
+                title: "Add to playlist";
+                MenuItem {
+                    title: "New playlist";
+                    activated => { Actions.add-to-playlist(-1, "track", root.track.id); }
+                }
+                MenuSeparator { }
+                for playlist in AppState.playlists: MenuItem {
+                    title: playlist.name;
+                    activated => { Actions.add-to-playlist(playlist.id, "track", root.track.id); }
+                }
+            }
+            MenuItem {
+                title: root.track.liked ? "Remove from Favorites" : "Add to Favorites";
+                activated => { Actions.track-action("like", root.track.id); }
+            }
+            MenuSeparator { }
+            MenuItem {
+                title: "Go to album";
+                activated => { Actions.track-action("go-album", root.track.id); }
+            }
+            MenuItem {
+                title: "Go to artist";
+                activated => { Actions.track-action("go-artist", root.track.id); }
+            }
+            MenuItem {
+                title: "Show in folder";
+                activated => { Actions.track-action("show-folder", root.track.id); }
+            }
+            if root.in-playlist: MenuItem {
+                title: "Remove from this playlist";
+                activated => { Actions.track-action("remove-from-playlist", root.track.index); }
+            }
+        }
+    }
+}
+
+// Header block for list pages: Favorites, playlists, songs, history.
+component ListHero inherits HorizontalLayout {
+    property <bool> renaming;
+    padding-left: Grid.side-padding;
+    padding-right: Grid.side-padding;
+    padding-bottom: 16px;
+    spacing: 22px;
+    if AppState.page == "favorites": Rectangle {
+        width: 132px;
+        height: 132px;
+        border-radius: 12px;
+        background: @linear-gradient(135deg, Theme.accent 0%, #8B5CF6 100%);
+        drop-shadow-blur: 22px;
+        drop-shadow-offset-y: 10px;
+        drop-shadow-color: Theme.shadow;
+        Image {
+            source: Icons.heart-fill;
+            colorize: #ffffff;
+            width: 44px;
+            height: 44px;
+        }
+    }
+    if AppState.page == "playlist": Cover {
+        width: 132px;
+        height: 132px;
+        radius: 12px;
+        source: AppState.list-header.cover;
+        has-image: AppState.list-header.has-cover;
+        seed: AppState.list-header.seed;
+        drop-shadow-blur: 22px;
+        drop-shadow-offset-y: 10px;
+        drop-shadow-color: Theme.shadow;
+    }
+    VerticalLayout {
+        horizontal-stretch: 1;
+        alignment: end;
+        spacing: 6px;
+        Text {
+            text: AppState.list-header.kind;
+            font-size: 12px;
+            font-weight: 600;
+            color: Theme.text-2;
+        }
+        if !root.renaming: Text {
+            text: AppState.list-header.title;
+            font-size: AppState.page == "favorites" || AppState.page == "playlist" ? 40px : 30px;
+            font-weight: 750;
+            letter-spacing: -1px;
+            color: Theme.text;
+            overflow: elide;
+        }
+        if root.renaming: LineEdit {
+            text: AppState.list-header.title;
+            font-size: 20px;
+            accepted(name) => {
+                if (name != "") {
+                    Actions.rename-playlist(AppState.list-header.id, name);
+                }
+                root.renaming = false;
+            }
+        }
+        Text {
+            text: AppState.list-header.subtitle;
+            color: Theme.text-2;
+            overflow: elide;
+        }
+        HorizontalLayout {
+            cross-axis-alignment: center;
+            padding-top: 8px;
+            spacing: 10px;
+            alignment: start;
+            PillButton {
+                text: "Play";
+                icon: Icons.play;
+                primary: true;
+                enabled: AppState.tracks.length > 0;
+                clicked => { Actions.play-list(false); }
+            }
+            PillButton {
+                text: "Shuffle";
+                icon: Icons.shuffle;
+                enabled: AppState.tracks.length > 0;
+                clicked => { Actions.play-list(true); }
+            }
+            if AppState.list-header.editable: IconButton {
+                icon: Icons.edit;
+                size: 40px;
+                tooltip: "Rename playlist";
+                clicked => { root.renaming = !root.renaming; }
+            }
+            if AppState.list-header.editable: IconButton {
+                icon: Icons.trash;
+                size: 40px;
+                tooltip: "Delete playlist";
+                clicked => { Actions.delete-playlist(AppState.list-header.id); }
+            }
+            Rectangle { horizontal-stretch: 1; }
+            if AppState.page == "songs": VerticalLayout {
+                alignment: center;
+                Segmented {
+                    options: ["Artist", "Title", "Album", "Most played", "Added"];
+                    selected: AppState.track-sort;
+                    changed(i) => { Actions.set-track-sort(i); }
+                }
+            }
+        }
+    }
+}
+
+export component ListPage inherits Rectangle {
+    VerticalLayout {
+        padding-top: 52px;
+        ListHero { }
+        Rectangle {
+            vertical-stretch: 1;
+            if AppState.tracks.length == 0: VerticalLayout {
+                alignment: center;
+                spacing: 6px;
+                Text {
+                    text: AppState.page == "favorites" ? "No favorites yet" : AppState.page == "history" ? "Nothing played yet" : "This list is empty";
+                    font-size: 16px;
+                    font-weight: 600;
+                    color: Theme.text;
+                    horizontal-alignment: center;
+                }
+                Text {
+                    text: AppState.page == "favorites" ? "Tap the heart next to any song to keep it here."
+                        : AppState.page == "playlist" ? "Right-click a song or album and choose \"Add to playlist\"."
+                        : "Songs you listen to will show up here.";
+                    color: Theme.text-3;
+                    horizontal-alignment: center;
+                }
+            }
+            if AppState.tracks.length > 0: VerticalLayout {
+                padding-left: Grid.side-padding - 12px;
+                padding-right: Grid.side-padding - 12px;
+                TrackHeader {
+                    show-cover: true;
+                    show-album: AppState.tracks-show-album;
+                }
+                Rectangle { height: 6px; }
+                ListView {
+                    vertical-stretch: 1;
+                    for row in AppState.tracks: TrackRowView {
+                        track: row;
+                        context: "list";
+                        show-cover: true;
+                        show-album: AppState.tracks-show-album;
+                        in-playlist: AppState.page == "playlist";
+                    }
+                }
+            }
+        }
+    }
+}

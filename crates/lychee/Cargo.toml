@@ -1,0 +1,50 @@
+[package]
+name = "lychee"
+description = "A modern, beautiful music player for Linux and Windows"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "lychee"
+path = "src/main.rs"
+
+[dependencies]
+lychee-core.workspace = true
+lychee-audio.workspace = true
+lychee-library.workspace = true
+lychee-lastfm.workspace = true
+lychee-platform.workspace = true
+slint = { version = "1.18", default-features = false, features = [
+    "std",
+    "backend-winit",
+    "renderer-femtovg",
+    "renderer-software",
+    "accessibility",
+    "compat-1-2",
+    "image-default-formats",
+    "raw-window-handle-06",
+    "unstable-winit-030",
+] }
+rfd = "0.15"
+open = "5"
+lru = "0.19"
+toml = "0.9"
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+image.workspace = true
+directories.workspace = true
+serde_json.workspace = true
+md-5.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+raw-window-handle = "0.6"
+
+[build-dependencies]
+slint-build = "1.18"

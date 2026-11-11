@@ -1,0 +1,40 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+default-members = ["crates/lychee"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "Apache-2.0"
+repository = "https://github.com/Y2Kwastaken/Lychee"
+homepage = "https://github.com/Y2Kwastaken/Lychee"
+
+[workspace.dependencies]
+lychee-core = { path = "crates/lychee-core" }
+lychee-audio = { path = "crates/lychee-audio" }
+lychee-library = { path = "crates/lychee-library" }
+lychee-lastfm = { path = "crates/lychee-lastfm" }
+lychee-platform = { path = "crates/lychee-platform" }
+
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+crossbeam-channel = "0.5"
+parking_lot = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+md-5 = "0.10"
+fastrand = "2"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
+directories = "6"
+
+[profile.dev.package."*"]
+# Decoding, tag reading and image resizing are painfully slow unoptimized.
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+strip = true
