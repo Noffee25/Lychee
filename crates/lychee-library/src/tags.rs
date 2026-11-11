@@ -33,7 +33,7 @@ pub fn read(path: &Path) -> std::io::Result<FileMeta> {
     };
     let mut picture = None;
 
-    match lofty::read_from_path(path) {
+    match read_tagged(path) {
         Ok(tagged) => {
             let props = tagged.properties();
             record.duration_ms = props.duration().as_millis() as u64;
@@ -67,6 +67,16 @@ pub fn read(path: &Path) -> std::io::Result<FileMeta> {
         record.format.codec = path.extension().map(|e| e.to_string_lossy().to_uppercase()).unwrap_or_default();
     }
     Ok(FileMeta { record, picture })
+}
+
+/// lofty's default mode rejects a whole file over one malformed frame (dates like "c. 2006" are
+/// common); retry in relaxed mode, which skips just the broken parts.
+fn read_tagged(path: &Path) -> Result<lofty::file::TaggedFile, lofty::error::FileParseError> {
+    use lofty::config::{ParseOptions, ParsingMode};
+    lofty::read_from_path(path).or_else(|first| {
+        let relaxed = ParseOptions::new().parsing_mode(ParsingMode::Relaxed);
+        lofty::probe::Probe::open(path).ok().and_then(|p| p.options(relaxed).read().ok()).ok_or(first)
+    })
 }
 
 fn apply_tag(tag: &Tag, record: &mut TrackRecord) {
@@ -105,7 +115,7 @@ fn front_cover(tag: &Tag) -> Option<Vec<u8>> {
 
 /// Lyrics stored inside the file (synced LRC text or plain text).
 pub fn embedded_lyrics(path: &Path) -> Option<String> {
-    let tagged = lofty::read_from_path(path).ok()?;
+    let tagged = read_tagged(path).ok()?;
     tagged.tags().iter().find_map(|tag| {
         tag.get_string(ItemKey::Lyrics)
             .or_else(|| tag.get_string(ItemKey::UnsyncLyrics))

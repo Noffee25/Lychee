@@ -88,6 +88,11 @@ assets/            desktop file, icons
   `SplitTag`/`MergeTag`, so frames the editor doesn't know survive (Serato, PRIV, chapters). The main tag
   is made to match the editor; secondary tags (ID3v1, APE) only get changed fields. The round-trip tests
   in `crates/lychee-tagger/tests` cover seven formats; extend them when you touch `file.rs`.
+- **Reading is forgiving, writing is strict.** lofty's default mode rejects a whole file over one
+  malformed frame, so reads (tagger and library scanner) retry in `ParsingMode::Relaxed`. The Year field
+  is normalised to an ID3v2.4 timestamp before writing ("c. 2006" → "2006", no year → refused), because
+  lofty writes free-text dates but can't read them back. Errors shown to the user go through
+  `lychee_tagger::io_message`, which turns lofty's generic "failed to write" into the real cause.
 - **Online lookups** (`lychee-lookup`):
   - MusicBrainz allows one request per second. `Client` spaces requests by 1.1 s and sends a
     User-Agent with the project URL. Keep one shared `Client`, and never fire requests in a loop

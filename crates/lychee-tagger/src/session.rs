@@ -129,9 +129,9 @@ impl SaveJob {
             return Err(format!("{} already exists", target.display()));
         }
         if let Some(dir) = target.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| format!("can't create {}: {e}", dir.display()))?;
+            std::fs::create_dir_all(dir).map_err(|e| format!("can't create {}: {}", dir.display(), crate::io_message(&e)))?;
         }
-        std::fs::rename(&self.path, target).map_err(|e| format!("can't rename: {e}"))?;
+        std::fs::rename(&self.path, target).map_err(|e| format!("can't rename: {}", crate::io_message(&e)))?;
         let lyrics = self.path.with_extension("lrc");
         if lyrics.exists() {
             let _ = std::fs::rename(&lyrics, target.with_extension("lrc"));

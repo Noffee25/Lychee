@@ -127,3 +127,54 @@ fn session_saves_and_renames() {
     assert_eq!(session.modified_count(), 0);
     assert_eq!(session.files()[0].tags.get(Field::Title), "Intro");
 }
+
+#[test]
+fn malformed_dates_from_other_software_are_survivable() {
+    // ffmpeg (like several taggers) writes free text into ID3v2.4's TDRC, which must be a
+    // timestamp; lofty's default mode then rejects the whole file.
+    let dir = tempfile::tempdir().unwrap();
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/baddate.mp3");
+    let path = dir.path().join("baddate.mp3");
+    std::fs::copy(&src, &path).unwrap();
+
+    let read = file::read(&path).expect("readable despite the bad date");
+    assert_eq!(read.tags.get(Field::Title), "Bad Date");
+    let mut after = read.tags.clone();
+    after.set(Field::Album, "Fixed");
+    after.set(Field::Date, "c. 2006");
+    file::write(&path, &read.tags, &after).unwrap();
+
+    let back = file::read(&path).unwrap();
+    assert_eq!(back.tags.get(Field::Date), "2006", "free text becomes a valid year");
+    assert_eq!(back.tags.get(Field::Album), "Fixed");
+    assert_eq!(back.tags.get(Field::Title), "Bad Date");
+}
+
+#[test]
+fn a_date_without_a_year_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(dir.path(), "mp3");
+    let read = file::read(&path).unwrap();
+    let mut after = read.tags.clone();
+    after.set(Field::Date, "spring");
+    let err = file::write(&path, &read.tags, &after).unwrap_err();
+    assert!(err.to_string().contains("isn't a year"), "{err}");
+    assert!(file::read(&path).is_ok(), "the file is untouched");
+}
+
+#[test]
+fn read_only_files_say_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = fixture(dir.path(), "mp3");
+    let read = file::read(&path).unwrap();
+    let mut perms = std::fs::metadata(&path).unwrap().permissions();
+    perms.set_readonly(true);
+    std::fs::set_permissions(&path, perms).unwrap();
+    if std::fs::OpenOptions::new().write(true).open(&path).is_ok() {
+        return; // running as root (or on a filesystem that ignores the flag): nothing to check
+    }
+    let mut after = read.tags.clone();
+    after.set(Field::Title, "Nope");
+    let err = file::write(&path, &read.tags, &after).unwrap_err();
+    assert!(err.to_string().contains("isn't allowed"), "{err}");
+}

@@ -93,6 +93,8 @@ Lychee is a local-library music player for Linux and Windows, written in Rust, w
 - [x] Lossless writing: MP3, WAV, AIFF, AAC and MP4 tags are edited in place, so frames the editor doesn't know about survive (Serato/Traktor data, private frames, chapters)
 - [x] Saved files are re-read into the library, keeping play counts, Favorites and playlists, even after renames
 - [x] Asks before quitting with unsaved changes
+- [x] Says why a file can't be saved (no permission, read-only drive, moved), keeps free-text years valid
+  ("c. 2006" → 2006), and still opens files whose tags other software left malformed
 - [ ] Playlist generator, "load file names from a text file", converting between ID3v2.3 and v2.4, stripping tags
 
 ### Online lookup

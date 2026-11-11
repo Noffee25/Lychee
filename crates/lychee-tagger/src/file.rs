@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use lofty::aac::AacFile;
-use lofty::config::{ParseOptions, WriteOptions};
+use lofty::config::{ParseOptions, ParsingMode, WriteOptions};
 use lofty::file::{AudioFile, FileType, TaggedFileExt};
 use lofty::iff::aiff::AiffFile;
 use lofty::iff::wav::WavFile;
@@ -20,6 +20,7 @@ use lofty::mp4::Mp4File;
 use lofty::mpeg::MpegFile;
 use lofty::picture::{MimeType, Picture as LoftyPicture, PictureType};
 use lofty::probe::Probe;
+use lofty::tag::items::Timestamp;
 use lofty::tag::{MergeTag, SplitTag, Tag, TagType};
 
 use crate::{Error, Field};
@@ -205,7 +206,7 @@ pub struct ReadFile {
 /// fill fields it lacks.
 pub fn read(path: &Path) -> Result<ReadFile, Error> {
     let size = std::fs::metadata(path)?.len();
-    let tagged = Probe::open(path)?.options(ParseOptions::new()).read()?;
+    let tagged = read_tagged(path)?;
     let primary = tagged.primary_tag_type();
     let mut ordered: Vec<&Tag> = tagged.tag(primary).into_iter().collect();
     ordered.extend(tagged.tags().iter().filter(|t| t.tag_type() != primary));
@@ -241,6 +242,55 @@ pub fn read(path: &Path) -> Result<ReadFile, Error> {
     Ok(ReadFile { tags, info, supported, supports_pictures })
 }
 
+/// Parse a file, falling back to lofty's relaxed mode: one malformed frame (other software writes
+/// dates like "c. 2006") would otherwise make the whole file unreadable.
+fn read_tagged(path: &Path) -> Result<lofty::file::TaggedFile, Error> {
+    match Probe::open(path)?.options(ParseOptions::new()).read() {
+        Ok(file) => Ok(file),
+        Err(first) => {
+            let relaxed = ParseOptions::new().parsing_mode(ParsingMode::Relaxed);
+            Probe::open(path)?.options(relaxed).read().map_err(|_| first.into())
+        }
+    }
+}
+
+/// The date in a form every tag format accepts (ID3v2.4 requires a timestamp): "2006",
+/// "2006-04" or "2006-04-17", optionally with a time. Free text such as "c. 2006" becomes its
+/// year. `None` when there is no year in it at all.
+pub fn normalize_date(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() || (looks_like_timestamp(value) && value.parse::<Timestamp>().is_ok()) {
+        return Some(value.to_string());
+    }
+    let chars: Vec<char> = value.chars().collect();
+    for start in 0..chars.len().saturating_sub(3) {
+        let digits = &chars[start..start + 4];
+        let before = start.checked_sub(1).map(|i| chars[i]);
+        let after = chars.get(start + 4);
+        if digits.iter().all(char::is_ascii_digit)
+            && !before.is_some_and(|c| c.is_ascii_digit())
+            && !after.is_some_and(char::is_ascii_digit)
+            && matches!(digits[0], '1' | '2')
+        {
+            return Some(digits.iter().collect());
+        }
+    }
+    None
+}
+
+/// The ID3v2.4 timestamp shape: `yyyy`, `yyyy-MM`, `yyyy-MM-dd`, then `THH`, `:mm`, `:ss`.
+/// (lofty's own parser is more forgiving than its reader, so check the shape too.)
+fn looks_like_timestamp(value: &str) -> bool {
+    const TEMPLATE: &[u8] = b"dddd-dd-ddTdd:dd:dd";
+    let bytes = value.as_bytes();
+    let shaped = matches!(bytes.len(), 4 | 7 | 10 | 13 | 16 | 19)
+        && bytes.iter().zip(TEMPLATE).all(|(c, t)| if *t == b'd' { c.is_ascii_digit() } else { c == t });
+    // Month, day, hour, minute and second must be in range.
+    let part = |at: usize| value.get(at..at + 2).and_then(|p| p.parse::<u32>().ok());
+    let in_range = |at: usize, lo: u32, hi: u32| part(at).is_none_or(|n| (lo..=hi).contains(&n));
+    shaped && in_range(5, 1, 12) && in_range(8, 1, 31) && in_range(11, 0, 23) && in_range(14, 0, 59) && in_range(17, 0, 59)
+}
+
 /// "3/12" in a track number field becomes track 3 of 12.
 fn split_totals(tags: &mut TagData, number: Field, total: Field) {
     let value = tags.get(number).to_string();
@@ -272,6 +322,19 @@ fn read_field(tag: &Tag, field: Field) -> String {
 pub fn write(path: &Path, before: &TagData, after: &TagData) -> Result<(), Error> {
     if before == after {
         return Ok(());
+    }
+    // Never write a date the tag format can't read back.
+    let mut fixed;
+    let mut after = after;
+    let date = after.get(Field::Date);
+    match normalize_date(date) {
+        None => return Err(Error::BadDate(date.to_string())),
+        Some(d) if d != date => {
+            fixed = after.clone();
+            fixed.set(Field::Date, d);
+            after = &fixed;
+        }
+        Some(_) => {}
     }
     let plan = Plan { after, changed: before.changed_fields(after) };
     let file_type = Probe::open(path)?.guess_file_type()?.file_type().ok_or(Error::Unsupported)?;
@@ -323,7 +386,7 @@ pub fn write(path: &Path, before: &TagData, after: &TagData) -> Result<(), Error
             f.save_to_path(path, options)?;
         }
         _ => {
-            let mut tagged = Probe::open(path)?.options(ParseOptions::new()).read()?;
+            let mut tagged = read_tagged(path)?;
             let primary = tagged.primary_tag_type();
             if tagged.tag(primary).is_none() {
                 tagged.insert_tag(Tag::new(primary));
@@ -346,7 +409,13 @@ pub fn write(path: &Path, before: &TagData, after: &TagData) -> Result<(), Error
 
 fn open<T: AudioFile>(path: &Path) -> Result<T, Error> {
     let mut file = File::open(path)?;
-    Ok(T::read_from(&mut file, ParseOptions::new())?)
+    match T::read_from(&mut file, ParseOptions::new()) {
+        Ok(f) => Ok(f),
+        Err(first) => {
+            let mut file = File::open(path)?;
+            T::read_from(&mut file, ParseOptions::new().parsing_mode(ParsingMode::Relaxed)).map_err(|_| first.into())
+        }
+    }
 }
 
 struct Plan<'a> {
@@ -483,6 +552,19 @@ mod tests {
         assert_eq!(t.pictures.len(), 2);
         assert_eq!(&*t.front_cover().unwrap().data, &[0xFF, 0xD8, 0xFF, 2]);
         assert_eq!(t.pictures[1].mime, "image/png");
+    }
+
+    #[test]
+    fn dates_become_timestamps() {
+        assert_eq!(normalize_date("2006").as_deref(), Some("2006"));
+        assert_eq!(normalize_date(" 2006-04-17 ").as_deref(), Some("2006-04-17"));
+        assert_eq!(normalize_date("c. 2006").as_deref(), Some("2006"));
+        assert_eq!(normalize_date("1998 / 2005 remaster").as_deref(), Some("1998"));
+        assert_eq!(normalize_date("").as_deref(), Some(""));
+        assert_eq!(normalize_date("spring").as_deref(), None);
+        assert_eq!(normalize_date("123456").as_deref(), None);
+        assert_eq!(normalize_date("2006-13-45").as_deref(), Some("2006"));
+        assert_eq!(normalize_date("2006-04-17T20:15").as_deref(), Some("2006-04-17T20:15"));
     }
 
     #[test]
