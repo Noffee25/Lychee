@@ -37,6 +37,8 @@ fn main() -> anyhow::Result<()> {
     }
 
     let mut open: Vec<PathBuf> = Vec::new();
+    let mut edit: Vec<PathBuf> = Vec::new();
+    let mut editing = false;
     for arg in std::env::args_os().skip(1) {
         let s = arg.to_string_lossy();
         match s.as_ref() {
@@ -45,9 +47,14 @@ fn main() -> anyhow::Result<()> {
                 return Ok(());
             }
             "--help" | "-h" => {
-                println!("Usage: lychee [FILE|FOLDER]...\n\nOpens Lychee and plays the given files or folders.");
+                println!(
+                    "Usage: lychee [FILE|FOLDER]...\n       lychee --edit FILE|FOLDER...\n\n\
+                     Opens Lychee and plays the given files or folders, or with --edit opens them in the tag editor."
+                );
                 return Ok(());
             }
+            "--edit" => editing = true,
+            _ if editing => edit.push(PathBuf::from(arg)),
             _ => open.push(PathBuf::from(arg)),
         }
     }
@@ -119,6 +126,9 @@ fn main() -> anyhow::Result<()> {
 
     if !open.is_empty() {
         dispatcher.dispatch(Action::OpenPaths(open));
+    }
+    if !edit.is_empty() {
+        dispatcher.dispatch(Action::EditPaths(edit));
     }
 
     ui.show()?;

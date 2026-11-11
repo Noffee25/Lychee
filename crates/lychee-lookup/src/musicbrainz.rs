@@ -19,6 +19,10 @@ pub struct ReleaseSummary {
     pub status: String,
     pub disambiguation: String,
     pub release_group_id: String,
+    /// "Album", "Single", "EP"...
+    pub release_type: String,
+    /// MusicBrainz's secondary types: "Compilation", "Live", "DJ-mix", "Mixtape/Street"...
+    pub secondary_types: Vec<String>,
     /// MusicBrainz's own search score, 0–100.
     pub score: u32,
 }
@@ -58,8 +62,20 @@ pub struct Release {
     pub barcode: String,
     pub release_group_id: String,
     pub release_type: String,
+    pub secondary_types: Vec<String>,
     pub genre: String,
     pub media: Vec<Medium>,
+}
+
+impl ReleaseSummary {
+    /// Collections that repeat songs from elsewhere: worse matches than the original.
+    pub fn is_collection(&self) -> bool {
+        is_collection(&self.secondary_types)
+    }
+}
+
+pub(crate) fn is_collection(types: &[String]) -> bool {
+    types.iter().any(|t| t == "Compilation" || t == "DJ-mix")
 }
 
 impl Release {
@@ -90,6 +106,8 @@ impl Release {
             status: String::new(),
             disambiguation: String::new(),
             release_group_id: self.release_group_id.clone(),
+            release_type: self.release_type.clone(),
+            secondary_types: self.secondary_types.clone(),
             score: 100,
         }
     }
@@ -170,6 +188,10 @@ fn s(v: &Value) -> String {
     v.as_str().unwrap_or_default().to_string()
 }
 
+fn strings(v: &Value) -> Vec<String> {
+    v.as_array().into_iter().flatten().filter_map(|x| x.as_str().map(str::to_string)).collect()
+}
+
 /// An artist credit as one string ("A feat. B") and the first artist's id.
 fn credit(v: &Value) -> (String, String) {
     let mut name = String::new();
@@ -234,6 +256,8 @@ fn parse_summary(r: &Value) -> ReleaseSummary {
         status: s(&r["status"]),
         disambiguation: s(&r["disambiguation"]),
         release_group_id: s(&r["release-group"]["id"]),
+        release_type: s(&r["release-group"]["primary-type"]),
+        secondary_types: strings(&r["release-group"]["secondary-types"]),
         score: r["score"].as_u64().unwrap_or(0) as u32,
     }
 }
@@ -284,6 +308,7 @@ fn parse_release(r: &Value) -> Option<Release> {
         barcode: s(&r["barcode"]),
         release_group_id: s(&r["release-group"]["id"]),
         release_type: s(&r["release-group"]["primary-type"]),
+        secondary_types: strings(&r["release-group"]["secondary-types"]),
         genre: top_genre(&r["genres"]),
         media,
     })

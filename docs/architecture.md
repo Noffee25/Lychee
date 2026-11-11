@@ -56,6 +56,9 @@ music folder and tag round trips through seven container formats.
   into a queue and run when the controller is free, so nested callbacks never cause borrow panics.
 - **Lazy models.** Grids and long lists use `LazyModel`, which builds rows only when the view asks for
   them and refreshes a row when its cover finishes decoding. A 50,000-song list costs only what's on screen.
+  Row builders read live state when they run: the playing track and album through shared cells
+  (`NowIds`), and tracks from `library.index()`. That way a `refresh()` shows a new highlight, like or
+  edited title without rebuilding the page.
 - **Engine tokens.** Each loaded or pre-loaded track gets a token. The engine reports `Loaded`, `Started`
   (audible, which is how gapless hand-overs are detected), `Ended` and `Error` per token, and exposes the
   audible position through atomics.
@@ -120,6 +123,11 @@ Later, third-party plugins are planned as sandboxed WASM components (wasmtime + 
 Views read every colour, size and duration from the `Theme` global (`ui/theme.slint`). `Theme.dark`
 switches the palette; `Theme.accent` and `Theme.tint` come from the album artwork. The accent is the
 cover's most vivid colour; the tint is its dominant one. Both are computed once at scan time.
+
+Keep text out of rounded clips and faded containers. The GL renderer draws `clip: true` with a
+`border-radius`, and `opacity < 1` on an element with children, through an offscreen layer that gets
+resampled, which blurs text. Rounded clips are only for artwork, and disabled controls change colour
+instead of fading.
 
 ## Storage
 

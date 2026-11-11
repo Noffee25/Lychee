@@ -4,7 +4,7 @@
 //! Every UI callback becomes an [`Action`] that goes through the [`Dispatcher`], so callbacks
 //! that fire while the app is busy (re-entrancy) are queued instead of causing borrow panics.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -100,6 +100,7 @@ pub enum Action {
     SystemThemeChanged(bool),
     MainWindowClosed,
     Editor(EditorAction),
+    EditPaths(Vec<PathBuf>),
     QuitSave,
     QuitDiscard,
 }
@@ -291,6 +292,14 @@ struct SessionState {
     context: String,
 }
 
+/// The playing track and album, shared with lazily built rows: refreshing a model then shows
+/// the change. (Capturing the ids by value when a page is built leaves rows stale.)
+#[derive(Clone, Default)]
+struct NowIds {
+    track: Rc<Cell<Option<TrackId>>>,
+    album: Rc<Cell<Option<AlbumId>>>,
+}
+
 struct Models {
     album_rows: Rc<LazyModel<AlbumRow>>,
     more_albums: Rc<LazyModel<AlbumRow>>,
@@ -318,6 +327,15 @@ impl Models {
             queue_context: Rc::new(LazyModel::new()),
             playlists: Rc::new(LazyModel::new()),
         }
+    }
+
+    /// Rows that show which track or album is playing.
+    fn playing_changed(&self) {
+        self.album_rows.refresh();
+        self.more_albums.refresh();
+        self.artist_albums.refresh();
+        self.tracks.refresh();
+        self.album_tracks.refresh();
     }
 
     fn images_ready(&self, keys: &[String]) {
@@ -373,6 +391,7 @@ pub struct App {
     images: Rc<ImageCache>,
     handles: Rc<RefCell<Handles>>,
     models: Models,
+    now: NowIds,
     editor: EditorCtl,
 
     queue: Queue,
@@ -464,6 +483,7 @@ impl App {
             images,
             handles: Rc::default(),
             models,
+            now: NowIds::default(),
             editor,
             queue: Queue::new(),
             status: PlaybackStatus::Stopped,
@@ -563,7 +583,12 @@ impl App {
             Action::OpenAlbum(handle) => {
                 let id = self.handles.borrow().album(handle);
                 if let Some(id) = id {
-                    self.show_page(Page::Album(id), true);
+                    if self.library.index().album(id).is_some() {
+                        self.show_page(Page::Album(id), true);
+                    } else {
+                        // Opened files that were never added to the library have no album page.
+                        self.toast("This song isn't in your library, so it has no album page");
+                    }
                 }
             }
             Action::OpenArtist(name) => {
@@ -852,6 +877,11 @@ impl App {
                 self.editor.handle(action);
                 self.apply_editor_outcome();
             }
+            Action::EditPaths(paths) => {
+                self.editor.open(paths, false, Vec::new(), None);
+                self.apply_editor_outcome();
+                self.show_page(Page::Editor, true);
+            }
             Action::QuitSave => {
                 if let Some(ui) = self.ui.upgrade() {
                     ui.global::<crate::Editor>().set_quit_prompt(false);
@@ -1089,9 +1119,6 @@ impl App {
         self.update_details();
         self.queue_changed_ui();
         self.apply_accent();
-        self.models.tracks.refresh();
-        self.models.album_tracks.refresh();
-        self.models.album_rows.refresh();
         if let Some(m) = &self.media {
             let art_path = track.artwork.as_ref().map(|k| self.library.artwork_large(k));
             m.set_metadata(Some(OsNowPlaying {
@@ -1930,7 +1957,7 @@ impl App {
                     editable: false,
                 });
                 self.list_name = name.clone();
-                self.set_track_list(top.iter().map(|t| t.id).collect(), &index, true);
+                self.set_track_list(top.iter().map(|t| t.id).collect(), true);
                 self.set_album_grid(&self.models.artist_albums.clone(), albums, &index);
             }
             Page::Songs => {
@@ -1951,7 +1978,7 @@ impl App {
                 });
                 self.list_name = "Songs".into();
                 self.list_play.clear();
-                self.set_track_list(ids, &index, true);
+                self.set_track_list(ids, true);
             }
             Page::Genres => {
                 let genres: Vec<(String, String, Option<String>)> = index
@@ -1987,7 +2014,7 @@ impl App {
                 });
                 self.list_name = "Favorites".into();
                 self.list_play.clear();
-                self.set_track_list(liked.iter().map(|t| t.id).collect(), &index, true);
+                self.set_track_list(liked.iter().map(|t| t.id).collect(), true);
             }
             Page::Playlist(id) => {
                 let Some(p) = index.playlist(id).cloned() else {
@@ -2013,7 +2040,7 @@ impl App {
                 });
                 self.list_name = p.name.clone();
                 self.list_play.clear();
-                self.set_track_list(p.tracks.clone(), &index, true);
+                self.set_track_list(p.tracks.clone(), true);
             }
             Page::History => {
                 let recent = index.recently_played(300);
@@ -2025,7 +2052,7 @@ impl App {
                 });
                 self.list_name = "Recently Played".into();
                 self.list_play.clear();
-                self.set_track_list(recent.iter().map(|t| t.id).collect(), &index, true);
+                self.set_track_list(recent.iter().map(|t| t.id).collect(), true);
             }
             Page::Settings => self.update_settings_ui(),
             Page::Editor => {}
@@ -2055,7 +2082,7 @@ impl App {
         let index = index.clone();
         let images = self.images.clone();
         let handles = self.handles.clone();
-        let playing = self.current.as_ref().map(|t| t.album_id);
+        let playing = self.now.album.clone();
         let rows = ids.len().div_ceil(cols);
         model.set(rows, move |row, need| {
             let items: Vec<AlbumCard> = ids[row * cols..((row + 1) * cols).min(ids.len())]
@@ -2071,7 +2098,7 @@ impl App {
                         cover,
                         has_cover,
                         hires: a.format.is_hires(),
-                        playing: playing == Some(a.id),
+                        playing: playing.get() == Some(a.id),
                         seed: seed_color(&a.title),
                     }
                 })
@@ -2080,16 +2107,18 @@ impl App {
         });
     }
 
-    fn set_track_list(&mut self, ids: Vec<TrackId>, index: &Arc<LibraryIndex>, show_album: bool) {
+    fn set_track_list(&mut self, ids: Vec<TrackId>, show_album: bool) {
         self.list_ids = ids.clone();
         if let Some(ui) = self.ui.upgrade() {
             ui.global::<AppState>().set_tracks_show_album(show_album);
         }
-        let index = index.clone();
+        // Rows read the library's current index, so likes, play counts and edited tags show
+        // up on a refresh without rebuilding the page.
+        let library = self.library.clone();
         let images = self.images.clone();
-        let current = self.current.as_ref().map(|t| t.id);
+        let current = self.now.track.clone();
         self.models.tracks.set(ids.len(), move |row, need| {
-            let Some(t) = index.track(ids[row]) else { return TrackRow::default() };
+            let Some(t) = library.index().track(ids[row]) else { return TrackRow::default() };
             let (cover, has_cover) = thumb(&images, t.artwork.as_deref(), need);
             TrackRow {
                 id: t.id as i32,
@@ -2103,7 +2132,7 @@ impl App {
                 duration: format_duration_ms(t.duration_ms).into(),
                 plays: if t.play_count > 0 { t.play_count.to_string().into() } else { SharedString::new() },
                 liked: t.liked,
-                current: current == Some(t.id),
+                current: current.get() == Some(t.id),
                 cover,
                 has_cover,
                 disc_header: SharedString::new(),
@@ -2159,18 +2188,19 @@ impl App {
             });
         }
         let multi_disc = tracks.iter().filter_map(|t| t.disc_number).max().unwrap_or(1) > 1;
-        let images = self.images.clone();
-        let current = self.current.as_ref().map(|t| t.id);
+        let library = self.library.clone();
+        let current = self.now.track.clone();
         let album_artist = album.artist.clone();
         let rows: Vec<TrackRef> = tracks.clone();
         self.models.album_tracks.set(rows.len(), move |row, _need| {
-            let t = &rows[row];
+            // The live entry has current likes and play counts; the snapshot is a fallback.
+            let live = library.index().track(rows[row].id);
+            let t = live.as_ref().unwrap_or(&rows[row]);
             let disc_header = if multi_disc && (row == 0 || rows[row - 1].disc_number != t.disc_number) {
                 format!("Disc {}", t.disc_number.unwrap_or(1))
             } else {
                 String::new()
             };
-            let _ = &images;
             TrackRow {
                 id: t.id as i32,
                 index: row as i32,
@@ -2183,7 +2213,7 @@ impl App {
                 duration: format_duration_ms(t.duration_ms).into(),
                 plays: if t.play_count > 0 { t.play_count.to_string().into() } else { SharedString::new() },
                 liked: t.liked,
-                current: current == Some(t.id),
+                current: current.get() == Some(t.id),
                 cover: Image::default(),
                 has_cover: false,
                 disc_header: disc_header.into(),
@@ -2314,6 +2344,12 @@ impl App {
         };
         self.for_players(|p| p.set_now(np.clone()));
         self.sync_mini_helper();
+        let (track, album) = (self.current.as_ref().map(|t| t.id), self.current.as_ref().map(|t| t.album_id));
+        if self.now.track.get() != track || self.now.album.get() != album {
+            self.now.track.set(track);
+            self.now.album.set(album);
+            self.models.playing_changed();
+        }
     }
 
     fn update_player_state(&mut self) {

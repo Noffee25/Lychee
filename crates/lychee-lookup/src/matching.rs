@@ -110,6 +110,14 @@ pub fn title_from_file_name(name: &str) -> String {
     if rest.is_empty() { name.trim().to_string() } else { rest.trim().to_string() }
 }
 
+/// Folder names for loose songs rather than one album: look the songs up by title instead.
+const LOOSE_FOLDERS: [&str; 12] =
+    ["singles", "single", "misc", "miscellaneous", "unsorted", "tracks", "songs", "loose", "loose tracks", "other", "random", "various"];
+
+fn is_loose(name: &str) -> bool {
+    LOOSE_FOLDERS.contains(&name.trim().to_lowercase().as_str())
+}
+
 /// Folder names that say nothing about the music in them.
 const GENERIC_FOLDERS: [&str; 16] = [
     "music", "musik", "musique", "downloads", "download", "desktop", "documents", "home", "media", "audio", "mp3", "flac",
@@ -124,7 +132,7 @@ pub fn guess(files: &[FileFacts]) -> Guess {
     let folder = most_common(files.iter().map(|f| f.folder.as_str()), 0.0);
     let parent = most_common(files.iter().map(|f| f.parent_folder.as_str()), 0.0);
     let (folder_artist, folder_album) = split_folder(&folder);
-    let album = if album.is_empty() && !is_generic(&folder_album) { folder_album } else { album };
+    let album = if album.is_empty() && !is_generic(&folder_album) && !is_loose(&folder_album) { folder_album } else { album };
     let parent_artist = if is_generic(&parent) { String::new() } else { split_folder(&parent).1 };
     let artist = [album_artist, artist, folder_artist, parent_artist].into_iter().find(|a| !a.is_empty()).unwrap_or_default();
     Guess { album, artist, release_id, file_count: files.len() }
@@ -273,7 +281,9 @@ pub fn prescore(s: &ReleaseSummary, guess: &Guess) -> f32 {
     let title = if guess.album.is_empty() { 0.5 } else { similarity(&s.title, &guess.album) };
     let artist = if guess.artist.is_empty() { 0.5 } else { similarity(&s.artist, &guess.artist) };
     let official = if s.status.is_empty() || s.status == "Official" { 1.0 } else { 0.7 };
-    (0.25 * mb + 0.35 * count + 0.25 * title + 0.15 * artist) * official
+    // The original album or single over a compilation that repeats the song.
+    let original = if s.is_collection() { 0.85 } else { 1.0 };
+    (0.25 * mb + 0.35 * count + 0.25 * title + 0.15 * artist) * official * original
 }
 
 fn duration_fit(track_ms: Option<u64>, file_ms: u64) -> Option<f32> {
@@ -342,13 +352,18 @@ pub fn map_tracks(release: &Release, files: &[FileFacts]) -> Vec<Option<(usize, 
             }
         }
     };
+    // A file whose title plainly differs from a track's is not that track, however close the
+    // lengths are: durations and list order only decide between titles that don't disagree.
+    let compatible = |i: usize, k: usize| files[i].title.is_empty() || similarity(&track(k).title, &files[i].title) >= 0.35;
     assign(&mut out, &mut used, &|i, k| (!files[i].title.is_empty()).then(|| similarity(&track(k).title, &files[i].title)), 0.6);
-    assign(&mut out, &mut used, &|i, k| duration_fit(track(k).length_ms, files[i].duration_ms), 0.9);
+    assign(&mut out, &mut used, &|i, k| duration_fit(track(k).length_ms, files[i].duration_ms).filter(|_| compatible(i, k)), 0.9);
     let free_files: Vec<usize> = (0..files.len()).filter(|&i| out[i].is_none()).collect();
     let free_tracks: Vec<usize> = (0..all.len()).filter(|&k| !used[k]).collect();
     if !free_files.is_empty() && free_files.len() == free_tracks.len() {
         for (i, k) in free_files.into_iter().zip(free_tracks) {
-            out[i] = Some(k);
+            if compatible(i, k) {
+                out[i] = Some(k);
+            }
         }
     }
     out.into_iter().map(|k| k.map(|k| all[k])).collect()
@@ -377,6 +392,9 @@ pub fn evaluate(release: &Release, files: &[FileFacts], guess: &Guess) -> (u32, 
     let album = if guess.album.is_empty() { 0.5 } else { similarity(&release.title, &guess.album) };
     let artist = if guess.artist.is_empty() { 0.5 } else { similarity(&release.artist, &guess.artist) };
     let mut score = 0.32 * durations + 0.2 * titles + 0.18 * count + 0.15 * album + 0.1 * artist + 0.05 * mapped;
+    if crate::musicbrainz::is_collection(&release.secondary_types) {
+        score *= 0.9;
+    }
     if !guess.release_id.is_empty() && guess.release_id == release.id {
         score = score.max(0.99);
     }
@@ -391,34 +409,53 @@ impl Candidate {
 }
 
 /// Search MusicBrainz for the files and rank what comes back. Track lists are fetched for the
-/// `detailed` best hits (one second each, MusicBrainz's rate limit).
-pub fn find_candidates(client: &Client, files: &[FileFacts], guess: &Guess, detailed: usize) -> Result<Vec<Candidate>> {
+/// `detailed` best hits (one second each, MusicBrainz's rate limit). `progress` hears what is
+/// happening, for the UI.
+pub fn find_candidates(
+    client: &Client,
+    files: &[FileFacts],
+    guess: &Guess,
+    detailed: usize,
+    progress: &dyn Fn(String),
+) -> Result<Vec<Candidate>> {
     let mut out: Vec<Candidate> = Vec::new();
     if !guess.release_id.is_empty() {
+        progress("Loading the release named in the tags…".into());
         if let Some(release) = client.release(&guess.release_id)? {
             out.push(Candidate::fetched(release, files, guess));
         }
     }
+    let by = if guess.artist.is_empty() { String::new() } else { format!(" by {}", guess.artist) };
     let mut summaries = Vec::new();
     if !guess.album.is_empty() {
+        progress(format!("Searching MusicBrainz for “{}”{by}…", guess.album));
         summaries = client.search_releases(&guess.album, &guess.artist, 15)?;
         if summaries.is_empty() && !guess.artist.is_empty() {
+            progress(format!("Nothing{by}; searching for any “{}”…", guess.album));
             summaries = client.search_releases(&guess.album, "", 15)?;
         }
     }
-    if summaries.is_empty() && files.len() <= 3 {
+    // A few loose songs: look for the songs themselves too, which also finds the singles and
+    // albums they came out on.
+    if files.len() <= 3 {
         if let Some(f) = files.iter().find(|f| !f.title.is_empty() || !f.name.is_empty()) {
             let title = if f.title.is_empty() { &f.name } else { &f.title };
             let artist = if f.artist.is_empty() { &guess.artist } else { &f.artist };
-            summaries = client.search_recordings(title, artist, 10)?;
+            progress(format!("Searching MusicBrainz for the song “{title}”…"));
+            for s in client.search_recordings(title, artist, 10)? {
+                if !summaries.iter().any(|x| x.id == s.id) {
+                    summaries.push(s);
+                }
+            }
         }
     }
     summaries.retain(|s| !out.iter().any(|c| c.summary.id == s.id));
     let mut ranked: Vec<(f32, ReleaseSummary)> = summaries.into_iter().map(|s| (prescore(&s, guess), s)).collect();
     ranked.sort_by(|a, b| b.0.total_cmp(&a.0));
-    let budget = detailed.saturating_sub(out.len());
+    let budget = detailed.saturating_sub(out.len()).min(ranked.len());
     for (i, (pre, summary)) in ranked.into_iter().enumerate() {
         if i < budget {
+            progress(format!("Checking the track list of “{}” ({} of {budget})…", summary.title, i + 1));
             if let Some(release) = client.release(&summary.id)? {
                 let mut c = Candidate::fetched(release, files, guess);
                 c.summary.status = summary.status;
@@ -432,7 +469,10 @@ pub fn find_candidates(client: &Client, files: &[FileFacts], guess: &Guess, deta
     // Fetched candidates are scored on the real track list and come first.
     out.sort_by(|a, b| b.release.is_some().cmp(&a.release.is_some()).then(b.score.cmp(&a.score)));
     if let Some(release) = out.first_mut().and_then(|c| c.release.as_mut()) {
-        client.complete_genre(release);
+        if release.genre.is_empty() {
+            progress("Reading the genre…".into());
+            client.complete_genre(release);
+        }
     }
     Ok(out)
 }
@@ -486,6 +526,14 @@ mod tests {
     }
 
     #[test]
+    fn loose_song_folders_are_not_albums() {
+        let mut f = file("PenAndTheNeedlz", "The Pen and the Needlz", None, 251_000);
+        f.folder = "Lupe Fiasco - Singles".into();
+        let g = guess(&[f]);
+        assert_eq!((g.artist.as_str(), g.album.as_str()), ("Lupe Fiasco", ""));
+    }
+
+    #[test]
     fn tags_beat_folders() {
         let mut f = file("01", "", None, 0);
         f.album = "Real Album".into();
@@ -519,6 +567,13 @@ mod tests {
         assert_eq!(title_from_file_name("3. Teardrop"), "Teardrop");
         assert_eq!(title_from_file_name("Intro"), "Intro");
         assert_eq!(title_from_file_name("1999"), "1999");
+    }
+
+    #[test]
+    fn titles_veto_duration_matches() {
+        // Same length as "Teardrop", different song.
+        let files = [file("x", "The Pen and the Needlz", None, 330_000)];
+        assert_eq!(map_tracks(&release(), &files), vec![None]);
     }
 
     #[test]

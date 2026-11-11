@@ -4,6 +4,7 @@
 //! * `LYCHEE_SCREENSHOT_SIZE=1440x900`
 //! * `LYCHEE_SCREENSHOT_SCENE="play-album:Tidal Memory;page:album;palette:tid"` (see `App::run_scene`)
 //! * `LYCHEE_SCREENSHOT_MINI=mini.png` to also render the mini player.
+//! * `LYCHEE_SCREENSHOT_HOVER=700,872` to put the pointer somewhere first (hover states).
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -61,6 +62,15 @@ pub fn capture(ui: &AppWindow, dispatcher: &Rc<Dispatcher>, out: &Path) -> anyho
             }
             dispatcher.with_app(|a| a.run_scene(step.trim()));
             settle(dispatcher, 0);
+        }
+    }
+    if let Some((x, y)) = std::env::var("LYCHEE_SCREENSHOT_HOVER").ok().and_then(|v| {
+        let (x, y) = v.split_once(',')?;
+        Some((x.trim().parse::<f32>().ok()?, y.trim().parse::<f32>().ok()?))
+    }) {
+        if let Some(win) = WINDOWS.with(|ws| ws.borrow().first().cloned()) {
+            let position = slint::LogicalPosition::new(x, y);
+            win.dispatch_event(slint::platform::WindowEvent::PointerMoved { position });
         }
     }
     settle(dispatcher, 0);

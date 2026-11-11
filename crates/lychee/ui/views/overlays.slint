@@ -42,7 +42,7 @@ export component CommandPalette inherits Rectangle {
         drop-shadow-blur: 60px;
         drop-shadow-offset-y: 24px;
         drop-shadow-color: #00000090;
-        clip: true;
+        // No `clip`: a rounded clip renders the whole panel through a layer and blurs the text.
         TouchArea { }
         keys := FocusScope {
             capture-key-pressed(event) => {
@@ -200,6 +200,9 @@ export component CommandPalette inherits Rectangle {
                 Rectangle {
                     height: 40px;
                     background: Theme.surface-2;
+                    // Follow the panel's rounded corners (it doesn't clip).
+                    border-bottom-left-radius: 15px;
+                    border-bottom-right-radius: 15px;
                     Divider {
                         y: 0px;
                         width: 100%;
@@ -242,7 +245,7 @@ export component Welcome inherits Rectangle {
             horizontal-alignment: center;
         }
         Text {
-            text: "Add the folder where you keep your music. Lychee indexes it in the background\nand never changes your files.";
+            text: "Add the folder where you keep your music. Lychee indexes it in the background;\nyour files only change when you save in the tag editor.";
             color: Theme.text-2;
             horizontal-alignment: center;
             font-size: 14px;

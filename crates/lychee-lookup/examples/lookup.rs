@@ -9,7 +9,7 @@ fn main() {
     let client = Client::new();
     let guess = Guess { album: album.clone(), artist: artist.clone(), release_id: String::new(), file_count: 0 };
     let files: Vec<FileFacts> = Vec::new();
-    let candidates = matching::find_candidates(&client, &files, &guess, 2).expect("search");
+    let candidates = matching::find_candidates(&client, &files, &guess, 2, &|p| eprintln!("… {p}")).expect("search");
     for c in candidates.iter().take(6) {
         let s = &c.summary;
         println!("{:>3}  {} — {} ({}, {}, {} tracks, {}) {}", c.score, s.title, s.artist, s.date, s.country, s.track_count, s.format, s.id);

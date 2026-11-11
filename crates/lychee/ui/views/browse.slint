@@ -192,7 +192,6 @@ export component ArtistPage inherits Rectangle {
 component GenreTile inherits Rectangle {
     in property <GenreCard> genre;
     border-radius: 12px;
-    clip: true;
     background: @linear-gradient(135deg, root.genre.seed 0%, root.genre.seed.darker(0.55) 100%);
     drop-shadow-blur: g-ta.has-hover ? 20px : 10px;
     drop-shadow-offset-y: 6px;
@@ -201,7 +200,12 @@ component GenreTile inherits Rectangle {
         mouse-cursor: pointer;
         clicked => { Actions.open-genre(root.genre.name); }
     }
-    if root.genre.has-cover: Cover {
+    // Only the tilted cover needs the rounded clip. Text inside a rounded clip is drawn through an
+    // offscreen layer and comes out blurry, so the labels sit outside it.
+    Rectangle {
+        border-radius: 12px;
+        clip: true;
+        if root.genre.has-cover: Cover {
         x: parent.width - parent.height * 0.62;
         y: parent.height * 0.32;
         width: parent.height * 0.78;
@@ -212,6 +216,7 @@ component GenreTile inherits Rectangle {
         transform-rotation: 18deg;
         drop-shadow-blur: 14px;
         drop-shadow-color: #00000060;
+        }
     }
     VerticalLayout {
         padding: 16px;

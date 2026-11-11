@@ -106,6 +106,7 @@ enum Msg {
     SaveProgress { done: usize, total: usize },
     Saved { results: Vec<(SaveJob, Result<EditFile, String>)> },
     PicturePicked(Vec<u8>),
+    LookupProgress { seq: u64, text: String },
     LookupFound { seq: u64, result: Result<Vec<Candidate>, String> },
     LookupRelease { seq: u64, release_id: String, result: Result<Option<Release>, String> },
     LookupCover { seq: u64, release_id: String, bytes: Option<Vec<u8>> },
@@ -898,11 +899,16 @@ impl EditorCtl {
             return;
         }
         self.set_lookup_state("searching", "Searching MusicBrainz…");
+        // Forget the last search's list and selection on screen too.
+        self.update_lookup_results();
         self.lookup_details();
         let client = self.client.clone();
         let tx = self.tx.clone();
         std::thread::spawn(move || {
-            let result = matching::find_candidates(&client, &facts, &guess, 3).map_err(|e| e.to_string());
+            let report = |text: String| {
+                let _ = tx.send(Msg::LookupProgress { seq, text });
+            };
+            let result = matching::find_candidates(&client, &facts, &guess, 3, &report).map_err(|e| e.to_string());
             let _ = tx.send(Msg::LookupFound { seq, result });
         });
     }
@@ -1276,6 +1282,16 @@ impl EditorCtl {
                     if n > 0 {
                         self.after_edit(&sel, None);
                         self.refresh_form();
+                    }
+                }
+                Msg::LookupProgress { seq, text } => {
+                    if self.lookup.as_ref().is_some_and(|l| l.seq == seq) {
+                        if let Some(ui) = self.ui.upgrade() {
+                            let e = ui.global::<Editor>();
+                            if e.get_lookup_state() == "searching" {
+                                e.set_lookup_message(text.into());
+                            }
+                        }
                     }
                 }
                 Msg::LookupFound { seq, result } => {

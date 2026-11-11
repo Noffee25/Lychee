@@ -118,12 +118,17 @@ export component PillButton inherits Rectangle {
     in property <bool> enabled: true;
     in property <length> pill-height: 40px;
     callback clicked;
+    // Disabled looks are colours, not `opacity`: a faded container is drawn through an offscreen
+    // layer, which makes its text blurry.
+    property <bool> lit: root.primary && root.enabled;
+    property <color> ink: !root.enabled ? Theme.text-3 : root.primary ? Theme.on-accent : root.danger ? Theme.danger : Theme.text;
     height: root.pill-height;
     border-radius: root.pill-height / 2;
-    opacity: root.enabled ? 1 : 0.5;
-    background: root.primary ? (ta.has-hover ? Theme.accent.brighter(0.08) : Theme.accent) : (ta.has-hover ? Theme.hover : transparent);
-    border-width: root.primary ? 0px : 1px;
-    border-color: root.danger ? Theme.danger.with-alpha(0.6) : Theme.border-2;
+    background: root.lit ? (ta.has-hover ? Theme.accent.brighter(0.08) : Theme.accent)
+        : root.primary ? Theme.surface-2
+        : (ta.has-hover && root.enabled ? Theme.hover : transparent);
+    border-width: root.lit ? 0px : 1px;
+    border-color: root.danger && root.enabled ? Theme.danger.with-alpha(0.6) : !root.enabled ? Theme.border : Theme.border-2;
     animate background { duration: Theme.fast; }
     HorizontalLayout {
         cross-axis-alignment: center;
@@ -133,13 +138,13 @@ export component PillButton inherits Rectangle {
         alignment: center;
         if root.has-icon: Image {
             source: root.icon;
-            colorize: root.primary ? Theme.on-accent : root.danger ? Theme.danger : Theme.text;
+            colorize: root.ink;
             width: 16px;
             height: 16px;
         }
         Text {
             text: root.text;
-            color: root.primary ? Theme.on-accent : root.danger ? Theme.danger : Theme.text;
+            color: root.ink;
             font-weight: 600;
             font-size: root.pill-height > 34px ? 13.5px : 12.5px;
             vertical-alignment: center;
@@ -153,6 +158,8 @@ export component PillButton inherits Rectangle {
 }
 
 // A horizontal slider for progress and volume. `changed` fires on click/release, `preview` while dragging.
+// With a duration (the seek bar), `previewing` and `preview-text` say where the pointer is, for a
+// time label next to the bar; nothing floats over the controls around it.
 export component SeekBar inherits Rectangle {
     in property <float> value;
     in property <color> fill-color: Theme.text;
@@ -163,9 +170,20 @@ export component SeekBar inherits Rectangle {
     property <float> drag-value;
     property <bool> dragging;
     property <float> shown: root.dragging ? root.drag-value : Math.max(0, Math.min(1, root.value));
-    property <float> hover-fraction: Math.max(0, Math.min(1, ta.mouse-x / Math.max(1px, root.width)));
-    property <int> hover-ms: Math.round(root.hover-fraction * root.duration-ms);
-    property <int> hover-s: Math.floor(root.hover-ms / 1000);
+    // Set from pointer events rather than bound to the bar's width: a label sized by
+    // `preview-text` sits in the same layout, and a binding would make a loop.
+    property <float> hover-fraction;
+    out property <bool> previewing: root.duration-ms > 0 && (ta.has-hover || root.dragging);
+    property <int> preview-s: Math.floor((root.dragging ? root.drag-value : root.hover-fraction) * root.duration-ms / 1000);
+    out property <string> preview-text: root.clock(root.preview-s);
+    pure function two(n: int) -> string {
+        return (n < 10 ? "0" : "") + n;
+    }
+    pure function clock(s: int) -> string {
+        return s >= 3600
+            ? Math.floor(s / 3600) + ":" + root.two(Math.mod(Math.floor(s / 60), 60)) + ":" + root.two(Math.mod(s, 60))
+            : Math.floor(s / 60) + ":" + root.two(Math.mod(s, 60));
+    }
     height: 16px;
     Rectangle {
         y: (parent.height - 4px) / 2;
@@ -173,6 +191,15 @@ export component SeekBar inherits Rectangle {
         width: 100%;
         border-radius: 2px;
         background: Theme.border-2;
+    }
+    // Where a click would seek to.
+    if root.previewing && !root.dragging: Rectangle {
+        x: 0px;
+        y: (parent.height - 4px) / 2;
+        height: 4px;
+        width: parent.width * root.hover-fraction;
+        border-radius: 2px;
+        background: Theme.text.with-alpha(0.18);
     }
     Rectangle {
         x: 0px;
@@ -194,14 +221,12 @@ export component SeekBar inherits Rectangle {
         drop-shadow-color: #00000060;
         animate opacity { duration: Theme.fast; }
     }
-    if ta.has-hover && root.duration-ms > 0: Bubble {
-        x: Math.max(0px, Math.min(root.width - self.width, ta.mouse-x - self.width / 2));
-        y: -30px;
-        text: Math.floor(root.hover-s / 60) + ":" + (Math.mod(root.hover-s, 60) < 10 ? "0" : "") + Math.mod(root.hover-s, 60);
-    }
     ta := TouchArea {
         mouse-cursor: pointer;
         pointer-event(e) => {
+            if (e.kind == PointerEventKind.move || e.kind == PointerEventKind.down) {
+                root.hover-fraction = Math.max(0, Math.min(1, self.mouse-x / Math.max(1px, self.width)));
+            }
             if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
                 root.dragging = true;
                 root.drag-value = Math.max(0, Math.min(1, self.mouse-x / self.width));
@@ -415,4 +440,28 @@ export component NavItem inherits Rectangle {
 export component Divider inherits Rectangle {
     height: 1px;
     background: Theme.border;
+}
+
+// A small busy indicator in the accent colour (the std Spinner uses the Fluent blue).
+export component BusyRing inherits Rectangle {
+    in property <color> ink: Theme.accent;
+    width: 24px;
+    height: 24px;
+    Rectangle {
+        border-radius: self.width / 2;
+        border-width: 2.5px;
+        border-color: Theme.border-2;
+    }
+    Rectangle {
+        transform-rotation: Math.mod(animation-tick() / 1ms, 900) / 900 * 360deg;
+        Path {
+            width: 100%;
+            height: 100%;
+            viewbox-width: 24;
+            viewbox-height: 24;
+            commands: "M 12 1.25 A 10.75 10.75 0 0 1 22.75 12";
+            stroke: root.ink;
+            stroke-width: 2.5px;
+        }
+    }
 }

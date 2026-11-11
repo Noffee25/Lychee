@@ -68,6 +68,8 @@ Then:
 cargo run --release
 # or play files and folders straight away:
 cargo run --release -- ~/Music/Some\ Album
+# or open them in the tag editor:
+cargo run --release -- --edit ~/Music/Some\ Album
 ```
 
 On first start, add your music folder. Lychee scans it in the background.

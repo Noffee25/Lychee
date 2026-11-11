@@ -6,7 +6,7 @@ import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
 import { AppState, InfoRow } from "../state.slint";
 import { Editor, EditorFile, EditorField, EditorPicture, ScanRow, LookupItem, LookupTrack } from "../editor-state.slint";
-import { PillButton, IconButton, Toggle, Segmented, TextField, Divider, Cover } from "../widgets.slint";
+import { PillButton, IconButton, Toggle, Segmented, TextField, Divider, Cover, BusyRing } from "../widgets.slint";
 import { ListView, ScrollView, TextEdit } from "std-widgets.slint";
 
 // One editor field as a single-line input. The text is (re)loaded from Rust whenever
@@ -26,9 +26,8 @@ component FieldInput inherits Rectangle {
     min-width: 36px;
     border-radius: 8px;
     border-width: 1px;
-    border-color: input.has-focus ? Theme.accent : Theme.border-2;
+    border-color: input.has-focus ? Theme.accent : root.field.enabled ? Theme.border-2 : Theme.border;
     background: root.field.enabled ? Theme.bg : Theme.surface-2;
-    opacity: root.field.enabled ? 1 : 0.55;
     forward-focus: input;
     input := TextInput {
         x: 10px;
@@ -829,6 +828,8 @@ export component EditorPage inherits Rectangle {
         if Editor.files.length > 0: HorizontalLayout {
             vertical-stretch: 1;
             spacing: 16px;
+            // No `clip` on these rounded cards: Slint's GL renderer draws a rounded clip through
+            // an offscreen layer, which blurs every bit of text inside. Lists clip themselves.
             Rectangle {
                 horizontal-stretch: 0.85;
                 min-width: 250px;
@@ -836,7 +837,6 @@ export component EditorPage inherits Rectangle {
                 border-width: 1px;
                 border-color: Theme.border;
                 background: Theme.surface;
-                clip: true;
                 VerticalLayout {
                     HorizontalLayout {
                         height: 44px;
@@ -882,11 +882,14 @@ export component EditorPage inherits Rectangle {
                         }
                     }
                     Divider { }
-                    ListView {
+                    VerticalLayout {
                         vertical-stretch: 1;
-                        for file[i] in Editor.files: FileRow {
-                            file: file;
-                            index: i;
+                        padding: 6px;
+                        ListView {
+                            for file[i] in Editor.files: FileRow {
+                                file: file;
+                                index: i;
+                            }
                         }
                     }
                 }
@@ -898,7 +901,6 @@ export component EditorPage inherits Rectangle {
                 border-width: 1px;
                 border-color: Theme.border;
                 background: Theme.surface;
-                clip: true;
                 VerticalLayout {
                     HorizontalLayout {
                         height: 50px;
@@ -998,7 +1000,6 @@ component Dialog inherits Rectangle {
         drop-shadow-blur: 60px;
         drop-shadow-offset-y: 24px;
         drop-shadow-color: #00000090;
-        clip: true;
         TouchArea { }
         keys := FocusScope {
             init => {
@@ -1021,8 +1022,11 @@ component PreviewList inherits Rectangle {
     border-width: 1px;
     border-color: Theme.border;
     background: Theme.bg;
-    clip: true;
     ListView {
+        x: 4px;
+        y: 4px;
+        width: parent.width - 8px;
+        height: parent.height - 8px;
         for row in Editor.scan-rows: HorizontalLayout {
             height: 34px;
             padding-left: 12px;
@@ -1449,14 +1453,21 @@ export component LookupDialog inherits Dialog {
         HorizontalLayout {
             vertical-stretch: 1;
             spacing: 14px;
+            // preferred-width 0 on both columns: the stretch factors alone split the width, so a
+            // long release title can't squeeze the list.
             Rectangle {
                 horizontal-stretch: 0.9;
+                preferred-width: 0px;
+                min-width: 220px;
                 border-radius: 12px;
                 border-width: 1px;
                 border-color: Theme.border;
                 background: Theme.bg;
-                clip: true;
                 if Editor.lookup-state == "results": ListView {
+                    x: 6px;
+                    y: 6px;
+                    width: parent.width - 12px;
+                    height: parent.height - 12px;
                     for item[i] in Editor.lookup-results: ResultRow {
                         item: item;
                         selected: i == Editor.lookup-selected;
@@ -1468,12 +1479,16 @@ export component LookupDialog inherits Dialog {
                 if Editor.lookup-state != "results": VerticalLayout {
                     alignment: center;
                     padding: 24px;
-                    spacing: 8px;
-                    Image {
-                        source: Editor.lookup-state == "error" ? Icons.alert : Editor.lookup-state == "searching" ? Icons.globe : Icons.search;
-                        colorize: Editor.lookup-state == "error" ? Theme.danger : Theme.text-3;
-                        width: 24px;
-                        height: 24px;
+                    spacing: 10px;
+                    HorizontalLayout {
+                        alignment: center;
+                        if Editor.lookup-state == "searching": BusyRing { }
+                        if Editor.lookup-state != "searching": Image {
+                            source: Editor.lookup-state == "error" ? Icons.alert : Icons.search;
+                            colorize: Editor.lookup-state == "error" ? Theme.danger : Theme.text-3;
+                            width: 24px;
+                            height: 24px;
+                        }
                     }
                     Text {
                         text: Editor.lookup-message;
@@ -1485,6 +1500,8 @@ export component LookupDialog inherits Dialog {
             }
             VerticalLayout {
                 horizontal-stretch: 1.1;
+                preferred-width: 0px;
+                min-width: 280px;
                 spacing: 12px;
                 HorizontalLayout {
                     spacing: 14px;
@@ -1519,12 +1536,15 @@ export component LookupDialog inherits Dialog {
                     border-width: 1px;
                     border-color: Theme.border;
                     background: Theme.bg;
-                    clip: true;
                     if Editor.lookup-loading-tracks: Text {
                         text: "Loading the track list…";
                         color: Theme.text-2;
                     }
                     if !Editor.lookup-loading-tracks: ListView {
+                        x: 4px;
+                        y: 4px;
+                        width: parent.width - 8px;
+                        height: parent.height - 8px;
                         for t in Editor.lookup-tracks: HorizontalLayout {
                             height: 32px;
                             padding-left: 12px;

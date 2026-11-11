@@ -22,7 +22,7 @@ Lychee is a local-library music player for Linux and Windows, written in Rust, w
 ### Playback
 - [x] Formats: **MP3, FLAC, WAV, AIFF, Ogg Vorbis, AAC/M4A, ALAC, Opus**, plus CAF and MKV/WebM audio
 - [x] Play / pause; next / previous (previous restarts the track if more than 3 s in)
-- [x] Seek by clicking or dragging the progress bar (with a time preview on hover)
+- [x] Seek by clicking or dragging the progress bar; while you hover, the time label shows where a click would go
 - [x] Skip back / forward 10 s (`←` / `→`); relative seeks from media keys and MPRIS
 - [ ] Hold-to-scrub fast-forward / rewind buttons
 - [x] Volume with a perceptual curve; mute; scroll the volume slider with the mouse wheel
@@ -49,6 +49,7 @@ Lychee is a local-library music player for Linux and Windows, written in Rust, w
 
 ### Now Playing
 - [x] Large album art, track title, artist, album, format badge (e.g. `FLAC 24/96`), position and duration
+- [x] Click the cover or title in the player bar to open the album (the playing song is highlighted there); click the artist to open the artist
 - [x] **Dynamic colour**: buttons and highlights take the album's accent; headers its dominant colour (can be turned off)
 - [x] **Lyrics**: `.lrc` sidecar files and embedded lyrics, synced highlighting with auto-scroll, click a line to seek
 - [x] Details panel: tags, format, decoder, output device, file size, play count, path
@@ -76,7 +77,7 @@ Lychee is a local-library music player for Linux and Windows, written in Rust, w
 - [ ] Respect the system "reduce motion" setting
 
 ### Tag editor (modelled on EasyTAG)
-- [x] Open a folder (recursively) or single files, use "Edit tags…" on any album or song, or drop files onto the editor
+- [x] Open a folder (recursively) or single files, use "Edit tags…" on any album or song, drop files onto the editor, or run `lychee --edit FOLDER`
 - [x] File list with markers for unsaved changes, pending renames and read or save errors
 - [x] Multi-selection (Ctrl/Shift-click, Ctrl+A). A field reads "Multiple values" when the files disagree, and typing sets it for all of them
 - [x] Fields: title, artist, album, album artist, year, genre, track and disc numbers with totals, composer, comment,
@@ -96,6 +97,8 @@ Lychee is a local-library music player for Linux and Windows, written in Rust, w
 
 ### Online lookup
 - [x] Works out the album from tags, MusicBrainz IDs or folder names ("Artist - Album (1998) [FLAC]"); untagged file names count as titles
+- [x] Loose songs (a few files, or folders such as "Singles") are looked up by title, which finds the singles and albums they appeared on
+- [x] Shows what it is doing while it searches, and lets a contradicting title overrule a matching length
 - [x] MusicBrainz release search. The track lists of the best candidates are compared with the files (durations, titles, track counts) and scored
 - [x] Each file is matched to its track by MusicBrainz ID, then disc and track number, title, and finally duration
 - [x] Fill in what's missing, or replace everything: title, artists, album, year (of the original release), genre,
