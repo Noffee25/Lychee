@@ -2808,7 +2808,7 @@ dependencies = [
 
 [[package]]
 name = "lychee"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
@@ -2835,7 +2835,7 @@ dependencies = [
 
 [[package]]
 name = "lychee-audio"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cpal",
  "crossbeam-channel",
@@ -2850,7 +2850,7 @@ dependencies = [
 
 [[package]]
 name = "lychee-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "fastrand",
  "serde",
@@ -2858,7 +2858,7 @@ dependencies = [
 
 [[package]]
 name = "lychee-lastfm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "crossbeam-channel",
  "lychee-core",
@@ -2871,7 +2871,7 @@ dependencies = [
 
 [[package]]
 name = "lychee-library"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "image",
@@ -2888,7 +2888,7 @@ dependencies = [
 
 [[package]]
 name = "lychee-lookup"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "parking_lot",
  "serde_json",
@@ -2898,7 +2898,7 @@ dependencies = [
 
 [[package]]
 name = "lychee-platform"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-channel",
  "block2 0.6.2",
@@ -2916,7 +2916,7 @@ dependencies = [
 
 [[package]]
 name = "lychee-tagger"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "lofty",
  "tempfile",
