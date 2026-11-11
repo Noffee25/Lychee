@@ -115,19 +115,11 @@ component SectionTitle inherits HorizontalLayout {
 }
 
 component EmptyNote inherits VerticalLayout {
-    in property <image> icon;
     in property <string> title;
     in property <string> text;
     alignment: center;
     spacing: 8px;
     padding: 24px;
-    Image {
-        source: root.icon;
-        colorize: Theme.text-3;
-        width: 28px;
-        height: 28px;
-        x: (parent.width - self.width) / 2;
-    }
     Text {
         text: root.title;
         font-weight: 600;
@@ -202,7 +194,6 @@ component QueueTab inherits ScrollView {
         }
         if !Player.now.has-track: EmptyNote {
             height: 220px;
-            icon: Icons.music;
             title: "Nothing playing";
             text: "Pick an album or song to start. The queue shows up here.";
         }
@@ -224,7 +215,6 @@ component QueueTab inherits ScrollView {
 
 component LyricsTab inherits Rectangle {
     if AppState.lyrics.length == 0: EmptyNote {
-        icon: Icons.lyrics;
         title: Player.now.has-track ? "No lyrics for this track" : "Nothing playing";
         text: "Lychee reads lyrics embedded in your files and .lrc files that sit next to them.";
     }
@@ -292,7 +282,6 @@ component DetailsTab inherits ScrollView {
         alignment: start;
         if AppState.details.length == 0: EmptyNote {
             height: 200px;
-            icon: Icons.info;
             title: "No track";
             text: "File and format details for the current track appear here.";
         }

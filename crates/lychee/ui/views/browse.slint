@@ -77,10 +77,15 @@ export component ArtistsPage inherits Rectangle {
 }
 
 export component ArtistPage inherits Rectangle {
-    property <length> tile-width: (sv.visible-width - 2 * Grid.side-padding - (AppState.grid-columns - 1) * Grid.gap) / Math.max(1, AppState.grid-columns);
+    property <int> columns: Grid.columns(sv.visible-width);
+    property <length> tile-width: Grid.tile-width(sv.visible-width, root.columns);
     property <bool> scrolled: sv.content-y < -8px;
     changed scrolled => { AppState.content-scrolled = root.scrolled; }
-    init => { AppState.content-scrolled = false; }
+    changed columns => { Actions.set-grid-columns(root.columns); }
+    init => {
+        AppState.content-scrolled = false;
+        Actions.set-grid-columns(root.columns);
+    }
     sv := ScrollView {
         content-width: self.visible-width;
         content-height: page.preferred-height;
@@ -238,7 +243,10 @@ component GenreTile inherits Rectangle {
 }
 
 export component GenresPage inherits Rectangle {
-    property <length> tile-width: (list.width - 2 * Grid.side-padding - (AppState.grid-columns - 1) * Grid.gap) / Math.max(1, AppState.grid-columns);
+    property <int> columns: Grid.columns(list.width);
+    property <length> tile-width: Grid.tile-width(list.width, root.columns);
+    changed columns => { Actions.set-grid-columns(root.columns); }
+    init => { Actions.set-grid-columns(root.columns); }
     VerticalLayout {
         padding-top: 52px;
         PageHeader {

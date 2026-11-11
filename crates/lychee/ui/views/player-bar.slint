@@ -380,29 +380,15 @@ export component PlayerBar inherits Rectangle {
             IconButton {
                 icon: Icons.lyrics;
                 icon-size: 17px;
-                active: AppState.right-panel && AppState.right-tab == "lyrics";
+                active: AppState.panel-shown && AppState.right-tab == "lyrics";
                 tooltip: "Lyrics";
-                clicked => {
-                    if (AppState.right-panel && AppState.right-tab == "lyrics") {
-                        AppState.right-panel = false;
-                    } else {
-                        AppState.right-panel = true;
-                        AppState.right-tab = "lyrics";
-                    }
-                }
+                clicked => { AppState.toggle-tab("lyrics"); }
             }
             IconButton {
                 icon: Icons.queue;
-                active: AppState.right-panel && AppState.right-tab == "queue";
+                active: AppState.panel-shown && AppState.right-tab == "queue";
                 tooltip: "Queue";
-                clicked => {
-                    if (AppState.right-panel && AppState.right-tab == "queue") {
-                        AppState.right-panel = false;
-                    } else {
-                        AppState.right-panel = true;
-                        AppState.right-tab = "queue";
-                    }
-                }
+                clicked => { AppState.toggle-tab("queue"); }
             }
             DeviceButton { }
             IconButton {

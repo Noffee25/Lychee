@@ -80,6 +80,104 @@ component ShortcutRow inherits HorizontalLayout {
     }
 }
 
+// The output device: the current one in a field; the rest drop down from it.
+component DeviceSelect inherits Rectangle {
+    height: 38px;
+    border-radius: 9px;
+    border-width: 1px;
+    border-color: select-ta.has-hover ? Theme.text-3 : Theme.border-2;
+    background: Theme.surface-2;
+    HorizontalLayout {
+        cross-axis-alignment: center;
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 10px;
+        Image {
+            source: Icons.device;
+            colorize: Theme.text-2;
+            width: 16px;
+            height: 16px;
+        }
+        Text {
+            text: AppState.device-choice;
+            color: Theme.text;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        Image {
+            source: Icons.chev-d;
+            colorize: Theme.text-2;
+            width: 15px;
+            height: 15px;
+        }
+    }
+    select-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { popup.show(); }
+    }
+    popup := PopupWindow {
+        x: 0px;
+        y: root.height + 6px;
+        width: root.width;
+        height: Math.min(300px, 16px + AppState.devices.length * 34px);
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.surface;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.border-2;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: Theme.shadow;
+            // Inset so the list clips itself rectangularly inside the rounded card.
+            sv := ScrollView {
+                x: 1px;
+                y: 1px;
+                width: parent.width - 2px;
+                height: parent.height - 2px;
+                content-width: self.visible-width;
+                content-height: rows.preferred-height;
+                rows := VerticalLayout {
+                    width: sv.visible-width;
+                    padding: 7px;
+                    spacing: 2px;
+                    for device in AppState.devices: Rectangle {
+                        height: 32px;
+                        border-radius: 8px;
+                        background: dev-ta.has-hover ? Theme.hover : transparent;
+                        HorizontalLayout {
+                            cross-axis-alignment: center;
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 8px;
+                            Text {
+                                text: device.label;
+                                color: device.selected ? Theme.accent : Theme.text;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                            if device.selected: Image {
+                                source: Icons.check;
+                                colorize: Theme.accent;
+                                width: 15px;
+                                height: 15px;
+                            }
+                        }
+                        dev-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                Actions.set-device(device.label);
+                                popup.close();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 export component SettingsPage inherits Rectangle {
     property <bool> scrolled: sv.content-y < -8px;
     changed scrolled => { AppState.content-scrolled = root.scrolled; }
@@ -175,35 +273,7 @@ export component SettingsPage inherits Rectangle {
                             font-weight: 500;
                             color: Theme.text;
                         }
-                        for device in AppState.devices: Rectangle {
-                            height: 34px;
-                            border-radius: 8px;
-                            background: dev-ta.has-hover ? Theme.hover : device.selected ? Theme.surface-2 : transparent;
-                            HorizontalLayout {
-                                cross-axis-alignment: center;
-                                padding-left: 10px;
-                                padding-right: 10px;
-                                spacing: 10px;
-                                Rectangle {
-                                    width: 16px;
-                                    height: 16px;
-                                    border-radius: 8px;
-                                    border-width: device.selected ? 5px : 1.5px;
-                                    border-color: device.selected ? Theme.accent : Theme.border-2;
-                                }
-                                Text {
-                                    text: device.label;
-                                    color: Theme.text;
-                                    vertical-alignment: center;
-                                    overflow: elide;
-                                    horizontal-stretch: 1;
-                                }
-                            }
-                            dev-ta := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { Actions.set-device(device.label); }
-                            }
-                        }
+                        DeviceSelect { }
                     }
 
                     Section {

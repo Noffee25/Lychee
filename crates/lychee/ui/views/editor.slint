@@ -303,6 +303,8 @@ component FileRow inherits Rectangle {
 }
 
 component TagsTab inherits ScrollView {
+    // Narrow editor (see EditorPage.compact): Disc gets its own line instead of sharing Track's.
+    in property <bool> compact;
     VerticalLayout {
         padding: 18px;
         padding-right: 22px;
@@ -365,14 +367,39 @@ component TagsTab inherits ScrollView {
             Rectangle {
                 horizontal-stretch: 1;
             }
-            FieldLabel {
-                field: Editor.fields[8];
-                text: "Disc";
-                label-width: 40px;
+            if !root.compact: HorizontalLayout {
+                spacing: 10px;
+                cross-axis-alignment: center;
+                FieldLabel {
+                    field: Editor.fields[8];
+                    text: "Disc";
+                    label-width: 40px;
+                }
+                FieldInput {
+                    field: Editor.fields[8];
+                    width: 46px;
+                    numeric: true;
+                }
+                Text {
+                    text: "of";
+                    color: Theme.text-3;
+                    font-size: 12.5px;
+                }
+                FieldInput {
+                    field: Editor.fields[9];
+                    width: 46px;
+                    numeric: true;
+                }
             }
+        }
+        if root.compact: HorizontalLayout {
+            spacing: 10px;
+            cross-axis-alignment: center;
+            alignment: start;
+            FieldLabel { field: Editor.fields[8]; text: "Disc"; }
             FieldInput {
                 field: Editor.fields[8];
-                width: 46px;
+                width: 54px;
                 numeric: true;
             }
             Text {
@@ -382,7 +409,7 @@ component TagsTab inherits ScrollView {
             }
             FieldInput {
                 field: Editor.fields[9];
-                width: 46px;
+                width: 54px;
                 numeric: true;
             }
         }
@@ -529,12 +556,6 @@ component ArtworkTab inherits ScrollView {
             VerticalLayout {
                 alignment: center;
                 spacing: 8px;
-                Image {
-                    source: Icons.image;
-                    colorize: Theme.text-3;
-                    width: 28px;
-                    height: 28px;
-                }
                 Text {
                     text: "No artwork";
                     color: Theme.text-2;
@@ -684,12 +705,6 @@ component EmptyEditor inherits Rectangle {
         alignment: center;
         spacing: 14px;
         padding: 40px;
-        Image {
-            source: Icons.edit;
-            colorize: Theme.accent;
-            width: 34px;
-            height: 34px;
-        }
         Text {
             text: "Edit tags, artwork and lyrics";
             font-size: 20px;
@@ -726,6 +741,9 @@ component EmptyEditor inherits Rectangle {
 }
 
 export component EditorPage inherits Rectangle {
+    // Too narrow for the full layout (the form's Track row and tab buttons need about 540 px next
+    // to a 250 px file list): icon-only Scanner and Look up, and Disc on its own line.
+    property <bool> compact: self.width < 900px;
     init => {
         AppState.content-scrolled = false;
     }
@@ -927,7 +945,7 @@ export component EditorPage inherits Rectangle {
                         Rectangle {
                             horizontal-stretch: 1;
                         }
-                        PillButton {
+                        if !root.compact: PillButton {
                             text: "Scanner";
                             icon: Icons.wand;
                             pill-height: 32px;
@@ -936,10 +954,29 @@ export component EditorPage inherits Rectangle {
                                 Editor.open-scanner(Editor.scanner-mode);
                             }
                         }
-                        PillButton {
+                        if !root.compact: PillButton {
                             text: "Look up";
                             icon: Icons.globe;
                             pill-height: 32px;
+                            enabled: Editor.selected-count > 0 && !Editor.busy;
+                            clicked => {
+                                Editor.lookup-tags = true;
+                                Editor.lookup-artwork = true;
+                                Editor.lookup-lyrics = true;
+                                Editor.lookup-start();
+                            }
+                        }
+                        if root.compact: IconButton {
+                            icon: Icons.wand;
+                            tooltip: "Scanner";
+                            enabled: Editor.selected-count > 0 && !Editor.busy;
+                            clicked => {
+                                Editor.open-scanner(Editor.scanner-mode);
+                            }
+                        }
+                        if root.compact: IconButton {
+                            icon: Icons.globe;
+                            tooltip: "Look up";
                             enabled: Editor.selected-count > 0 && !Editor.busy;
                             clicked => {
                                 Editor.lookup-tags = true;
@@ -963,6 +1000,7 @@ export component EditorPage inherits Rectangle {
                     }
                     if Editor.selected-count > 0 && Editor.tab == "tags": TagsTab {
                         vertical-stretch: 1;
+                        compact: root.compact;
                     }
                     if Editor.selected-count > 0 && Editor.tab == "artwork": ArtworkTab {
                         vertical-stretch: 1;

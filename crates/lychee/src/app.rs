@@ -1847,11 +1847,12 @@ impl App {
             Command::Lyrics | Command::SidePanel => {
                 if let Some(ui) = self.ui.upgrade() {
                     let state = ui.global::<AppState>();
+                    // Through AppState, which docks the panel or opens the drawer.
                     if cmd == Command::Lyrics {
-                        state.set_right_panel(true);
                         state.set_right_tab("lyrics".into());
+                        state.invoke_set_panel(true);
                     } else {
-                        state.set_right_panel(!state.get_right_panel());
+                        state.invoke_toggle_panel();
                     }
                 }
             }
@@ -2502,6 +2503,7 @@ impl App {
         }
         let choices: Vec<Choice> = names.iter().map(|n| Choice { label: n.into(), selected: *n == selected }).collect();
         state.set_devices(ModelRc::new(VecModel::from(choices)));
+        state.set_device_choice(selected.as_str().into());
         let index = self.library.index();
         let s = index.stats();
         state.set_library_summary(
@@ -2804,7 +2806,7 @@ impl App {
             "tab" => {
                 if let Some(ui) = self.ui.upgrade() {
                     ui.global::<AppState>().set_right_tab(arg.into());
-                    ui.global::<AppState>().set_right_panel(true);
+                    ui.global::<AppState>().invoke_set_panel(true);
                 }
             }
             "theme" => self.handle(Action::SetThemeMode(arg.parse().unwrap_or(1))),

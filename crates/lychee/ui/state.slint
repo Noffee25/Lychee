@@ -173,6 +173,31 @@ export global AppState {
     in-out property <bool> can-go-back;
     in-out property <bool> right-panel: true;
     in-out property <string> right-tab: "queue";
+    // The side panel sits beside the content only when the window is wide enough; the window sets
+    // panel-docked. In narrower windows it opens over the content as a drawer, which starts closed
+    // and isn't saved. right-panel stays the (saved) choice for the docked panel.
+    in-out property <bool> panel-docked: true;
+    in-out property <bool> panel-drawer;
+    out property <bool> panel-shown: panel-docked ? right-panel : panel-drawer;
+    public function set-panel(shown: bool) {
+        if (panel-docked) {
+            right-panel = shown;
+        } else {
+            panel-drawer = shown;
+        }
+    }
+    public function toggle-panel() {
+        set-panel(!panel-shown);
+    }
+    // The Lyrics and Queue buttons: open the panel on that tab, or close it if it already shows it.
+    public function toggle-tab(tab: string) {
+        if (panel-shown && right-tab == tab) {
+            set-panel(false);
+        } else {
+            right-tab = tab;
+            set-panel(true);
+        }
+    }
     in-out property <bool> palette-open;
     in-out property <bool> library-empty;
     in-out property <bool> mini-open;
@@ -223,6 +248,8 @@ export global AppState {
     in-out property <[string]> folders;
     in-out property <[Choice]> devices;
     in-out property <string> device-name;
+    // The output device chosen in Settings; device-name is the one the engine actually opened.
+    in-out property <string> device-choice;
     in-out property <int> theme-mode;
     in-out property <bool> dynamic-accent: true;
     in-out property <bool> mini-on-top: true;

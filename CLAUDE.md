@@ -97,6 +97,26 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
   the UI thread.
 - **Pages.** These need a `Page` variant (with a `key`), a `refresh_page` arm, and an
   `if AppState.page == "…": View {}` line in `app.slint`. The right panel is hidden on the editor page.
+- **Window sizes** (the minimum is 980×620; check 980, 1199, 1200 and wide windows).
+  - **Side panel:** it docks beside the content only when the window is at least 1200 px wide, which
+    leaves the content about 630 px. Narrower, it opens as a drawer over the content; clicking beside it
+    or pressing Esc closes it.
+    - `AppState.panel-docked` is set by the window, and `right-panel` is the saved docked choice.
+    - `panel-drawer` isn't saved, and `panel-shown` says whether the panel is visible either way.
+    - Open or close it only through `AppState.set-panel`, `toggle-panel` and `toggle-tab`; from Rust that's
+      `invoke_set_panel` and friends.
+  - **Grids:** Rust builds grid rows, so every grid page computes its own column count with
+    `Grid.columns(width)` and reports it through `Actions.set-grid-columns` on `init` and on change.
+    Don't read `AppState.grid-columns` in a page: a stale count from another page squeezed the Genres tiles.
+  - **Tag editor:** below 900 px of page width, `EditorPage.compact` makes Scanner and Look up icon-only
+    and moves Disc onto its own line.
+  - **Sidebar:** its playlist list has no minimum height. With one, the player bar was pushed partly out of
+    the smallest window.
+- **Sidebar footer and output device.** The sidebar ends with a plain Settings link; scan progress and
+  library stats are shown in Settings → Library.
+  - The output device is a dropdown (`DeviceSelect` in `settings.slint`) showing `AppState.device-choice`,
+    the device chosen in Settings.
+  - `device-name` is the device the engine actually opened; it's empty until something plays.
 - **Lazy models.** `LazyModel` builds rows on demand, and `refresh()` re-runs the builder. **Builders
   must read live state**: share ids through `Rc<Cell<…>>` (see `NowIds`) and look tracks up in
   `library.index()` at build time. Values captured by value at page-build time go stale. That bug once
@@ -182,6 +202,10 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
     window then has no app id, and GNOME shows a generic icon called "Unknown" instead of
     matching `lychee.desktop`.
   - Check it in a nested mutter with `WAYLAND_DEBUG=1`: look for `xdg_toplevel…set_app_id("lychee")`.
+- An element that has a width or height but no `x`/`y`, and isn't in a layout, is *centred* in its
+  parent. Overlays need `x: 0px; y: 0px;`: without them the side panel drawer sat 42 px too low.
+- Don't put icons in empty states. The owner had them all removed, and a `VerticalLayout` puts a
+  fixed-size `Image` at the left edge rather than centring it.
 
 ## Testing and checking your work
 
@@ -207,6 +231,9 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
   It also starts Xwayland, so pass its XAUTHORITY to X clients.
   - Drive it with `org.gnome.Mutter.RemoteDesktop` on the private bus (pointer and keys) and capture
     frames with `org.gnome.Mutter.ScreenCast`.
+  - A new ScreenCast consumer's first buffer can be stale: it can show the screen from much earlier.
+    Record with `cursor-mode` 1 (embedded), keep a later buffer, and nudge the pointer meanwhile so a fresh
+    frame is produced. Otherwise screenshots contradict the app's actual state.
   - Observe with `RUST_LOG=lychee=debug` (every action is logged), MPRIS on the private bus,
     `WAYLAND_DEBUG=1` and `xprop`.
   - Never inject input into or open windows on the owner's live session (DISPLAY=:0 / wayland-0).

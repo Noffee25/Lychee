@@ -8,6 +8,15 @@ export global Grid {
     out property <length> gap: 20px;
     out property <length> min-tile: 168px;
     out property <length> side-padding: 24px;
+    // How many tiles fit across a grid page this wide. Rust builds the rows, so every grid page
+    // reports its count (Actions.set-grid-columns) when it opens and when it's resized. A page that
+    // reused another page's count went stale after a resize, and its tiles got squeezed.
+    public pure function columns(width: length) -> int {
+        return Math.max(2, Math.floor((width - 2 * side-padding + gap) / (min-tile + gap)));
+    }
+    public pure function tile-width(width: length, columns: int) -> length {
+        return (width - 2 * side-padding - (columns - 1) * gap) / Math.max(1, columns);
+    }
 }
 
 export component AlbumTile inherits Rectangle {
@@ -200,8 +209,8 @@ export component PageHeader inherits HorizontalLayout {
 }
 
 export component AlbumsPage inherits Rectangle {
-    property <int> columns: Math.max(2, Math.floor((list.width - 2 * Grid.side-padding + Grid.gap) / (Grid.min-tile + Grid.gap)));
-    property <length> tile-width: (list.width - 2 * Grid.side-padding - (root.columns - 1) * Grid.gap) / root.columns;
+    property <int> columns: Grid.columns(list.width);
+    property <length> tile-width: Grid.tile-width(list.width, root.columns);
     changed columns => { Actions.set-grid-columns(root.columns); }
     init => { Actions.set-grid-columns(root.columns); }
     VerticalLayout {

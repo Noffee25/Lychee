@@ -48,20 +48,6 @@ component Toolbar inherits Rectangle {
             tooltip: "Back";
             clicked => { Actions.go-back(); }
         }
-        Rectangle { horizontal-stretch: 1; }
-        IconButton {
-            icon: Theme.dark ? Icons.sun : Icons.moon;
-            icon-size: 17px;
-            tooltip: Theme.dark ? "Light theme" : "Dark theme";
-            clicked => { Actions.set-theme-mode(Theme.dark ? 2 : 1); }
-        }
-        IconButton {
-            icon: Icons.sidebar;
-            icon-size: 17px;
-            active: AppState.right-panel;
-            tooltip: AppState.right-panel ? "Hide side panel" : "Show side panel";
-            clicked => { AppState.right-panel = !AppState.right-panel; }
-        }
     }
 }
 
@@ -86,7 +72,18 @@ export component AppWindow inherits Window {
         }
     }
     changed dark => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
-    init => { Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light; }
+    // The side panel docks only while the content keeps about 630 px beside it, which the album and
+    // song pages need. Narrower windows open it over the content instead (see the drawer below).
+    property <bool> panel-fits: self.width >= 1200px;
+    changed panel-fits => {
+        AppState.panel-docked = self.panel-fits;
+        AppState.panel-drawer = false;
+    }
+    property <bool> drawer-open: !AppState.panel-docked && AppState.panel-drawer && AppState.page != "editor";
+    init => {
+        Palette.color-scheme = root.dark ? ColorScheme.dark : ColorScheme.light;
+        AppState.panel-docked = root.panel-fits;
+    }
 
     public function focus-shortcuts() {
         keys.focus();
@@ -135,12 +132,12 @@ export component AppWindow inherits Window {
         }
         KeyBinding {
             keys: @keys(Control + Q);
-            activated => { if (!AppState.mac) { AppState.right-panel = !AppState.right-panel; } }
+            activated => { if (!AppState.mac) { AppState.toggle-panel(); } }
         }
         KeyBinding {
             // ⌃⌘S, the usual "show sidebar" keys on macOS, where ⌘Q quits.
             keys: @keys(Meta + Control + S);
-            activated => { if (AppState.mac) { AppState.right-panel = !AppState.right-panel; } }
+            activated => { if (AppState.mac) { AppState.toggle-panel(); } }
         }
         KeyBinding {
             keys: @keys(Control + ",");
@@ -148,7 +145,13 @@ export component AppWindow inherits Window {
         }
         KeyBinding {
             keys: @keys(Escape);
-            activated => { Actions.go-back(); }
+            activated => {
+                if (root.drawer-open) {
+                    AppState.panel-drawer = false;
+                } else {
+                    Actions.go-back();
+                }
+            }
         }
         KeyBinding {
             keys: @keys(Control + S);
@@ -212,9 +215,31 @@ export component AppWindow inherits Window {
                         width: parent.width;
                     }
                 }
-                if AppState.right-panel && AppState.page != "editor": RightPanel { }
+                if AppState.panel-docked && AppState.right-panel && AppState.page != "editor": RightPanel { }
             }
-            PlayerBar { }
+            player-bar := PlayerBar { }
+        }
+
+        // Narrow windows: the side panel slides over the content instead of squeezing it. Clicking
+        // beside it or Esc closes it; the player bar stays usable below.
+        if root.drawer-open: Rectangle {
+            // Pinned to the top: an element with a size but no position is centred in its parent.
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height - player-bar.height;
+            Rectangle {
+                background: Theme.dark ? #00000059 : #14141e1f;
+                TouchArea {
+                    clicked => { AppState.panel-drawer = false; }
+                }
+            }
+            RightPanel {
+                x: parent.width - self.width;
+                height: parent.height;
+                drop-shadow-blur: 28px;
+                drop-shadow-color: Theme.shadow;
+            }
         }
 
         if AppState.toast != "": Toast {
