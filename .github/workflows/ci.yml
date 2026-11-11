@@ -20,8 +20,9 @@ jobs:
         run: |
           # TEMPORARY (2026-11-11): Canonical's DNS is down, so use mirrors outside it first.
           # Remove after v0.1.0 is published.
+          # No Canonical host in the list: apt spreads requests over every mirror and waits out each lookup.
           printf '%s\n' https://mirrors.edge.kernel.org/ubuntu/ https://mirror.math.princeton.edu/pub/ubuntu/ \
-            https://archive.ubuntu.com/ubuntu/ | sudo tee /etc/apt/apt-mirrors.txt
+            | sudo tee /etc/apt/apt-mirrors.txt
           sudo apt-get update && sudo apt-get install -y libasound2-dev libfontconfig1-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
