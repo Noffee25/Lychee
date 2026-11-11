@@ -22,7 +22,8 @@
 - **Last.fm scrobbling.** Sign in through the browser, send "now playing" updates, scrobble with an offline queue, and optionally love tracks you favorite. A status icon sits in the bottom-right corner.
 - **Tag editor, modelled on EasyTAG.** Edit many files at once (mixed values show as "Multiple values"),
   number tracks, edit artwork and lyrics, and undo anything. Its scanner fills tags from file names
-  (`%n - %t`), renames files from tags and cleans up text (Title Case, underscores, spaces). Changes are
+  (`%n - %t`), renames files from tags, cleans up text (Title Case, underscores, spaces) and writes artist
+  credits one way ("A ft. B", "A, B" and "A; B" all become "A feat. B"). Changes are
   kept as pending until you save, and frames the editor doesn't know (Serato, private ID3 frames) survive.
 - **Online lookup.** Lychee works out which album a folder holds from its tags or folder name ("Artist -
   Album (1998)"), finds it on MusicBrainz and matches each file to its track by duration and title. It
@@ -111,6 +112,10 @@ Scrobbling uses the Last.fm API, which requires an API account (free, takes a mi
 
 Then click **Connect**, approve Lychee in the browser page that opens, and you're done. No password is stored.
 
+By default Lychee scrobbles a song's main artist: "Daft Punk feat. Pharrell Williams", or a file tagged with
+both artists, counts for Daft Punk, which matches how Last.fm files these songs. The title is sent as tagged.
+Settings → Last.fm → **Artist to scrobble** → *Exact tags* sends the artist tag as written instead.
+
 ## Keyboard shortcuts
 
 | Action | Keys |
@@ -149,7 +154,7 @@ crates/
   lychee-library   scanning, tags (lofty), artwork + colors, SQLite store, fuzzy search, lyrics
   lychee-lastfm    Last.fm auth, now playing, scrobbling with an offline queue
   lychee-platform  MPRIS (Linux), System Media Transport Controls (Windows), Now Playing (macOS)
-  lychee-tagger    tag editor engine: lossless tag writing, EasyTAG masks, text clean-up, undo
+  lychee-tagger    tag editor engine: lossless tag writing, EasyTAG masks, text clean-up, artist credits, undo
   lychee-lookup    MusicBrainz, Cover Art Archive and LRCLIB clients, album detection and matching
 packaging/         Linux installer and packages, Windows installer and icon, macOS app and disk image,
                    release notes

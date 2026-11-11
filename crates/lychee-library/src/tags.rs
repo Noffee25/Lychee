@@ -87,6 +87,11 @@ fn apply_tag(tag: &Tag, record: &mut TrackRecord) {
     if !artists.is_empty() {
         record.artist = artists.join(", ");
     }
+    // Picard-style taggers keep the credit ("A feat. B") in ARTIST and the names in ARTISTS.
+    let credited: Vec<String> = tag.get_strings(ItemKey::TrackArtists).map(clean).filter(|a| !a.is_empty()).collect();
+    if let Some(first) = credited.first().or(artists.first()) {
+        record.main_artist = lychee_core::main_artist(first).to_string();
+    }
     if let Some(album) = tag.album().map(|a| clean(&a)).filter(|a| !a.is_empty()) {
         record.album = album;
     }
@@ -174,4 +179,36 @@ fn folder_name(path: &Path) -> String {
         .and_then(|p| p.file_name())
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| "Unknown Album".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lofty::tag::{ItemKey, ItemValue, TagItem, TagType};
+
+    fn read_artists(values: &[(ItemKey, &str)]) -> (String, String) {
+        let mut tag = Tag::new(TagType::VorbisComments);
+        for (key, value) in values {
+            tag.push(TagItem::new(*key, ItemValue::Text((*value).into())));
+        }
+        let mut record = TrackRecord::default();
+        apply_tag(&tag, &mut record);
+        (record.artist, record.main_artist)
+    }
+
+    #[test]
+    fn finds_the_main_artist() {
+        use ItemKey::{TrackArtist as A, TrackArtists as AS};
+        let pair = |a: &str, m: &str| (a.to_string(), m.to_string());
+        assert_eq!(read_artists(&[(A, "Daft Punk"), (A, "Pharrell Williams")]), pair("Daft Punk, Pharrell Williams", "Daft Punk"));
+        assert_eq!(read_artists(&[(A, "Daft Punk feat. Pharrell Williams")]), pair("Daft Punk feat. Pharrell Williams", "Daft Punk"));
+        assert_eq!(
+            read_artists(&[(A, "Daft Punk & Pharrell"), (AS, "Daft Punk"), (AS, "Pharrell")]),
+            pair("Daft Punk & Pharrell", "Daft Punk")
+        );
+        assert_eq!(read_artists(&[(A, "Simon & Garfunkel")]), pair("Simon & Garfunkel", "Simon & Garfunkel"));
+        assert_eq!(read_artists(&[(A, "AC/DC")]), pair("AC/DC", "AC/DC"));
+        assert_eq!(read_artists(&[(A, "Daft Punk; Pharrell")]), pair("Daft Punk; Pharrell", "Daft Punk"));
+        assert_eq!(read_artists(&[]), pair("", ""));
+    }
 }

@@ -385,12 +385,17 @@ impl Session {
     }
 
     pub fn cleanup(&mut self, sel: &[usize], fields: &[Field], cleanup: &Cleanup) -> usize {
-        self.edit(sel, "Clean up", None, |_, f| {
+        self.rewrite(sel, "Clean up", fields, |old| cleanup.apply(old))
+    }
+
+    /// Replace the non-empty values of `fields` with `f(value)`, as one undo step.
+    pub fn rewrite(&mut self, sel: &[usize], label: &str, fields: &[Field], f: impl Fn(&str) -> String) -> usize {
+        self.edit(sel, label, None, |_, file| {
             for &field in fields {
-                let old = f.tags.get(field);
+                let old = file.tags.get(field);
                 if !old.is_empty() {
-                    let new = cleanup.apply(old);
-                    f.tags.set(field, new);
+                    let new = f(old);
+                    file.tags.set(field, new);
                 }
             }
         })

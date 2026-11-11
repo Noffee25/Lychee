@@ -17,7 +17,8 @@ use lychee_lookup::Client;
 use lychee_lookup::matching::{self, Candidate, FileFacts, Guess, TrackTags};
 use lychee_lookup::musicbrainz::Release;
 use lychee_tagger::session::{EditFile, SaveJob, Session, Value};
-use lychee_tagger::{Case, Cleanup, Field, Mask, Picture, PictureKind};
+use lychee_tagger::credits::keep_key;
+use lychee_tagger::{Case, Cleanup, CreditStyle, Credits, Field, Mask, Picture, PictureKind};
 use slint::{ComponentHandle, Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel};
 
 use crate::app::{Action, Dispatcher};
@@ -460,7 +461,7 @@ impl EditorCtl {
             EditorAction::OpenScanner(mode) => {
                 if let Some(ui) = self.ui.upgrade() {
                     let e = ui.global::<Editor>();
-                    e.set_scanner_mode(mode.clamp(0, 2));
+                    e.set_scanner_mode(mode.clamp(0, 3));
                     e.set_scanner_open(true);
                 }
                 self.scanner_preview();
@@ -715,7 +716,7 @@ impl EditorCtl {
                     (status, good > 0)
                 }
             },
-            _ => {
+            2 => {
                 let (fields, cleanup) = self.cleanup_settings(&e);
                 let mut changed = 0;
                 for &i in &sel {
@@ -736,6 +737,24 @@ impl EditorCtl {
                     if rows.len() < PREVIEW_ROWS {
                         let (before, after) = first.unwrap_or_else(|| (f.tags.get(fields[0]).to_string(), "No change".into()));
                         rows.push(ScanRow { before: before.into(), after: after.into(), ok: any });
+                    }
+                }
+                (format!("Changes {changed} of {} file{}", sel.len(), plural(sel.len())), changed > 0)
+            }
+            _ => {
+                let credits = self.credits_settings(&e);
+                let mut changed = 0;
+                for &i in &sel {
+                    let old = self.session.files()[i].tags.get(Field::Artist);
+                    let new = credits.apply(old);
+                    let differs = !old.is_empty() && new != old;
+                    if differs {
+                        changed += 1;
+                    }
+                    if rows.len() < PREVIEW_ROWS {
+                        let before = if old.is_empty() { "No artist".to_string() } else { old.to_string() };
+                        let after = if differs { new } else { "No change".into() };
+                        rows.push(ScanRow { before: before.into(), after: after.into(), ok: differs });
                     }
                 }
                 (format!("Changes {changed} of {} file{}", sel.len(), plural(sel.len())), changed > 0)
@@ -770,6 +789,26 @@ impl EditorCtl {
         (fields, cleanup)
     }
 
+    fn credits_settings(&self, e: &Editor<'_>) -> Credits {
+        let keep = if e.get_artists_keep() {
+            self.library.index().artists().iter().map(|a| keep_key(&a.name)).collect()
+        } else {
+            Default::default()
+        };
+        Credits {
+            style: match e.get_artists_style() {
+                1 => CreditStyle::KeepFeatured,
+                2 => CreditStyle::List,
+                3 => CreditStyle::Semicolons,
+                _ => CreditStyle::FirstFeaturing,
+            },
+            split_commas: e.get_artists_commas(),
+            split_ampersands: e.get_artists_ampersands(),
+            split_slashes: e.get_artists_slashes(),
+            keep,
+        }
+    }
+
     fn scanner_apply(&mut self) {
         let Some(ui) = self.ui.upgrade() else { return };
         let e = ui.global::<Editor>();
@@ -790,10 +829,15 @@ impl EditorCtl {
                 let base = format!("{queued} file{} will be renamed when you save", plural(queued));
                 if skipped > 0 { format!("{base}; {skipped} skipped") } else { base }
             }
-            _ => {
+            2 => {
                 let (fields, cleanup) = self.cleanup_settings(&e);
                 let n = self.session.cleanup(&sel, &fields, &cleanup);
                 format!("Cleaned up {n} file{}", plural(n))
+            }
+            _ => {
+                let credits = self.credits_settings(&e);
+                let n = self.session.rewrite(&sel, "Standardise artists", &[Field::Artist], |old| credits.apply(old));
+                format!("Standardised the artists of {n} file{}", plural(n))
             }
         };
         e.set_scanner_open(false);

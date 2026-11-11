@@ -110,7 +110,12 @@ pub struct Track {
     pub id: TrackId,
     pub path: PathBuf,
     pub title: String,
+    /// The artist tag as written; several values are joined with ", ".
     pub artist: String,
+    /// The main artist, without featured ones: the first of several artist values, or the tag cut
+    /// before "feat.". Use [`Track::display_main_artist`], which also covers rows saved before
+    /// this was stored.
+    pub main_artist: String,
     pub album: String,
     pub album_artist: String,
     pub album_id: AlbumId,
@@ -137,6 +142,12 @@ pub struct Track {
 impl Track {
     pub fn display_artist(&self) -> &str {
         if self.artist.is_empty() { "Unknown Artist" } else { &self.artist }
+    }
+
+    /// The main artist (see [`Track::main_artist`]), or "Unknown Artist".
+    pub fn display_main_artist(&self) -> &str {
+        let main = if self.main_artist.is_empty() { crate::main_artist(&self.artist) } else { &self.main_artist };
+        if main.is_empty() { "Unknown Artist" } else { main }
     }
 }
 

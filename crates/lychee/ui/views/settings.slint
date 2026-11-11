@@ -267,6 +267,18 @@ export component SettingsPage inherits Rectangle {
                         }
                         Divider { }
                         SettingRow {
+                            label: "Artist to scrobble";
+                            hint: Player.lastfm.artist-mode == 0
+                                ? "Featured artists are left out, so \"A feat. B\", \"A; B\" and songs tagged with artists A and B scrobble as A. Titles are sent as tagged."
+                                : "The artist tag is sent exactly as written.";
+                            Segmented {
+                                options: ["Main artist", "Exact tags"];
+                                selected: Player.lastfm.artist-mode;
+                                changed(i) => { Actions.lastfm-set-artist-mode(i); }
+                            }
+                        }
+                        Divider { }
+                        SettingRow {
                             label: "Love tracks on Last.fm";
                             hint: "Adding a song to Favorites also loves it on Last.fm.";
                             Toggle {

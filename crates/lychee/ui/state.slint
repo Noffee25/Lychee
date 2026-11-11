@@ -148,6 +148,8 @@ export struct LastfmUi {
     last: string,
     message: string,
     love-sync: bool,
+    // 0 = main artist, 1 = exact tags
+    artist-mode: int,
     builtin-key: bool,
     api-key: string,
     api-secret: string,
@@ -297,6 +299,7 @@ export global Actions {
     callback lastfm-retry();
     callback lastfm-set-keys(string, string);
     callback lastfm-set-love-sync(bool);
+    callback lastfm-set-artist-mode(int);
     callback lastfm-open-profile();
 
     callback create-playlist(string);

@@ -5,16 +5,19 @@
 //! * [`mask`]: EasyTAG's scanner masks (`%n - %t`), to fill tags from file names and to rename
 //!   files from tags;
 //! * [`process`]: clean-up of field text (case, underscores, spaces);
+//! * [`credits`]: artist credits written one way ("A feat. B", "A, B & C", "A; B");
 //! * [`session`]: a set of files being edited, with pending changes, multi-selection and undo.
 //!
 //! Nothing here touches the UI or the library database.
 
+pub mod credits;
 pub mod fields;
 pub mod file;
 pub mod mask;
 pub mod process;
 pub mod session;
 
+pub use credits::{CreditStyle, Credits};
 pub use fields::Field;
 pub use file::{FileInfo, Picture, PictureKind, ReadFile, TagData};
 pub use mask::Mask;

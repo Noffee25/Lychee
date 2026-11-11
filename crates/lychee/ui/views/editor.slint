@@ -1082,7 +1082,7 @@ export component ScannerDialog inherits Dialog {
                 color: Theme.text;
             }
             Segmented {
-                options: ["Fill tags", "Rename files", "Clean up"];
+                options: ["Fill tags", "Rename files", "Clean up", "Artists"];
                 selected <=> Editor.scanner-mode;
                 changed(i) => {
                     Editor.scanner-changed();
@@ -1102,7 +1102,8 @@ export component ScannerDialog inherits Dialog {
         Text {
             text: Editor.scanner-mode == 0 ? "Read tags from the names of the " + Editor.selected-count + " selected files and their folders. Each / in the mask is one folder up."
                 : Editor.scanner-mode == 1 ? "Give the " + Editor.selected-count + " selected files new names built from their tags. Files are renamed when you save; a / in the mask makes a folder."
-                : "Tidy the text of the " + Editor.selected-count + " selected files.";
+                : Editor.scanner-mode == 2 ? "Tidy the text of the " + Editor.selected-count + " selected files."
+                : "Write the artists of the " + Editor.selected-count + " selected files one way. ; and feat., ft. or featuring always separate artists.";
             color: Theme.text-2;
             wrap: word-wrap;
         }
@@ -1287,6 +1288,110 @@ export component ScannerDialog inherits Dialog {
                     edited => {
                         Editor.scanner-changed();
                     }
+                }
+            }
+        }
+        if Editor.scanner-mode == 3: VerticalLayout {
+            spacing: 12px;
+            HorizontalLayout {
+                spacing: 12px;
+                cross-axis-alignment: center;
+                Text {
+                    width: 70px;
+                    text: "Style";
+                    color: Theme.text-2;
+                    font-size: 12.5px;
+                }
+                Segmented {
+                    options: ["A feat. B & C", "A & B feat. C", "A, B & C", "A; B; C"];
+                    selected <=> Editor.artists-style;
+                    changed(i) => {
+                        Editor.scanner-changed();
+                    }
+                }
+            }
+            HorizontalLayout {
+                padding-left: 82px;
+                Text {
+                    text: Editor.artists-style == 0 ? "The first artist leads and everyone after is featured. Lychee scrobbles the first artist."
+                        : Editor.artists-style == 1 ? "Featured artists stay featured; the others are listed as leads."
+                        : Editor.artists-style == 2 ? "Everyone is listed equally. Last.fm gets the whole credit, because , and & also appear inside names."
+                        : "One name after another. Lychee scrobbles the first.";
+                    color: Theme.text-3;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+            }
+            HorizontalLayout {
+                spacing: 18px;
+                alignment: start;
+                cross-axis-alignment: center;
+                Text {
+                    width: 70px;
+                    text: "Also split at";
+                    color: Theme.text-2;
+                    font-size: 12.5px;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    Toggle {
+                        checked <=> Editor.artists-commas;
+                        toggled => {
+                            Editor.scanner-changed();
+                        }
+                    }
+                    Text {
+                        text: "Commas (,)";
+                        color: Theme.text-2;
+                        font-size: 12.5px;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    Toggle {
+                        checked <=> Editor.artists-ampersands;
+                        toggled => {
+                            Editor.scanner-changed();
+                        }
+                    }
+                    Text {
+                        text: "Ampersands (&)";
+                        color: Theme.text-2;
+                        font-size: 12.5px;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    Toggle {
+                        checked <=> Editor.artists-slashes;
+                        toggled => {
+                            Editor.scanner-changed();
+                        }
+                    }
+                    Text {
+                        text: "Slashes (/)";
+                        color: Theme.text-2;
+                        font-size: 12.5px;
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8px;
+                cross-axis-alignment: center;
+                padding-left: 82px;
+                Toggle {
+                    checked <=> Editor.artists-keep;
+                    toggled => {
+                        Editor.scanner-changed();
+                    }
+                }
+                Text {
+                    text: "Keep artists from your library whole (like Simon & Garfunkel)";
+                    color: Theme.text-2;
+                    font-size: 12.5px;
                 }
             }
         }

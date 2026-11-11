@@ -9,6 +9,8 @@ use crossbeam_channel::Sender;
 use lychee_core::Track;
 use lychee_lastfm::{Client, Credentials, Session, TrackInfo, auth_url, scrobble_threshold_ms};
 
+use crate::settings::ScrobbleArtist;
+
 pub enum LastfmMsg {
     Status(lychee_lastfm::Status),
     Connected(Session),
@@ -60,12 +62,25 @@ pub fn start_auth(credentials: Credentials, tx: Sender<LastfmMsg>) -> Arc<Atomic
     cancel
 }
 
-pub fn track_info(t: &Track) -> TrackInfo {
+/// The artist to send for `t`. Titles are always sent as tagged: Last.fm keeps "(feat. B)" there.
+pub fn scrobble_artist(t: &Track, mode: ScrobbleArtist) -> &str {
+    match mode {
+        ScrobbleArtist::Main => t.display_main_artist(),
+        ScrobbleArtist::Exact => t.display_artist(),
+    }
+}
+
+pub fn track_info(t: &Track, mode: ScrobbleArtist) -> TrackInfo {
+    let artist = scrobble_artist(t, mode);
+    let album_artist = match mode {
+        ScrobbleArtist::Main => lychee_core::main_artist(&t.album_artist),
+        ScrobbleArtist::Exact => t.album_artist.as_str(),
+    };
     TrackInfo {
-        artist: t.display_artist().to_string(),
+        artist: artist.to_string(),
         title: t.title.clone(),
         album: (!t.album.is_empty()).then(|| t.album.clone()),
-        album_artist: (!t.album_artist.is_empty() && t.album_artist != t.artist).then(|| t.album_artist.clone()),
+        album_artist: (!album_artist.is_empty() && album_artist != artist).then(|| album_artist.to_string()),
         duration_secs: (t.duration_ms > 0).then(|| (t.duration_ms / 1000) as u32),
         track_number: t.track_number,
     }
@@ -107,5 +122,32 @@ impl Listen {
 
     pub fn seeked(&mut self, pos_ms: u64) {
         self.last_pos = pos_ms;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn main_artist_mode_leaves_out_featured_artists() {
+        let t = Track {
+            title: "Get Lucky (feat. Pharrell Williams)".into(),
+            artist: "Daft Punk feat. Pharrell Williams".into(),
+            album_artist: "Daft Punk".into(),
+            ..Default::default()
+        };
+        let main = track_info(&t, ScrobbleArtist::Main);
+        assert_eq!(main.artist, "Daft Punk");
+        assert_eq!(main.title, "Get Lucky (feat. Pharrell Williams)", "titles are sent as tagged");
+        assert_eq!(main.album_artist, None, "same as the artist");
+
+        let exact = track_info(&t, ScrobbleArtist::Exact);
+        assert_eq!(exact.artist, "Daft Punk feat. Pharrell Williams");
+        assert_eq!(exact.album_artist.as_deref(), Some("Daft Punk"));
+
+        let multi = Track { artist: "Daft Punk, Pharrell Williams".into(), main_artist: "Daft Punk".into(), ..t };
+        assert_eq!(track_info(&multi, ScrobbleArtist::Main).artist, "Daft Punk");
+        assert_eq!(track_info(&multi, ScrobbleArtist::Exact).artist, "Daft Punk, Pharrell Williams");
     }
 }

@@ -43,7 +43,8 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 - [x] Accent and tint colours extracted from every cover
 - [x] Browse **Albums** (grid with four sort orders), **Artists**, **Songs** (five sort orders), **Genres**, **Recently Added**, **Recently Played**
 - [ ] Folder browser
-- [x] Multi-disc albums (disc headers) and compilations ("Various Artists")
+- [x] Multi-disc albums (disc headers) and compilations ("Various Artists"); a guest on one track
+      ("A feat. B") doesn't turn an album into a compilation
 - [x] Instant fuzzy search across albums, artists, songs and playlists
 - [x] Play files without importing them: command-line arguments, "Open with" (via the desktop file), drag and drop
 
@@ -89,6 +90,9 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 - [x] Scanner, "Fill tags": read tags from file and folder names with EasyTAG masks (`%a %b %t %n %y %g`…, `/` for a folder), with a live preview
 - [x] Scanner, "Rename files": new names from tags. Renames wait until you save; `.lrc` lyrics move along; names are safe on Windows
 - [x] Scanner, "Clean up": Title Case (keeps acronyms and Roman numerals), Sentence case, UPPER, lower, underscores and `%20` to spaces, tidy spaces, find and replace
+- [x] Scanner, "Artists": write artist credits one way ("A feat. B & C", "A & B feat. C", "A, B & C" or "A; B; C").
+  `;` and feat./ft./featuring always separate artists; `,`, `&` and `/` do when switched on; artists you have
+  albums by ("Simon & Garfunkel") stay whole
 - [x] Undo and redo for every step, and revert per file or for everything
 - [x] Lossless writing: MP3, WAV, AIFF, AAC and MP4 tags are edited in place, so frames the editor doesn't know about survive (Serato/Traktor data, private frames, chapters)
 - [x] Saved files are re-read into the library, keeping play counts, Favorites and playlists, even after renames
@@ -128,6 +132,8 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 - [x] Scrobbling by Last.fm's rules (half the track or 4 minutes, tracks over 30 s)
 - [x] Offline queue saved to disk, retried with back-off; status icon in the bottom-right corner
 - [x] Optionally love tracks on Last.fm when you add them to Favorites
+- [x] Scrobbles the main artist ("A feat. B", "A; B" or a song tagged with artists A and B counts for A; titles
+      are sent as tagged), or the artist tag exactly as written (Settings → Last.fm → Artist to scrobble)
 - [x] Your own API key in Settings, or one built in at compile time
 
 ---

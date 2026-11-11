@@ -194,7 +194,8 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
     - UI: `palette:`, `tab:`, `theme:N`, `like`, `queue:`, `toast:`
     - library: `add-folder:`, `like-album:`
     - tag editor: `edit-album:`, `editor-open:PATH`, `editor-select:0,1`, `editor-tab:`,
-      `editor-field:id=value`, `editor-more`, `editor-scanner:N`, `editor-mask:`, `editor-lookup`,
+      `editor-field:id=value`, `editor-more`, `editor-scanner:N` (3 = artists), `editor-artists-style:N`,
+      `editor-mask:`, `editor-scanner-apply`, `editor-lookup`,
       `editor-lookup-apply`, `editor-save`, `editor-quit`
     - waiting: `wait:MS`, to let threads and network finish
   - Extras: `LYCHEE_SCREENSHOT_SIZE=WxH`, `LYCHEE_SCREENSHOT_HOVER=x,y` (hover states),

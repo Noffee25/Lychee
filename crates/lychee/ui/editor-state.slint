@@ -81,7 +81,8 @@ export global Editor {
     in-out property <string> busy-text;
     in-out property <float> busy-progress: -1;
 
-    // Scanner (EasyTAG's three modes): 0 fill tags, 1 rename files, 2 clean up.
+    // Scanner (EasyTAG's three modes, plus one): 0 fill tags, 1 rename files, 2 clean up,
+    // 3 standardise artist credits.
     in-out property <bool> scanner-open;
     in-out property <int> scanner-mode;
     in-out property <string> fill-mask: "%n - %t";
@@ -97,6 +98,12 @@ export global Editor {
     in-out property <bool> cleanup-spaces: true;
     in-out property <string> cleanup-find;
     in-out property <string> cleanup-replace;
+    // 0 "A feat. B & C", 1 "A & B feat. C", 2 "A, B & C", 3 "A; B; C"
+    in-out property <int> artists-style;
+    in-out property <bool> artists-commas: true;
+    in-out property <bool> artists-ampersands: true;
+    in-out property <bool> artists-slashes;
+    in-out property <bool> artists-keep: true;
 
     // Online lookup.
     in-out property <bool> lookup-open;

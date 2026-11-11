@@ -25,11 +25,11 @@ use slint::{Color, ComponentHandle, Image, ModelRc, SharedString, VecModel};
 
 use crate::editor::{EditorAction, EditorCtl};
 use crate::images::{ImageCache, Size};
-use crate::lastfm::{LastfmMsg, Listen, ListenEvent, start_auth, track_info};
+use crate::lastfm::{LastfmMsg, Listen, ListenEvent, scrobble_artist, start_auth, track_info};
 use crate::mini::{self, MiniCommand, MiniEvent, MiniState};
 use crate::models::LazyModel;
 use crate::palette::{self, Command, Entry};
-use crate::settings::{Paths, Settings, ThemeMode};
+use crate::settings::{Paths, ScrobbleArtist, Settings, ThemeMode};
 use crate::{
     Actions, AlbumCard, AlbumHeader, AlbumRow, AppState, AppWindow, ArtistCard, Choice, GenreCard, GenreRow, Icons, InfoRow,
     LastfmUi, ListHeader, Lyric, MiniWindow, NavPlaylist, NowPlaying, PaletteItem, Player, QueueItem, ScanUi, Theme, TrackRow,
@@ -87,6 +87,7 @@ pub enum Action {
     LastfmRetry,
     LastfmSetKeys(String, String),
     LastfmSetLoveSync(bool),
+    LastfmSetArtistMode(i32),
     LastfmOpenProfile,
     CreatePlaylist(String),
     RenamePlaylist(i32, String),
@@ -199,6 +200,7 @@ macro_rules! wire_actions {
         a.on_lastfm_retry({ let d = d.clone(); move || d.dispatch(Action::LastfmRetry) });
         a.on_lastfm_set_keys({ let d = d.clone(); move |k, s| d.dispatch(Action::LastfmSetKeys(k.into(), s.into())) });
         a.on_lastfm_set_love_sync({ let d = d.clone(); move |on| d.dispatch(Action::LastfmSetLoveSync(on)) });
+        a.on_lastfm_set_artist_mode({ let d = d.clone(); move |m| d.dispatch(Action::LastfmSetArtistMode(m)) });
         a.on_lastfm_open_profile({ let d = d.clone(); move || d.dispatch(Action::LastfmOpenProfile) });
         a.on_create_playlist({ let d = d.clone(); move |n| d.dispatch(Action::CreatePlaylist(n.into())) });
         a.on_rename_playlist({ let d = d.clone(); move |id, n| d.dispatch(Action::RenamePlaylist(id, n.into())) });
@@ -802,6 +804,11 @@ impl App {
                 self.settings_dirty = true;
                 self.update_lastfm_ui();
             }
+            Action::LastfmSetArtistMode(mode) => {
+                self.settings.lastfm.artist = ScrobbleArtist::from_index(mode);
+                self.settings_dirty = true;
+                self.update_lastfm_ui();
+            }
             Action::LastfmOpenProfile => {
                 if let Some(user) = &self.settings.lastfm.username {
                     let _ = lychee_platform::open(format!("https://www.last.fm/user/{user}"));
@@ -1043,7 +1050,7 @@ impl App {
                     tracing::warn!("could not record a play: {e}");
                 }
                 if scrobble && self.settings.lastfm_session().is_some() {
-                    self.scrobbler.scrobble(Scrobble { track: track_info(&track), timestamp: listen.started_at });
+                    self.scrobbler.scrobble(Scrobble { track: track_info(&track, self.settings.lastfm.artist), timestamp: listen.started_at });
                 }
             }
         }
@@ -1133,7 +1140,7 @@ impl App {
             m.seeked(position_ms);
         }
         if playing && self.settings.lastfm_session().is_some() {
-            self.scrobbler.now_playing(track_info(&track));
+            self.scrobbler.now_playing(track_info(&track, self.settings.lastfm.artist));
         }
     }
 
@@ -1168,7 +1175,7 @@ impl App {
                 self.status = PlaybackStatus::Playing;
                 if let Some(t) = &self.current {
                     if self.settings.lastfm_session().is_some() {
-                        self.scrobbler.now_playing(track_info(t));
+                        self.scrobbler.now_playing(track_info(t, self.settings.lastfm.artist));
                     }
                 }
             }
@@ -1465,7 +1472,8 @@ impl App {
             self.update_now_playing();
         }
         if self.settings.lastfm.love_sync && self.settings.lastfm_session().is_some() {
-            self.scrobbler.set_loved(track.display_artist().to_string(), track.title.clone(), liked);
+            let artist = scrobble_artist(&track, self.settings.lastfm.artist).to_string();
+            self.scrobbler.set_loved(artist, track.title.clone(), liked);
         }
         if let Some(ui) = self.ui.upgrade() {
             ui.global::<AppState>().set_favorites_count(self.library.index().liked().len() as i32);
@@ -1634,7 +1642,7 @@ impl App {
                 self.toast(&format!("Connected to Last.fm as {}", session.username));
                 if let Some(t) = &self.current {
                     if self.status == PlaybackStatus::Playing {
-                        self.scrobbler.now_playing(track_info(t));
+                        self.scrobbler.now_playing(track_info(t, self.settings.lastfm.artist));
                     }
                 }
             }
@@ -1681,6 +1689,7 @@ impl App {
             last: s.last_scrobbled.clone().unwrap_or_default().into(),
             message: message.into(),
             love_sync: self.settings.lastfm.love_sync,
+            artist_mode: self.settings.lastfm.artist.index(),
             builtin_key: lychee_lastfm::Credentials::built_in().is_some(),
             api_key: self.settings.lastfm.api_key.clone().into(),
             api_secret: self.settings.lastfm.api_secret.clone().into(),
@@ -2855,6 +2864,13 @@ impl App {
                 }
                 self.handle(Action::Editor(EditorAction::ScannerChanged));
             }
+            "editor-artists-style" => {
+                if let Some(ui) = self.ui.upgrade() {
+                    ui.global::<crate::Editor>().set_artists_style(arg.parse().unwrap_or(0));
+                }
+                self.handle(Action::Editor(EditorAction::ScannerChanged));
+            }
+            "editor-scanner-apply" => self.handle(Action::Editor(EditorAction::ScannerApply)),
             "editor-lookup" => self.handle(Action::Editor(EditorAction::LookupStart)),
             "editor-lookup-apply" => self.handle(Action::Editor(EditorAction::LookupApply)),
             "editor-open" => {

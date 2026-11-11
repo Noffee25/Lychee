@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use lychee_core::{AudioFormat, Playlist, PlaylistId, Track, TrackId, now_unix};
 use rusqlite::{Connection, OptionalExtension, params};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -71,6 +71,13 @@ CREATE TABLE kv (
 );
 ";
 
+/// Adds the main artist. Clearing the file stamps makes the next scan re-read every file, so
+/// multi-value artist tags (which v1 joined into one string) are split properly.
+const SCHEMA_V2: &str = "
+ALTER TABLE tracks ADD COLUMN main_artist TEXT NOT NULL DEFAULT '';
+UPDATE tracks SET mtime = 0;
+";
+
 /// Metadata for one file, as written by the scanner.
 #[derive(Clone, Debug, Default)]
 pub struct TrackRecord {
@@ -79,6 +86,8 @@ pub struct TrackRecord {
     pub size: u64,
     pub title: String,
     pub artist: String,
+    /// The main artist without featured ones; empty when the file has no artist tag.
+    pub main_artist: String,
     pub album: String,
     /// The album-artist *tag*; empty when the file has none.
     pub album_artist: String,
@@ -114,6 +123,9 @@ impl Db {
         let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
         if version < 1 {
             conn.execute_batch(SCHEMA_V1)?;
+        }
+        if version < 2 {
+            conn.execute_batch(SCHEMA_V2)?;
         }
         if version < SCHEMA_VERSION {
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -161,8 +173,9 @@ impl Db {
             let mut stmt = tx.prepare(
                 "INSERT INTO tracks (path, in_library, mtime, size, title, artist, album, album_artist, track_no,
                     disc_no, year, genre, composer, duration_ms, codec, sample_rate, bit_depth, channels, bitrate,
-                    artwork, added_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+                    artwork, added_at, main_artist)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
+                    ?22)
                  ON CONFLICT(path) DO UPDATE SET
                     in_library = max(in_library, excluded.in_library), mtime = excluded.mtime, size = excluded.size,
                     title = excluded.title, artist = excluded.artist, album = excluded.album,
@@ -170,7 +183,7 @@ impl Db {
                     year = excluded.year, genre = excluded.genre, composer = excluded.composer,
                     duration_ms = excluded.duration_ms, codec = excluded.codec, sample_rate = excluded.sample_rate,
                     bit_depth = excluded.bit_depth, channels = excluded.channels, bitrate = excluded.bitrate,
-                    artwork = excluded.artwork
+                    artwork = excluded.artwork, main_artist = excluded.main_artist
                  RETURNING id",
             )?;
             let now = now_unix();
@@ -199,6 +212,7 @@ impl Db {
                         f.bitrate_kbps,
                         r.artwork,
                         now,
+                        r.main_artist,
                     ],
                     |row| row.get(0),
                 )?;
@@ -224,7 +238,7 @@ impl Db {
         let mut stmt = self.conn.prepare(
             "SELECT id, path, in_library, size, title, artist, album, album_artist, track_no, disc_no, year, genre,
                     composer, duration_ms, codec, sample_rate, bit_depth, channels, bitrate, artwork, added_at,
-                    play_count, last_played, liked, liked_at
+                    play_count, last_played, liked, liked_at, main_artist
              FROM tracks",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -256,6 +270,7 @@ impl Db {
                 last_played: r.get(22)?,
                 liked: r.get::<_, i64>(23)? != 0,
                 liked_at: r.get(24)?,
+                main_artist: r.get(25)?,
                 album_id: 0,
             })
         })?;
@@ -402,6 +417,28 @@ mod tests {
         assert_eq!(t.title, "A (remaster)");
         assert!(t.liked && t.liked_at.is_some());
         assert_eq!(t.play_count, 1);
+    }
+
+    #[test]
+    fn v1_libraries_get_rescanned_for_main_artists() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("library.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(SCHEMA_V1).unwrap();
+            conn.pragma_update(None, "user_version", 1).unwrap();
+            conn.execute(
+                "INSERT INTO tracks (path, mtime, title, artist, album, album_artist, added_at)
+                 VALUES ('/m/a.flac', 1234, 'A', 'X feat. Y', 'Al', '', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let db = Db::open(&path).unwrap();
+        assert_eq!(db.file_stamps().unwrap()[0].2, 0, "stale, so the next scan re-reads it");
+        let t = &db.all_tracks().unwrap()[0];
+        assert_eq!(t.main_artist, "");
+        assert_eq!(t.display_main_artist(), "X");
     }
 
     #[test]

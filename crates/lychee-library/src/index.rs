@@ -156,7 +156,12 @@ impl LibraryIndex {
         let mut out: Vec<TrackRef> = self
             .tracks
             .values()
-            .filter(|t| t.in_library && (t.album_artist.to_lowercase() == lower || t.artist.to_lowercase().split(", ").any(|a| a == lower)))
+            .filter(|t| {
+                t.in_library
+                    && (t.album_artist.to_lowercase() == lower
+                        || t.display_main_artist().to_lowercase() == lower
+                        || t.artist.to_lowercase().split(", ").any(|a| a == lower))
+            })
             .cloned()
             .collect();
         out.sort_by(|a, b| b.play_count.cmp(&a.play_count).then_with(|| sort_key(&a.title).cmp(&sort_key(&b.title))));
@@ -261,8 +266,9 @@ impl LibraryIndex {
     }
 }
 
-/// Fill in album artists the files don't tag. Tracks of one album folder that share an artist
-/// get that artist; mixed folders become "Various Artists" so compilations stay together.
+/// Fill in album artists the files don't tag. Tracks of one album folder that share a main
+/// artist get that artist (so one "A feat. B" track doesn't split an album); mixed folders become
+/// "Various Artists" so compilations stay together.
 fn assign_album_artists(tracks: &mut [Track]) {
     let mut groups: HashMap<(String, Option<PathBuf>), Vec<usize>> = HashMap::new();
     for (i, t) in tracks.iter().enumerate() {
@@ -271,15 +277,9 @@ fn assign_album_artists(tracks: &mut [Track]) {
         }
     }
     for indexes in groups.values() {
-        let first = tracks[indexes[0]].artist.clone();
-        let same = indexes.iter().all(|&i| tracks[i].artist.eq_ignore_ascii_case(&first));
-        let effective = if !same {
-            "Various Artists".to_string()
-        } else if first.trim().is_empty() {
-            "Unknown Artist".to_string()
-        } else {
-            first
-        };
+        let first = tracks[indexes[0]].display_main_artist().to_string();
+        let same = indexes.iter().all(|&i| tracks[i].display_main_artist().eq_ignore_ascii_case(&first));
+        let effective = if same { first } else { "Various Artists".to_string() };
         for &i in indexes {
             tracks[i].album_artist = effective.clone();
         }
@@ -370,6 +370,21 @@ mod tests {
         assert!(index.albums(AlbumSort::Artist).iter().any(|a| a.title == "Summer Mix" && a.artist == "Various Artists"));
         assert!(index.artist("mira valen").is_some());
         assert_eq!(index.artist_tracks("Guest").len(), 1);
+    }
+
+    #[test]
+    fn featured_artists_dont_make_a_compilation() {
+        let mut multi = track(3, "C", "Hollow Coast, Mira Valen", "Tidal Memory", "", "hc", 3);
+        multi.main_artist = "Hollow Coast".into();
+        let tracks = vec![
+            track(1, "A", "Hollow Coast", "Tidal Memory", "", "hc", 1),
+            track(2, "B", "Hollow Coast feat. Mira Valen", "Tidal Memory", "", "hc", 2),
+            multi,
+        ];
+        let index = LibraryIndex::build(tracks, vec![], HashMap::new());
+        assert_eq!(index.stats().albums, 1);
+        assert_eq!(index.albums(AlbumSort::Title)[0].artist, "Hollow Coast");
+        assert_eq!(index.artist_tracks("Hollow Coast").len(), 3);
     }
 
     #[test]

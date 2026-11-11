@@ -4,11 +4,13 @@
 //! types (tracks, albums, formats), the play queue and its rules (shuffle, repeat, "play next"),
 //! and small helpers for formatting values the same way everywhere.
 
+mod artist;
 pub mod md5;
 mod model;
 mod queue;
 mod time;
 
+pub use artist::main_artist;
 pub use model::*;
 pub use queue::{Queue, QueueEntry};
 pub use time::{format_duration, format_duration_ms, now_unix};

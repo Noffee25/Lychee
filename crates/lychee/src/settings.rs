@@ -59,6 +59,30 @@ impl ThemeMode {
     }
 }
 
+/// Which artist Last.fm gets for a track.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ScrobbleArtist {
+    /// The main artist only ("A feat. B" and "A, B" scrobble as "A").
+    #[default]
+    Main,
+    /// The artist tag as written.
+    Exact,
+}
+
+impl ScrobbleArtist {
+    pub fn index(self) -> i32 {
+        match self {
+            ScrobbleArtist::Main => 0,
+            ScrobbleArtist::Exact => 1,
+        }
+    }
+
+    pub fn from_index(i: i32) -> Self {
+        if i == 1 { ScrobbleArtist::Exact } else { ScrobbleArtist::Main }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LastfmSettings {
@@ -69,11 +93,19 @@ pub struct LastfmSettings {
     pub session_key: Option<String>,
     /// Love tracks on Last.fm when they're added to Favorites.
     pub love_sync: bool,
+    pub artist: ScrobbleArtist,
 }
 
 impl Default for LastfmSettings {
     fn default() -> Self {
-        LastfmSettings { api_key: String::new(), api_secret: String::new(), username: None, session_key: None, love_sync: true }
+        LastfmSettings {
+            api_key: String::new(),
+            api_secret: String::new(),
+            username: None,
+            session_key: None,
+            love_sync: true,
+            artist: ScrobbleArtist::Main,
+        }
     }
 }
 
