@@ -82,9 +82,14 @@ fn main() -> anyhow::Result<()> {
     let (media_tx, media_rx) = crossbeam_channel::unbounded();
     let media = if screenshot.is_some() { None } else { lychee_platform::MediaControls::new(media_tx) };
 
-    // Wayland app id / X11 class: lets docks match the window to lychee.desktop (icon, pinning).
-    let _ = slint::set_xdg_app_id("lychee");
     let ui = AppWindow::new()?;
+    // Wayland app id / X11 class: lets docks match the window to lychee.desktop (icon, name,
+    // pinning). It has to come after the first window is created (before that Slint has no
+    // platform, so the call fails with NoPlatform) and before the window is shown. Without it,
+    // GNOME shows a generic icon named "Unknown".
+    if let Err(err) = slint::set_xdg_app_id("lychee") {
+        tracing::warn!("couldn't set the app id ({err}); docks won't show Lychee's icon");
+    }
     let dispatcher = Dispatcher::new();
     app::wire_main(&ui, &dispatcher);
     editor::wire(&ui, &dispatcher);

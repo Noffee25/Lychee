@@ -151,6 +151,11 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
 - `IconButton` shows a tooltip only when `tooltip` isn't empty. Tooltips misplace themselves in tiny
   windows, so the mini player has none.
 - std widgets use the `fluent` style (`build.rs`); `Palette.color-scheme` follows `Theme.dark`.
+- `slint::set_xdg_app_id` only works after the first window is created and before it's shown.
+  - Called earlier, it fails with `NoPlatform`, because Slint has no platform yet. The Wayland
+    window then has no app id, and GNOME shows a generic icon called "Unknown" instead of
+    matching `lychee.desktop`.
+  - Check it in a nested mutter with `WAYLAND_DEBUG=1`: look for `xdg_toplevel…set_app_id("lychee")`.
 
 ## Testing and checking your work
 
