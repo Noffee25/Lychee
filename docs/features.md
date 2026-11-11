@@ -67,6 +67,8 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 
 ### Interface
 - [x] The Flow design: sidebar, content, Queue / Lyrics / Details panel, player bar
+- [x] Back and forward buttons in the top left, like a browser's; each is greyed out when there's nowhere to go
+- [x] Narrow windows: the side panel opens over the content instead of squeezing it
 - [x] Dark, light and system themes
 - [x] **Command palette (Ctrl+K)** for search and commands (`>` filters to commands)
 - [x] Keyboard shortcuts (see the README)

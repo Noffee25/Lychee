@@ -48,6 +48,13 @@ component Toolbar inherits Rectangle {
             tooltip: "Back";
             clicked => { Actions.go-back(); }
         }
+        // Greyed out, like Back, when there's nowhere to go.
+        IconButton {
+            icon: Icons.chev-r;
+            enabled: AppState.can-go-forward;
+            tooltip: "Forward";
+            clicked => { Actions.go-forward(); }
+        }
     }
 }
 

@@ -171,6 +171,7 @@ export global AppState {
     // "recent", "favorites", "playlist", "history", "settings".
     in-out property <string> page: "albums";
     in-out property <bool> can-go-back;
+    in-out property <bool> can-go-forward;
     in-out property <bool> right-panel: true;
     in-out property <string> right-tab: "queue";
     // The side panel sits beside the content only when the window is wide enough; the window sets
@@ -276,6 +277,7 @@ export global Player {
 export global Actions {
     callback navigate(string);
     callback go-back();
+    callback go-forward();
     callback open-album(int);
     callback open-artist(string);
     callback open-genre(string);

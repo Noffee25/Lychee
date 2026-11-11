@@ -43,6 +43,7 @@ pub enum Action {
     Tick,
     Navigate(String),
     GoBack,
+    GoForward,
     OpenAlbum(i32),
     OpenArtist(String),
     OpenGenre(String),
@@ -156,6 +157,7 @@ macro_rules! wire_actions {
         let d = $d.clone();
         a.on_navigate({ let d = d.clone(); move |p| d.dispatch(Action::Navigate(p.into())) });
         a.on_go_back({ let d = d.clone(); move || d.dispatch(Action::GoBack) });
+        a.on_go_forward({ let d = d.clone(); move || d.dispatch(Action::GoForward) });
         a.on_open_album({ let d = d.clone(); move |id| d.dispatch(Action::OpenAlbum(id)) });
         a.on_open_artist({ let d = d.clone(); move |n| d.dispatch(Action::OpenArtist(n.into())) });
         a.on_open_genre({ let d = d.clone(); move |n| d.dispatch(Action::OpenGenre(n.into())) });
@@ -414,6 +416,8 @@ pub struct App {
 
     page: Page,
     history: Vec<Page>,
+    /// Pages left by going back, newest last; opening any other page clears it.
+    forward: Vec<Page>,
     grid_columns: usize,
     list_ids: Vec<TrackId>,
     list_play: Vec<TrackId>,
@@ -504,6 +508,7 @@ impl App {
             lyric_index: -1,
             page: Page::Albums,
             history: Vec::new(),
+            forward: Vec::new(),
             grid_columns: 5,
             list_ids: Vec::new(),
             list_play: Vec::new(),
@@ -579,7 +584,14 @@ impl App {
                         ui.global::<AppState>().set_palette_open(false);
                     }
                 } else if let Some(prev) = self.history.pop() {
+                    self.forward.push(self.page.clone());
                     self.show_page(prev, false);
+                }
+            }
+            Action::GoForward => {
+                if let Some(next) = self.forward.pop() {
+                    self.remember_page();
+                    self.show_page(next, false);
                 }
             }
             Action::OpenAlbum(handle) => {
@@ -832,6 +844,7 @@ impl App {
                 if self.library.delete_playlist(i64::from(id)).is_ok() {
                     self.update_playlists_nav();
                     self.history.retain(|p| *p != Page::Playlist(i64::from(id)));
+                    self.forward.retain(|p| *p != Page::Playlist(i64::from(id)));
                     self.show_page(Page::Albums, false);
                     self.toast(&format!("Deleted “{name}”"));
                 }
@@ -1875,22 +1888,31 @@ impl App {
     // ---------------------------------------------------------------------------------------
     // Pages
 
+    /// `push`: a new step (not back or forward), so it goes into the history and ends any forward trail,
+    /// like a browser.
     fn show_page(&mut self, page: Page, push: bool) {
         if push && self.page != page {
-            self.history.push(self.page.clone());
-            if self.history.len() > 64 {
-                self.history.remove(0);
-            }
+            self.remember_page();
+            self.forward.clear();
         }
         self.page = page;
         if let Some(ui) = self.ui.upgrade() {
             let state = ui.global::<AppState>();
             state.set_page(self.page.key().into());
             state.set_can_go_back(!self.history.is_empty());
+            state.set_can_go_forward(!self.forward.is_empty());
             state.set_content_scrolled(false);
         }
         self.refresh_page();
         self.apply_accent();
+    }
+
+    /// Put the current page on the back history (the last 64 pages are kept).
+    fn remember_page(&mut self) {
+        self.history.push(self.page.clone());
+        if self.history.len() > 64 {
+            self.history.remove(0);
+        }
     }
 
     fn refresh_page(&mut self) {
