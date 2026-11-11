@@ -22,7 +22,7 @@ pub use lyrics::Lyrics;
 pub use matching::{Candidate, FileFacts, Guess};
 pub use musicbrainz::{Medium, Release, ReleaseSummary, Track};
 
-const USER_AGENT: &str = concat!("Lychee/", env!("CARGO_PKG_VERSION"), " ( https://github.com/Y2Kwastaken/Lychee )");
+const USER_AGENT: &str = concat!("Lychee/", env!("CARGO_PKG_VERSION"), " ( https://github.com/Noffee25/Lychee )");
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

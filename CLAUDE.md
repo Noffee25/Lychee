@@ -18,7 +18,7 @@ before changing code: they record decisions the owner made and pitfalls that alr
 - **Licences:** the project is Apache-2.0. Slint is used under its Royalty-free 2.0 licence, which
   requires keeping `AboutSlint` in Settings → About and the "Made with Slint" badge in the README.
 - **Delivery:** when asked to "push", the owner expects a commit on `main` pushed to
-  `origin` (git@github.com:Y2Kwastaken/Lychee.git). Commits so far end with a `Co-Authored-By:` trailer
+  `origin` (git@github.com:Noffee25/Lychee.git). Commits so far end with a `Co-Authored-By:` trailer
   for the AI model that wrote them; follow your harness's attribution rules. Keep `README.md` and
   `docs/` current when features change.
 
@@ -198,9 +198,6 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
     ask the owner for the run's Report job log.
 - The owner wants the workflows kept small: no retry wrappers or extra test matrices. A runner's network
   outage (e.g. apt "Temporary failure resolving") is waited out and re-run, not scripted around.
-  - Exception, temporary: during Canonical's DNS outage of 2026-11-11 both workflows point
-    `/etc/apt/apt-mirrors.txt` at non-Canonical mirrors (marked `TEMPORARY`). Once v0.1.0 is published,
-    remove those lines and this note in a `[skip ci]` commit.
 - Workflow tokens are read-only in this repo. Publish declares `contents: write`; the Report jobs declare
   `contents: write` and `actions: read`.
 

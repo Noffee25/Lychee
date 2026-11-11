@@ -68,7 +68,7 @@ if command -v dpkg-deb >/dev/null 2>&1; then
         echo "Recommends: xdg-desktop-portal"
         echo "Section: sound"
         echo "Priority: optional"
-        echo "Homepage: https://github.com/Y2Kwastaken/Lychee"
+        echo "Homepage: https://github.com/Noffee25/Lychee"
         echo "Description: $summary"
         echo "$description" | fold -s -w 78 | sed 's/^/ /'
     } >"$d/DEBIAN/control"
@@ -93,7 +93,7 @@ Version: $version
 Release: 1
 Summary: $summary
 License: Apache-2.0
-URL: https://github.com/Y2Kwastaken/Lychee
+URL: https://github.com/Noffee25/Lychee
 BuildArch: x86_64
 Requires: glibc >= $glibc
 ${requires}Requires: xdg-utils

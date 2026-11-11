@@ -47,7 +47,7 @@ Mini player: ![Mini player](docs/screenshots/mini.png)
 
 ## Install
 
-Download the latest version from the [Releases page](https://github.com/Y2Kwastaken/Lychee/releases/latest):
+Download the latest version from the [Releases page](https://github.com/Noffee25/Lychee/releases/latest):
 
 - **Fedora** (and openSUSE, RHEL): double-click `lychee-….x86_64.rpm` to install it with GNOME Software, or
   run `sudo dnf install ./lychee-….x86_64.rpm`. dnf pulls in the libraries Lychee uses.

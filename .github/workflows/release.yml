@@ -13,14 +13,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install build tools
-        run: |
-          # TEMPORARY (2026-11-11): Canonical's DNS is down, so use mirrors outside it first.
-          # Remove after v0.1.0 is published.
-          # No Canonical host in the list: apt spreads requests over every mirror and waits out each lookup.
-          printf '%s\n' https://mirrors.edge.kernel.org/ubuntu/ https://mirror.math.princeton.edu/pub/ubuntu/ \
-            | sudo tee /etc/apt/apt-mirrors.txt
-          sudo apt-get update && sudo apt-get install -y libasound2-dev libfontconfig1-dev rpm
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev libfontconfig1-dev rpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --locked -p lychee

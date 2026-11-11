@@ -52,7 +52,7 @@ impl Client {
         let config = ureq::Agent::config_builder()
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(20)))
-            .user_agent(concat!("Lychee/", env!("CARGO_PKG_VERSION"), " (+https://github.com/Y2Kwastaken/Lychee)"))
+            .user_agent(concat!("Lychee/", env!("CARGO_PKG_VERSION"), " (+https://github.com/Noffee25/Lychee)"))
             .build();
         Client { credentials, agent: config.into() }
     }
