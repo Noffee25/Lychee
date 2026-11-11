@@ -8,6 +8,10 @@ on:
 env:
   CARGO_TERM_COLOR: never
 
+# Read-only unless a job asks for more (only the report job pushes).
+permissions:
+  contents: read
+
 jobs:
   build:
     name: ${{ matrix.os }}
@@ -54,6 +58,9 @@ jobs:
     if: always() && github.event_name == 'push'
     needs: build
     runs-on: ubuntu-latest
+    # The workflow token is read-only by default; this job pushes the status/ci branch.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4

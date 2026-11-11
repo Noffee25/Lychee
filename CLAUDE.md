@@ -191,6 +191,10 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
   have. CI and release runs therefore report to branches. Read them with
   `git fetch origin status/ci && git show FETCH_HEAD:STATUS.md`; use `status/release` for releases.
   The report lists each job's result, error lines and the end of each log (`packaging/ci-report.sh`).
+  - Workflow tokens are read-only in this repo. Only jobs that push (the reports, publishing a release)
+    declare `permissions: contents: write`; without it the report fails with "Write access to
+    repository not granted" (403).
+  - If a report never shows up, ask the owner for that run's Report job log.
 
 ## Releasing
 
