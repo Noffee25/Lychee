@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install build tools
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libfontconfig1-dev rpm 2>&1 | tail -n 3
+        run: bash packaging/ci-apt.sh libasound2-dev libfontconfig1-dev rpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build
@@ -114,7 +114,13 @@ jobs:
       - name: Install and start Lychee
         run: |
           docker run --rm -v "$PWD/pkg:/pkg" -w /pkg "${{ matrix.image }}" bash -euo pipefail -c '
-            ${{ matrix.install }}
+            # Package mirrors fail now and then; installing again is harmless.
+            for attempt in 1 2 3; do
+              if ( ${{ matrix.install }} ); then break; fi
+              if [ "$attempt" = 3 ]; then echo "install failed 3 times"; exit 1; fi
+              echo "install failed (attempt $attempt of 3); trying again in 30 s"
+              sleep 30
+            done
             lychee --version
             # Libraries Lychee loads at runtime must have come along too.
             for so in libasound.so.2 libfontconfig.so.1 libxkbcommon.so.0 libwayland-client.so.0 libwayland-egl.so.1 libEGL.so.1 libGL.so.1 libX11-xcb.so.1 libXcursor.so.1 libXi.so.6; do

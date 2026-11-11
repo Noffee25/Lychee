@@ -45,7 +45,8 @@ crates/
 design/            HTML prototypes; the app implements direction D "Flow" and its compact mini player
 docs/              features.md (done/planned), architecture.md, tech-stack.md, screenshots/
 assets/            desktop file, icons; windows/lychee.ico + lychee.res (from packaging/windows/make-icon.py)
-packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, release-notes.md, ci-report.sh
+packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, release-notes.md,
+                   ci-report.sh + ci-apt.sh (CI helpers: status branches, apt with retries)
 ```
 
 ## Build, run, test
@@ -212,6 +213,10 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, rel
      scanner can detect. Keep them in sync with `install.sh`'s list.
    - On Windows the C runtime is static (`.cargo/config.toml`), so there's nothing to redistribute. The
      exe icon is linked from `assets/windows/lychee.res`; `LYCHEE_NO_EXE_ICON=1` skips it.
+5. If a job fails, nothing is published: Publish needs both builds and every install test.
+   - If the cause is outside the code (a runner's network, for example), the owner can click *Re-run
+     failed jobs*.
+   - Or delete the tag (`git push origin :refs/tags/vX.Y.Z`), tag the fixed commit and push the tag again.
 
 ## Dependencies
 
