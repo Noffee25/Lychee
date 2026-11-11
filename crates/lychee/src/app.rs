@@ -624,7 +624,7 @@ impl App {
                     }
                     "show-folder" => {
                         if let Some(folder) = &album.folder {
-                            let _ = open::that(folder);
+                            let _ = lychee_platform::open(folder);
                         }
                     }
                     "edit-tags" => {
@@ -804,7 +804,7 @@ impl App {
             }
             Action::LastfmOpenProfile => {
                 if let Some(user) = &self.settings.lastfm.username {
-                    let _ = open::that(format!("https://www.last.fm/user/{user}"));
+                    let _ = lychee_platform::open(format!("https://www.last.fm/user/{user}"));
                 }
             }
             Action::CreatePlaylist(name) => match self.library.create_playlist(&name, &[]) {
@@ -865,7 +865,7 @@ impl App {
                 }
             }
             Action::OpenUrl(url) => {
-                let _ = open::that(url);
+                let _ = lychee_platform::open(url);
             }
             Action::OpenPaths(paths) => self.open_paths(paths),
             Action::SystemThemeChanged(dark) => {
@@ -1383,7 +1383,7 @@ impl App {
             "go-artist" => self.handle(Action::OpenArtist(track.album_artist.clone())),
             "show-folder" => {
                 if let Some(dir) = track.path.parent() {
-                    let _ = open::that(dir);
+                    let _ = lychee_platform::open(dir);
                 }
             }
             "edit-tags" => {

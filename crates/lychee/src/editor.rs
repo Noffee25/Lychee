@@ -530,7 +530,7 @@ impl EditorCtl {
             }
             "show-folder" => {
                 if let Some(dir) = self.session.files()[index].path.parent() {
-                    let _ = open::that(dir);
+                    let _ = lychee_platform::open(dir);
                 }
             }
             "close" => {

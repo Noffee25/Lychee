@@ -15,7 +15,6 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use anyhow::Context;
 use lychee_core::{PlaylistId, TrackId, now_unix};
 use parking_lot::{Mutex, RwLock};
-use rayon::prelude::*;
 use walkdir::WalkDir;
 
 pub use artwork::{ArtworkCache, Colors, LARGE, THUMB, folder_image};
@@ -149,9 +148,7 @@ impl Library {
         let total = to_read.len();
         let done = AtomicUsize::new(0);
         let art = ArtIngest::new(&self.artwork);
-        let records: Vec<TrackRecord> = to_read
-            .par_iter()
-            .filter_map(|path| {
+        let records: Vec<TrackRecord> = parallel_filter_map(&to_read, |path| {
                 let meta = match tags::read(path) {
                     Ok(meta) => meta,
                     Err(e) => {
@@ -169,8 +166,7 @@ impl Library {
                     progress(ScanProgress::Reading { done: n, total });
                 }
                 Some(record)
-            })
-            .collect();
+        });
 
         {
             let mut db = self.db.lock();
@@ -404,6 +400,31 @@ impl<'a> ArtIngest<'a> {
     fn into_new(self) -> Vec<(String, Colors)> {
         self.new.into_inner()
     }
+}
+
+/// `filter_map` over all cores: workers pull the next item from a shared counter, so slow files
+/// don't hold up a whole chunk. (Scoped threads; no thread-pool crate needed.)
+fn parallel_filter_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> Option<R> + Sync) -> Vec<R> {
+    let workers = std::thread::available_parallelism().map_or(4, |n| n.get()).min(items.len()).max(1);
+    let next = AtomicUsize::new(0);
+    std::thread::scope(|s| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                s.spawn(|| {
+                    let mut out = Vec::new();
+                    loop {
+                        let i = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(item) = items.get(i) else { break };
+                        if let Some(r) = f(item) {
+                            out.push(r);
+                        }
+                    }
+                    out
+                })
+            })
+            .collect();
+        handles.into_iter().flat_map(|h| h.join().unwrap_or_else(|e| std::panic::resume_unwind(e))).collect()
+    })
 }
 
 fn is_audio(path: &Path) -> bool {

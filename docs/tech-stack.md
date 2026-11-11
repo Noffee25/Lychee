@@ -178,7 +178,13 @@ Avoid **souvlaki**, the usual cross-platform media-controls crate. It has been u
 - `symphonia 0.6` (`all` features) + `opus-decoder 0.1` for Opus. It is correct but slow: about 20% of a CPU
   core while playing, so a libopus option is planned.
 - `cpal 0.18`, `rubato 5` (FFT resampler), `rtrb 0.4`
-- `lofty 0.25`, `rusqlite 0.41` (bundled SQLite), `image 0.25`, `nucleo-matcher 0.3`, `walkdir`, `rayon`
-- `ureq 3` (rustls) + `md-5` for Last.fm; `ureq` again for MusicBrainz, the Cover Art Archive and LRCLIB
-- `mpris-server 0.11` (zbus 6) on Linux, `windows 0.62` (SMTC) on Windows. souvlaki was avoided as planned.
-- `rfd` (folder picker via XDG portals), `open`, `directories`, `toml`, `tracing`
+- `lofty 0.25`, `rusqlite 0.41` (bundled SQLite), `image 0.25` (jpeg/png/webp/gif/bmp/tiff), `nucleo-matcher 0.3`,
+  `walkdir`; parallel scanning uses scoped standard-library threads
+- `ureq 3` (rustls) for Last.fm, MusicBrainz, the Cover Art Archive and LRCLIB; MD5 for Last.fm signatures
+  is a small built-in implementation (`lychee_core::md5`)
+- `mpris-server 0.10` (on zbus 5, the same version Slint uses) on Linux, `windows 0.62` (SMTC) on Windows.
+  souvlaki was avoided as planned.
+- `rfd` (file dialogs via XDG portals, with a zenity fallback), `directories`, `toml 1`, `tracing`
+  (+ `tracing-subscriber` with its `Targets` filter)
+- A November 2026 audit trimmed the Linux build from 512 to 457 crates without dropping features. See
+  "Dependencies" in `CLAUDE.md` for what was removed and what was kept on purpose.

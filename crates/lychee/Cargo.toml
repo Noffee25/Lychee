@@ -26,24 +26,20 @@ slint = { version = "1.18", default-features = false, features = [
     "renderer-software",
     "accessibility",
     "compat-1-2",
-    "image-default-formats",
     "raw-window-handle-06",
     "unstable-winit-030",
 ] }
 rfd = "0.15"
-open = "5"
 lru = "0.19"
-toml = "0.9"
+toml = "1"
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 crossbeam-channel.workspace = true
-parking_lot.workspace = true
 serde.workspace = true
 image.workspace = true
 directories.workspace = true
 serde_json.workspace = true
-md-5.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 raw-window-handle = "0.6"

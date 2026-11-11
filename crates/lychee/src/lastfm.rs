@@ -30,7 +30,7 @@ pub fn start_auth(credentials: Credentials, tx: Sender<LastfmMsg>) -> Arc<Atomic
                 return;
             }
         };
-        if let Err(e) = open::that(auth_url(&credentials.api_key, &token)) {
+        if let Err(e) = lychee_platform::open(auth_url(&credentials.api_key, &token)) {
             tracing::warn!("could not open the browser: {e}");
         }
         let deadline = Instant::now() + Duration::from_secs(300);

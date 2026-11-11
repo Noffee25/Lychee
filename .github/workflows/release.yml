@@ -1,0 +1,131 @@
+name: Release
+
+# Push a version tag (git tag v0.1.0 && git push origin v0.1.0) to build the installers and
+# publish them as a GitHub release.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: never
+
+jobs:
+  linux:
+    name: Linux packages
+    # The oldest supported Ubuntu: the binary then runs on any distribution with glibc 2.35+.
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libfontconfig1-dev rpm 2>&1 | tail -n 3
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --locked -p lychee 2>&1 | tee build.log
+      - name: Package
+        run: packaging/linux/build-packages.sh "${GITHUB_REF_NAME#v}" target/release/lychee dist 2>&1 | tee -a build.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: log-linux
+          path: build.log
+
+  windows:
+    name: Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        shell: bash
+        run: |
+          if ! cargo build --release --locked -p lychee 2>&1 | tee build.log; then
+            # The icon resource is linked as a plain .res file; never let it block a release.
+            echo "::warning::Linking with the icon resource failed; building without the .exe icon"
+            LYCHEE_NO_EXE_ICON=1 cargo build --release --locked -p lychee 2>&1 | tee -a build.log
+          fi
+      - name: Installer and portable zip
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          choco upgrade innosetup -y --no-progress | Out-Null
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DAppVersion=$version" "packaging\windows\lychee.iss" 2>&1 | Tee-Object -FilePath build.log -Append
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $portable = "dist\Lychee-$version-windows-x64-portable"
+          New-Item -ItemType Directory -Force $portable | Out-Null
+          Copy-Item target\release\lychee.exe, README.md $portable
+          Copy-Item LICENSE "$portable\LICENSE.txt"
+          Compress-Archive -Path $portable -DestinationPath "$portable.zip"
+          Remove-Item -Recurse $portable
+          Get-ChildItem dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: log-windows
+          path: build.log
+
+  release:
+    name: Publish
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows
+          path: dist
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "Lychee $version" --notes-file packaging/release-notes.md
+          fi
+
+  report:
+    # Agents working on this private repository can't see Actions; they read this branch.
+    name: Report
+    if: always()
+    needs: [linux, windows, release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: log-*
+          path: logs
+      - name: Push the outcome to the status/release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULTS: "linux=${{ needs.linux.result }} windows=${{ needs.windows.result }} release=${{ needs.release.result }}"
+        run: |
+          chmod +x packaging/ci-report.sh
+          packaging/ci-report.sh status/release "Release $GITHUB_REF_NAME" logs

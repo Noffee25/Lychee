@@ -12,12 +12,9 @@ lychee-audio.workspace = true
 rusqlite = { version = "0.41", features = ["bundled"] }
 lofty = "0.25"
 walkdir = "2"
-rayon = "1"
 image.workspace = true
-md-5.workspace = true
 nucleo-matcher = "0.3"
 parking_lot.workspace = true
-thiserror.workspace = true
 tracing.workspace = true
 anyhow.workspace = true
 

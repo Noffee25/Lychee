@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use md5::{Digest, Md5};
+use lychee_core::md5::Md5;
 use serde_json::Value;
 
 use crate::{Credentials, Scrobble, Session, TrackInfo};
@@ -178,7 +178,7 @@ fn signature(params: &BTreeMap<String, String>, secret: &str) -> String {
         hasher.update(v.as_bytes());
     }
     hasher.update(secret.as_bytes());
-    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    hasher.finish_hex()
 }
 
 #[cfg(test)]
@@ -193,8 +193,8 @@ mod tests {
         p.insert("api_key".to_string(), "xxxx".to_string());
         p.insert("method".to_string(), "auth.getSession".to_string());
         p.insert("format".to_string(), "json".to_string());
-        let expected: String = Md5::digest(b"api_keyxxxxmethodauth.getSessiontokenyyyyilovecher").iter().map(|b| format!("{b:02x}")).collect();
-        assert_eq!(signature(&p, "ilovecher"), expected);
+        // `echo -n api_keyxxxxmethodauth.getSessiontokenyyyyilovecher | md5sum`
+        assert_eq!(signature(&p, "ilovecher"), "823df9939bce8abaf766d357c0eb08e1");
     }
 
     #[test]

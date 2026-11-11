@@ -45,6 +45,18 @@ Mini player: ![Mini player](docs/screenshots/mini.png)
 
 *(Screenshots are rendered headlessly with Slint's software renderer; the real app draws artwork with rounded corners.)*
 
+## Install
+
+Download the latest version from the [Releases page](https://github.com/Y2Kwastaken/Lychee/releases/latest):
+
+- **Windows 10/11:** `…-windows-x64-setup.exe` installs Lychee, with no admin rights needed; the
+  `…-portable.zip` runs without installing. Nothing else is needed.
+- **Ubuntu / Debian:** `sudo apt install ./lychee_…_amd64.deb`. **Fedora / openSUSE:**
+  `sudo dnf install ./lychee-….x86_64.rpm`. The package manager pulls in the libraries Lychee uses.
+- **Any other Linux:** unpack `lychee-…-linux-x86_64.tar.xz` and run `./install.sh`. It installs missing
+  libraries with apt, dnf, zypper or pacman, then Lychee for your user (`--system` for everyone,
+  `--uninstall` to remove it, `--dry-run` to see what it would do).
+
 ## Building
 
 You need **Rust 1.92 or newer** and a C compiler (SQLite is built from source).
@@ -73,6 +85,10 @@ cargo run --release -- --edit ~/Music/Some\ Album
 ```
 
 On first start, add your music folder. Lychee scans it in the background.
+
+**Releases** are built by `.github/workflows/release.yml` when a `v*` tag is pushed. It builds the
+`.deb`, `.rpm` and `.tar.xz` on Ubuntu 22.04 (via `packaging/linux/build-packages.sh`), and the Inno
+Setup installer and portable zip on Windows (`packaging/windows/lychee.iss`).
 
 ### Last.fm
 
@@ -122,6 +138,7 @@ crates/
   lychee-platform  MPRIS (Linux) and System Media Transport Controls (Windows)
   lychee-tagger    tag editor engine: lossless tag writing, EasyTAG masks, text clean-up, undo
   lychee-lookup    MusicBrainz, Cover Art Archive and LRCLIB clients, album detection and matching
+packaging/         Linux installer and packages, Windows installer and icon, release notes
   lychee           the app: Slint UI (ui/), controller, settings, mini player
 design/            interactive design prototypes (the app implements direction D, "Flow")
 docs/              features, architecture and technology notes

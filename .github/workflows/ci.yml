@@ -6,7 +6,7 @@ on:
   pull_request:
 
 env:
-  CARGO_TERM_COLOR: always
+  CARGO_TERM_COLOR: never
 
 jobs:
   build:
@@ -16,6 +16,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -30,11 +33,38 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --workspace --all-targets --locked
+        run: cargo build --workspace --all-targets --locked 2>&1 | tee build.log
 
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo test --workspace --locked 2>&1 | tee test.log
 
       - name: Clippy (advisory)
         continue-on-error: true
-        run: cargo clippy --workspace --all-targets --locked
+        run: cargo clippy --workspace --all-targets --locked 2>&1 | tee clippy.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: log-${{ matrix.os }}
+          path: "*.log"
+
+  report:
+    # Agents working on this private repository can't see Actions; they read this branch.
+    name: Report
+    if: always() && github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: log-*
+          path: logs
+      - name: Push the outcome to the status/ci branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULTS: "build=${{ needs.build.result }}"
+        run: |
+          chmod +x packaging/ci-report.sh
+          packaging/ci-report.sh status/ci "CI $(git log -1 --format=%h)" logs

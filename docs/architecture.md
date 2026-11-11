@@ -22,7 +22,7 @@ crates/
 ├─ lychee-core       Track/Album/Playlist model, the play Queue (shuffle, repeat, play-next), helpers
 ├─ lychee-audio      Engine: Symphonia demux/decode (+ pure-Rust Opus), remix, rubato resample,
 │                    lock-free ring buffer, cpal output, gapless hand-over, clickless fades
-├─ lychee-library    Scanner (walkdir + rayon + lofty), artwork cache and colours, SQLite store,
+├─ lychee-library    Scanner (walkdir + scoped threads + lofty), artwork cache and colours, SQLite store,
 │                    in-memory LibraryIndex with fuzzy search, LRC parsing
 ├─ lychee-lastfm     Last.fm client (auth, now playing, scrobble, love) and a background Scrobbler
 │                    with a persistent offline queue
@@ -46,7 +46,7 @@ music folder and tag round trips through seven container formats.
         ▲                                        │   │   │              decode ► remix ► resample ► ring buffer
         │                                        │   │   │                                       ▼
         └── models / globals ◄───────────────────┘   │   │                               cpal callback (RT)
-                                                     │   ├─► scan thread (rayon pool) ─► SQLite
+                                                     │   ├─► scan thread (one worker per core) ─► SQLite
               20 Hz tick: engine events, position,   │   ├─► image decode threads (covers for visible rows)
               scan progress, Last.fm status,          │   ├─► Last.fm Scrobbler thread (offline queue on disk)
               media actions, decoded images           │   └─► MPRIS / SMTC thread ◄── media keys, desktop widgets

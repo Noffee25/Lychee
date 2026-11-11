@@ -72,6 +72,8 @@ enum Update {
     Playback(Playback),
     Position(u64),
     Seeked(u64),
+    // Windows' media overlay has no volume of its own; only MPRIS reads this.
+    #[cfg_attr(windows, allow(dead_code))]
     Volume(f64),
     Shuffle(bool),
     Repeat(Repeat),
@@ -144,4 +146,27 @@ impl MediaControls {
     pub fn set_repeat(&self, repeat: Repeat) {
         self.send(Update::Repeat(repeat));
     }
+}
+
+/// Open a URL, file or folder with the desktop's default handler, without blocking.
+pub fn open(target: impl AsRef<std::ffi::OsStr>) -> std::io::Result<()> {
+    use std::process::Command;
+    let target = target.as_ref();
+    #[cfg(windows)]
+    let child = Command::new("explorer").arg(target).spawn()?;
+    #[cfg(target_os = "macos")]
+    let child = Command::new("open").arg(target).spawn()?;
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let child = match Command::new("xdg-open").arg(target).spawn() {
+        Ok(child) => child,
+        // GNOME systems without xdg-utils still have gio.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Command::new("gio").arg("open").arg(target).spawn()?,
+        Err(e) => return Err(e),
+    };
+    // Reap it in the background so no zombie is left behind.
+    let mut child = child;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
 }

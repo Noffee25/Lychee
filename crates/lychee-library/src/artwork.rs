@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 
 use image::imageops::FilterType;
 use image::{DynamicImage, RgbImage};
-use md5::{Digest, Md5};
 
 pub const THUMB: u32 = 320;
 pub const LARGE: u32 = 720;
@@ -26,8 +25,7 @@ impl ArtworkCache {
     }
 
     pub fn key_for(bytes: &[u8]) -> String {
-        let digest = Md5::digest(bytes);
-        digest.iter().map(|b| format!("{b:02x}")).collect()
+        lychee_core::md5::hex(bytes)
     }
 
     pub fn thumb_path(&self, key: &str) -> PathBuf {

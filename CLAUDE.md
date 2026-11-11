@@ -26,13 +26,14 @@ before changing code: they record decisions the owner made and pitfalls that alr
 
 ```
 crates/
-  lychee-core      model (Track, Album, ids), the play Queue (shuffle/repeat/play-next), formatting
+  lychee-core      model (Track, Album, ids), the play Queue (shuffle/repeat/play-next), formatting,
+                   MD5 (md5.rs: Last.fm signatures and artwork cache keys)
   lychee-audio     Engine: Symphonia decode (+ pure-Rust Opus), remix, rubato resample, rtrb ring
                    buffer, cpal output, gapless hand-over, fades. examples/decode.rs, engine_check.rs
-  lychee-library   scanner (walkdir+rayon+lofty), SQLite store (db.rs), artwork cache + accent/tint
+  lychee-library   scanner (walkdir + scoped threads + lofty), SQLite store (db.rs), artwork cache + accent/tint
                    colours, in-memory LibraryIndex + fuzzy search, LRC lyrics, refresh_files()
   lychee-lastfm    Last.fm client and background Scrobbler with an offline queue
-  lychee-platform  MPRIS (Linux) and SMTC (Windows; written but never compiled or run locally)
+  lychee-platform  MPRIS (Linux), SMTC (Windows; type-checked, never run here), `open()` for URLs/folders
   lychee-tagger    tag editor engine: lossless read/write (file.rs), EasyTAG masks (mask.rs), clean-up
                    (process.rs), Session with pending edits, undo, saving (session.rs)
   lychee-lookup    MusicBrainz / Cover Art Archive / LRCLIB clients, album guessing and track matching
@@ -43,7 +44,8 @@ crates/
                    editor-state.slint (Editor), theme.slint, widgets.slint, icons.slint, views/*.slint
 design/            HTML prototypes; the app implements direction D "Flow" and its compact mini player
 docs/              features.md (done/planned), architecture.md, tech-stack.md, screenshots/
-assets/            desktop file, icons
+assets/            desktop file, icons; windows/lychee.ico + lychee.res (from packaging/windows/make-icon.py)
+packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, release-notes.md, ci-report.sh
 ```
 
 ## Build, run, test
@@ -61,6 +63,15 @@ assets/            desktop file, icons
   with `--locked`, so commit `Cargo.lock`. Clippy is advisory there.
 - Handy tools: `cargo run -p lychee-tagger --example tag -- FILE [field=value]…` prints or edits tags;
   `cargo run -p lychee-lookup --example lookup -- "Artist" "Album"` runs a live MusicBrainz search.
+- **Type-checking Windows code on Linux.** Install a throwaway rustup toolchain with the
+  `x86_64-pc-windows-gnu` target, setting `RUSTUP_HOME` and `CARGO_HOME` to a temp dir. Run its
+  `cargo check --workspace --all-targets --target x86_64-pc-windows-gnu` with `RUSTC` pointing at that
+  toolchain's rustc. `CC_x86_64_pc_windows_gnu` and `AR_x86_64_pc_windows_gnu` can point at stub
+  scripts that just create their output files, because `check` never links the C parts (SQLite, ring).
+  Do this before releasing: CI is the only place Windows gets built.
+- **Release profile:** fat LTO, one codegen unit, and `opt-level = "s"` for the `lychee` crate only. That
+  crate is mostly UI code generated from `.slint`; the audio and decoding crates stay at full speed.
+  This cut the binary from 53 to 44 MB.
 
 ## How the app is put together
 
@@ -176,12 +187,56 @@ assets/            desktop file, icons
 - `~/.ssh/known_hosts` had no github.com entry. Pushing worked with a temporary known_hosts built from
   <https://api.github.com/meta> (check the fingerprints against GitHub's published ones) passed through
   `GIT_SSH_COMMAND="ssh -o UserKnownHostsFile=… -o StrictHostKeyChecking=yes"`. Don't edit `~/.ssh`.
-- The GitHub repo is private: its API (and CI status) needs credentials you probably don't have.
+- The GitHub repo is private: its API (and the Actions page) needs credentials you probably don't
+  have. CI and release runs therefore report to branches. Read them with
+  `git fetch origin status/ci && git show FETCH_HEAD:STATUS.md`; use `status/release` for releases.
+  The report lists each job's result, error lines and the end of each log (`packaging/ci-report.sh`).
+
+## Releasing
+
+1. Bump `version` in the root `Cargo.toml` (`[workspace.package]`), update `packaging/release-notes.md`
+   (its file names include the version), and commit.
+2. Push `main` and wait for `status/ci` to report `build: success`. That is the first real Windows
+   build of new code.
+3. `git tag vX.Y.Z && git push origin vX.Y.Z`. `.github/workflows/release.yml` then builds:
+   - on Ubuntu 22.04 (glibc 2.35): the `.deb`, `.rpm` and `.tar.xz` with `install.sh`;
+   - on Windows: the Inno Setup installer and a portable zip.
+
+   It publishes them with `SHA256SUMS.txt` as a GitHub release and reports to `status/release`.
+4. Packaging notes:
+   - Linux packages declare the libraries Lychee `dlopen`s (Wayland, X11, xkbcommon, EGL/GL), which no
+     scanner can detect. Keep them in sync with `install.sh`'s list.
+   - On Windows the C runtime is static (`.cargo/config.toml`), so there's nothing to redistribute. The
+     exe icon is linked from `assets/windows/lychee.res`; `LYCHEE_NO_EXE_ICON=1` skips it.
+
+## Dependencies
+
+The owner asked for a lean dependency tree that loses no features. The Linux build compiles about
+457 crates (it was 512); `Cargo.lock` also lists crates for platforms we don't build (macOS, Android,
+web). Decisions so far:
+- **Removed:**
+  - Slint's `image-default-formats` (it pulled in an AV1 *encoder* and EXR); the `image` crate keeps
+    jpeg/png/webp/gif/bmp/tiff.
+  - `md-5` (replaced by `lychee_core::md5`, checked against RFC 1321 and the old crate's output);
+  - `rayon` (scoped threads in `parallel_filter_map`);
+  - `open` (`lychee_platform::open`);
+  - `tracing-subscriber`'s `env-filter` (`Targets` parses the same `RUST_LOG` syntax);
+  - several unused declarations.
+- **Downgraded / unified:** `mpris-server` 0.10, which uses zbus 5 like Slint, so there's one D-Bus stack
+  instead of two; `toml` 1.x, which shares its parser with the build tools.
+- **Kept on purpose:**
+  - `rfd` for its zenity fallback when there's no desktop portal;
+  - Slint's `renderer-software`, its fallback when OpenGL fails (VMs, broken drivers);
+  - `accessibility`;
+  - winit's `sctk-adwaita`, which draws title bars on GNOME;
+  - the rustls/ring TLS stack.
+- Check new dependencies with `cargo tree -p lychee --target x86_64-unknown-linux-gnu -e normal,build`.
+  `cargo tree -d` finds duplicate versions, and `--prune <crate>` shows what a dependency costs.
 
 ## Status and next steps
 
 Done and planned work is tracked in `docs/features.md`. Notable gaps:
-- Windows has never been compiled or run here.
+- Windows type-checks and CI builds it, but nobody has run it on a real Windows machine yet.
 - EasyTAG features not done yet: playlist generator, loading file names from a text file, ID3v2.3/2.4
   conversion, stripping tags.
 - Also planned: AcoustID fingerprints, ReplayGain, live folder watching, and a system tray.

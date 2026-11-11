@@ -22,15 +22,16 @@ use std::time::{Duration, Instant};
 
 use app::{Action, App, Dispatcher, Services};
 use slint::ComponentHandle;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::filter::Targets;
+use tracing_subscriber::prelude::*;
 
 fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info,symphonia=warn,lofty=warn,winit=warn,zbus=warn")),
-        )
-        .init();
+    // RUST_LOG takes `level` and `target=level` directives, e.g. `info,lychee=debug`.
+    let filter: Targets = std::env::var("RUST_LOG")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(|| "info,symphonia=warn,lofty=warn,winit=warn,zbus=warn".parse().expect("valid default filter"));
+    tracing_subscriber::registry().with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr)).with(filter).init();
     // The always-on-top mini player helper (see `mini.rs`); its stdout is a pipe to the player.
     if std::env::args_os().nth(1).is_some_and(|a| a == "--mini-player") {
         return mini::run_helper();
@@ -81,6 +82,8 @@ fn main() -> anyhow::Result<()> {
     let (media_tx, media_rx) = crossbeam_channel::unbounded();
     let media = if screenshot.is_some() { None } else { lychee_platform::MediaControls::new(media_tx) };
 
+    // Wayland app id / X11 class: lets docks match the window to lychee.desktop (icon, pinning).
+    let _ = slint::set_xdg_app_id("lychee");
     let ui = AppWindow::new()?;
     let dispatcher = Dispatcher::new();
     app::wire_main(&ui, &dispatcher);

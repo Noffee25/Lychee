@@ -4,6 +4,7 @@
 //! types (tracks, albums, formats), the play queue and its rules (shuffle, repeat, "play next"),
 //! and small helpers for formatting values the same way everywhere.
 
+pub mod md5;
 mod model;
 mod queue;
 mod time;
