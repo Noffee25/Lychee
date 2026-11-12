@@ -1,6 +1,6 @@
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
-import { AppState, Player, Actions } from "../state.slint";
+import { AppState, Player, Actions, ThemeCard } from "../state.slint";
 import { PillButton, IconButton, Toggle, Segmented, TextField, Divider } from "../widgets.slint";
 import { PageHeader } from "albums.slint";
 import { ScrollView, AboutSlint } from "std-widgets.slint";
@@ -168,6 +168,128 @@ component DeviceSelect inherits Rectangle {
                             mouse-cursor: pointer;
                             clicked => {
                                 Actions.set-device(device.label);
+                                popup.close();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A theme's colours in small: its background with a line of text and an accent dot.
+component ThemeSwatch inherits Rectangle {
+    in property <ThemeCard> theme;
+    width: 30px;
+    height: 20px;
+    border-radius: 5px;
+    border-width: 1px;
+    border-color: root.theme.colors.border-2;
+    background: root.theme.colors.bg;
+    Rectangle {
+        x: 6px;
+        width: 7px;
+        height: 7px;
+        border-radius: 3.5px;
+        background: root.theme.accent;
+    }
+    Rectangle {
+        x: 16px;
+        width: 8px;
+        height: 3px;
+        border-radius: 1.5px;
+        background: root.theme.colors.text-2;
+    }
+}
+
+// Picks the dark or the light theme: the current one in a field, the others drop down from it.
+component ThemeSelect inherits Rectangle {
+    in property <[ThemeCard]> themes;
+    in property <ThemeCard> current;
+    width: 250px;
+    height: 38px;
+    border-radius: 9px;
+    border-width: 1px;
+    border-color: select-ta.has-hover ? Theme.text-3 : Theme.border-2;
+    background: Theme.surface-2;
+    HorizontalLayout {
+        cross-axis-alignment: center;
+        padding-left: 8px;
+        padding-right: 10px;
+        spacing: 10px;
+        ThemeSwatch { theme: root.current; }
+        Text {
+            text: root.current.name;
+            color: Theme.text;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        Image {
+            source: Icons.chev-d;
+            colorize: Theme.text-2;
+            width: 15px;
+            height: 15px;
+        }
+    }
+    select-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { popup.show(); }
+    }
+    popup := PopupWindow {
+        x: 0px;
+        y: root.height + 6px;
+        width: root.width;
+        height: Math.min(340px, 16px + root.themes.length * 36px);
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.surface;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.border-2;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: Theme.shadow;
+            // Inset so the list clips itself rectangularly inside the rounded card.
+            sv := ScrollView {
+                x: 1px;
+                y: 1px;
+                width: parent.width - 2px;
+                height: parent.height - 2px;
+                content-width: self.visible-width;
+                content-height: rows.preferred-height;
+                rows := VerticalLayout {
+                    width: sv.visible-width;
+                    padding: 7px;
+                    spacing: 2px;
+                    for t in root.themes: Rectangle {
+                        height: 34px;
+                        border-radius: 8px;
+                        background: theme-ta.has-hover ? Theme.hover : transparent;
+                        HorizontalLayout {
+                            cross-axis-alignment: center;
+                            padding-left: 6px;
+                            padding-right: 10px;
+                            spacing: 10px;
+                            ThemeSwatch { theme: t; }
+                            Text {
+                                text: t.name;
+                                color: t.selected ? Theme.accent : Theme.text;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                            if t.selected: Image {
+                                source: Icons.check;
+                                colorize: Theme.accent;
+                                width: 15px;
+                                height: 15px;
+                            }
+                        }
+                        theme-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                Actions.set-theme(t.id);
                                 popup.close();
                             }
                         }
@@ -404,11 +526,28 @@ export component SettingsPage inherits Rectangle {
                     Section {
                         title: "Appearance";
                         SettingRow {
-                            label: "Theme";
+                            label: "Mode";
+                            hint: "System follows your desktop's light or dark setting.";
                             Segmented {
                                 options: ["System", "Dark", "Light"];
-                                selected: AppState.theme-mode;
+                                selected <=> AppState.theme-mode;
                                 changed(i) => { Actions.set-theme-mode(i); }
+                            }
+                        }
+                        SettingRow {
+                            label: "Dark theme";
+                            hint: Theme.dark ? "" : AppState.theme-mode == 0 ? "Used when your system is dark." : "Used in dark mode.";
+                            ThemeSelect {
+                                themes: AppState.dark-themes;
+                                current: AppState.dark-theme;
+                            }
+                        }
+                        SettingRow {
+                            label: "Light theme";
+                            hint: !Theme.dark ? "" : AppState.theme-mode == 0 ? "Used when your system is light." : "Used in light mode.";
+                            ThemeSelect {
+                                themes: AppState.light-themes;
+                                current: AppState.light-theme;
                             }
                         }
                         Divider { }
@@ -450,7 +589,7 @@ export component SettingsPage inherits Rectangle {
 
                     Section {
                         title: "About";
-                        description: "Lychee is free software licensed under the Apache License 2.0. Fonts: Geist and Geist Mono (SIL Open Font License 1.1). Decoding by Symphonia, tags by Lofty. Online lookups use MusicBrainz, the Cover Art Archive and LRCLIB.";
+                        description: "Lychee is free software licensed under the Apache License 2.0. Fonts: Geist and Geist Mono (SIL Open Font License 1.1). Decoding by Symphonia, tags by Lofty. Online lookups use MusicBrainz, the Cover Art Archive and LRCLIB. The Catppuccin, Tokyo Night, Gruvbox and Rosé Pine themes are adapted from those projects' open-source palettes.";
                         HorizontalLayout {
                             cross-axis-alignment: center;
                             spacing: 10px;

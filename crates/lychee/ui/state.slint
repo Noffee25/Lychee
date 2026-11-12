@@ -1,6 +1,8 @@
 // Data shown by the UI and the callbacks it sends back to Rust.
 // Rust fills these globals; views only read them and call `Actions`.
 
+import { ThemeColors } from "theme.slint";
+
 export struct AlbumCard {
     id: int,
     title: string,
@@ -163,6 +165,16 @@ export struct ScanUi {
     progress: float,
 }
 
+// A theme in the Settings picker.
+export struct ThemeCard {
+    id: string,
+    name: string,
+    blurb: string,
+    colors: ThemeColors,
+    accent: color,
+    selected: bool,
+}
+
 export global AppState {
     // macOS: Slint maps Control to ⌘ there, so labels say ⌘ instead of Ctrl, and ⌘Q is Quit, so the
     // side panel toggles with ⌃⌘S instead of Ctrl Q.
@@ -252,6 +264,11 @@ export global AppState {
     // The output device chosen in Settings; device-name is the one the engine actually opened.
     in-out property <string> device-choice;
     in-out property <int> theme-mode;
+    // The themes in Settings; `selected` marks the dark and the light theme in use.
+    in-out property <[ThemeCard]> dark-themes;
+    in-out property <[ThemeCard]> light-themes;
+    in-out property <ThemeCard> dark-theme;
+    in-out property <ThemeCard> light-theme;
     in-out property <bool> dynamic-accent: true;
     in-out property <bool> mini-on-top: true;
     in-out property <bool> wayland;
@@ -321,6 +338,7 @@ export global Actions {
     callback rescan();
     callback set-device(string);
     callback set-theme-mode(int);
+    callback set-theme(string);
     callback set-dynamic-accent(bool);
     callback set-mini-on-top(bool);
 

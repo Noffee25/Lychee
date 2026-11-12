@@ -8,7 +8,7 @@ import "fonts/GeistMono-Regular.ttf";
 import "fonts/GeistMono-Medium.ttf";
 
 import { Palette } from "std-widgets.slint";
-import { Theme } from "theme.slint";
+import { Theme, ThemeColors } from "theme.slint";
 import { Icons } from "icons.slint";
 import { AppState, Player, Actions } from "state.slint";
 import { IconButton } from "widgets.slint";
@@ -25,7 +25,7 @@ import { EditorPage, ScannerDialog, LookupDialog, QuitPrompt } from "views/edito
 import { Editor } from "editor-state.slint";
 import { MiniWindow } from "mini.slint";
 
-export { AppState, Player, Actions, Theme, Icons, MiniWindow, Editor }
+export { AppState, Player, Actions, Theme, ThemeColors, Icons, MiniWindow, Editor }
 
 component Toolbar inherits Rectangle {
     height: 52px;

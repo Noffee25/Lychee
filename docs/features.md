@@ -74,6 +74,9 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 - [x] Back and forward buttons in the top left, like a browser's; each is greyed out when there's nowhere to go
 - [x] Narrow windows: the side panel opens over the content instead of squeezing it
 - [x] Dark, light and system themes
+- [x] Colour themes: a dark and a light pick in Settings → Appearance (Flow, Blackout, Catppuccin Mocha,
+  Tokyo Night, Gruvbox, Rosé Pine, Moss, Afterglow; Flow Light, Liner Notes, Lychee). Pale album-art accents
+  are darkened on light themes so they stay readable
 - [x] **Command palette (Ctrl+K)** for search and commands (`>` filters to commands)
 - [x] Keyboard shortcuts (see the README)
 - [x] Right-click menus on albums, songs and queue items

@@ -32,6 +32,8 @@ pub struct MiniState {
     pub cover: Option<PathBuf>,
     /// ARGB colour of the placeholder cover.
     pub seed: u32,
+    /// Theme id (see `themes.rs`).
+    pub theme: String,
     pub dark: bool,
     /// RGB accent colour.
     pub accent: u32,
@@ -287,8 +289,9 @@ fn select_x11_backend() -> anyhow::Result<()> {
 
 fn apply(mini: &MiniWindow, s: &MiniState) {
     let theme = mini.global::<Theme>();
-    theme.set_dark(s.dark);
+    theme.set_colors(crate::themes::get(&s.theme, s.dark).slint_colors());
     theme.set_accent(Color::from_argb_encoded(0xFF00_0000 | s.accent));
+    theme.set_on_accent(crate::themes::on_accent(s.accent));
     let cover = s.cover.as_ref().and_then(|path| {
         COVER.with(|c| {
             let mut c = c.borrow_mut();

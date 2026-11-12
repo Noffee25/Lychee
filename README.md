@@ -15,7 +15,7 @@
 - **Plays essentially anything:** MP3, FLAC (up to 24-bit/192 kHz), WAV, AIFF, ALAC, AAC/M4A, Ogg Vorbis, Opus, CAF and MKV/WebM audio. Decoding is pure Rust.
 - **Gapless playback.** High-quality resampling when your device's rate differs from the file's. Clickless pause, seek and volume.
 - **Fast library.** Parallel scanning, incremental rescans, embedded or folder artwork, and compilations grouped as "Various Artists". Browse Albums, Artists, Songs, Genres, Recently Added and Recently Played.
-- **The Flow interface.** A three-pane layout, album pages tinted with the colors of their artwork, and a Queue / Lyrics / Details side panel. Dark, light or follow-the-system themes.
+- **The Flow interface.** A three-pane layout, album pages tinted with the colors of their artwork, and a Queue / Lyrics / Details side panel. Eleven colour themes, including Catppuccin, Tokyo Night, Gruvbox and Rosé Pine, with separate dark and light picks that can follow the system.
 - **Command palette (Ctrl+K).** Fuzzy-search your whole library and run any command from the keyboard.
 - **Synced lyrics** from `.lrc` files next to your music or embedded in the file. Click a line to jump to it.
 - **Queue and playlists.** Play next, add to queue, reorder, Favorites, and playlists you can create, rename and delete.

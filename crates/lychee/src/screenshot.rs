@@ -5,6 +5,7 @@
 //! * `LYCHEE_SCREENSHOT_SCENE="play-album:Tidal Memory;page:album;palette:tid"` (see `App::run_scene`)
 //! * `LYCHEE_SCREENSHOT_MINI=mini.png` to also render the mini player.
 //! * `LYCHEE_SCREENSHOT_HOVER=700,872` to put the pointer somewhere first (hover states).
+//! * `LYCHEE_SCREENSHOT_CLICK=816,1206` to click once before the render (open a dropdown).
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -72,6 +73,20 @@ pub fn capture(ui: &AppWindow, dispatcher: &Rc<Dispatcher>, out: &Path) -> anyho
             let position = slint::LogicalPosition::new(x, y);
             win.dispatch_event(slint::platform::WindowEvent::PointerMoved { position });
         }
+    }
+    // LYCHEE_SCREENSHOT_CLICK=816,1206 clicks once, after the hover (to open a dropdown, say).
+    if let Some((x, y)) = std::env::var("LYCHEE_SCREENSHOT_CLICK").ok().and_then(|v| {
+        let (x, y) = v.split_once(',')?;
+        Some((x.trim().parse::<f32>().ok()?, y.trim().parse::<f32>().ok()?))
+    }) {
+        if let Some(win) = WINDOWS.with(|ws| ws.borrow().first().cloned()) {
+            use slint::platform::{PointerEventButton, WindowEvent};
+            let position = slint::LogicalPosition::new(x, y);
+            win.dispatch_event(WindowEvent::PointerMoved { position });
+            win.dispatch_event(WindowEvent::PointerPressed { position, button: PointerEventButton::Left });
+            win.dispatch_event(WindowEvent::PointerReleased { position, button: PointerEventButton::Left });
+        }
+        settle(dispatcher, 0);
     }
     settle(dispatcher, 0);
     render(0, w, h, out)?;

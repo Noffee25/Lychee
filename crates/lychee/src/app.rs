@@ -30,12 +30,13 @@ use crate::mini::{self, MiniCommand, MiniEvent, MiniState};
 use crate::models::LazyModel;
 use crate::palette::{self, Command, Entry};
 use crate::settings::{Paths, ScrobbleArtist, Settings, ThemeMode};
+use crate::themes;
 use crate::{
     Actions, AlbumCard, AlbumHeader, AlbumRow, AppState, AppWindow, ArtistCard, Choice, GenreCard, GenreRow, Icons, InfoRow,
-    LastfmUi, ListHeader, Lyric, MiniWindow, NavPlaylist, NowPlaying, PaletteItem, Player, QueueItem, ScanUi, Theme, TrackRow,
+    LastfmUi, ListHeader, Lyric, MiniWindow, NavPlaylist, NowPlaying, PaletteItem, Player, QueueItem, ScanUi, Theme, ThemeCard,
+    TrackRow,
 };
 
-const DEFAULT_ACCENT: u32 = 0xFF6B7D;
 const QUEUE_VISIBLE: usize = 120;
 
 #[derive(Debug)]
@@ -80,6 +81,7 @@ pub enum Action {
     Rescan,
     SetDevice(String),
     SetThemeMode(i32),
+    SetTheme(String),
     SetDynamicAccent(bool),
     SetMiniOnTop(bool),
     LastfmConnect,
@@ -194,6 +196,7 @@ macro_rules! wire_actions {
         a.on_rescan({ let d = d.clone(); move || d.dispatch(Action::Rescan) });
         a.on_set_device({ let d = d.clone(); move |n| d.dispatch(Action::SetDevice(n.into())) });
         a.on_set_theme_mode({ let d = d.clone(); move |m| d.dispatch(Action::SetThemeMode(m)) });
+        a.on_set_theme({ let d = d.clone(); move |id| d.dispatch(Action::SetTheme(id.to_string())) });
         a.on_set_dynamic_accent({ let d = d.clone(); move |on| d.dispatch(Action::SetDynamicAccent(on)) });
         a.on_set_mini_on_top({ let d = d.clone(); move |on| d.dispatch(Action::SetMiniOnTop(on)) });
         a.on_lastfm_connect({ let d = d.clone(); move || d.dispatch(Action::LastfmConnect) });
@@ -766,6 +769,16 @@ impl App {
                 if let Some(ui) = self.ui.upgrade() {
                     ui.global::<AppState>().set_theme_mode(mode);
                 }
+                self.apply_theme();
+            }
+            Action::SetTheme(id) => {
+                let Some(def) = themes::THEMES.iter().find(|t| t.id == id) else { return };
+                if def.dark {
+                    self.settings.dark_theme = id;
+                } else {
+                    self.settings.light_theme = id;
+                }
+                self.settings_dirty = true;
                 self.apply_theme();
             }
             Action::SetDynamicAccent(on) => {
@@ -2551,15 +2564,41 @@ impl App {
         }
     }
 
-    fn apply_theme(&mut self) {
+    /// The theme in use.
+    fn theme(&self) -> &'static themes::Def {
         let dark = self.is_dark();
+        themes::get(if dark { &self.settings.dark_theme } else { &self.settings.light_theme }, dark)
+    }
+
+    fn apply_theme(&mut self) {
+        let theme = self.theme();
         if let Some(ui) = self.ui.upgrade() {
-            ui.global::<Theme>().set_dark(dark);
+            ui.global::<Theme>().set_colors(theme.slint_colors());
+            let dark_id = themes::get(&self.settings.dark_theme, true).id;
+            let light_id = themes::get(&self.settings.light_theme, false).id;
+            let card = |t: &themes::Def| ThemeCard {
+                id: t.id.into(),
+                name: t.name.into(),
+                blurb: t.blurb.into(),
+                colors: t.slint_colors(),
+                accent: themes::rgb(t.accent),
+                selected: t.id == dark_id || t.id == light_id,
+            };
+            let cards = |dark: bool| -> ModelRc<ThemeCard> {
+                let cards: Vec<ThemeCard> = themes::THEMES.iter().filter(|t| t.dark == dark).map(card).collect();
+                ModelRc::new(VecModel::from(cards))
+            };
+            let state = ui.global::<AppState>();
+            state.set_dark_themes(cards(true));
+            state.set_light_themes(cards(false));
+            state.set_dark_theme(card(themes::get(dark_id, true)));
+            state.set_light_theme(card(themes::get(light_id, false)));
         }
         if let Some(mini) = &self.mini {
-            mini.global::<Theme>().set_dark(dark);
+            mini.global::<Theme>().set_colors(theme.slint_colors());
         }
-        self.sync_mini_helper();
+        // The theme's accent is the default one.
+        self.apply_accent();
     }
 
     fn apply_accent(&mut self) {
@@ -2571,11 +2610,13 @@ impl App {
         .or_else(|| self.current.as_ref().and_then(|t| index.album(t.album_id)));
         let rgb = if self.settings.dynamic_accent { album.and_then(|a| a.accent) } else { None };
         let tint_rgb = if self.settings.dynamic_accent { album.and_then(|a| a.tint.or(a.accent)) } else { None };
-        let accent = rgb_color(rgb.unwrap_or(DEFAULT_ACCENT));
-        let tint = tint_color(tint_rgb.unwrap_or(0x5A6B9A));
+        let theme_def = self.theme();
+        let accent_rgb = themes::readable_accent(rgb.unwrap_or(theme_def.accent), theme_def);
+        let tint = tint_color(tint_rgb.unwrap_or(theme_def.tint));
         if let Some(ui) = self.ui.upgrade() {
             let theme = ui.global::<Theme>();
-            theme.set_accent(accent);
+            theme.set_accent(rgb_color(accent_rgb));
+            theme.set_on_accent(themes::on_accent(accent_rgb));
             theme.set_tint(tint);
         }
         // The mini player always follows what is playing.
@@ -2585,7 +2626,9 @@ impl App {
             None
         };
         if let Some(mini) = &self.mini {
-            mini.global::<Theme>().set_accent(rgb_color(playing_rgb.unwrap_or(DEFAULT_ACCENT)));
+            let rgb = themes::readable_accent(playing_rgb.unwrap_or(theme_def.accent), theme_def);
+            mini.global::<Theme>().set_accent(rgb_color(rgb));
+            mini.global::<Theme>().set_on_accent(themes::on_accent(rgb));
         }
         drop(index);
         self.sync_mini_helper();
@@ -2728,7 +2771,13 @@ impl App {
         } else {
             None
         };
-        let mut state = MiniState { dark: self.is_dark(), accent: accent.unwrap_or(DEFAULT_ACCENT), ..MiniState::default() };
+        let theme = self.theme();
+        let mut state = MiniState {
+            theme: theme.id.to_string(),
+            dark: theme.dark,
+            accent: themes::readable_accent(accent.unwrap_or(theme.accent), theme),
+            ..MiniState::default()
+        };
         if let Some(t) = &self.current {
             let (pos, dur) = (self.position_ms, self.duration_ms);
             state.has_track = true;
@@ -2832,6 +2881,8 @@ impl App {
                 }
             }
             "theme" => self.handle(Action::SetThemeMode(arg.parse().unwrap_or(1))),
+            "look" => self.handle(Action::SetTheme(arg.to_string())),
+            "art-colours" => self.handle(Action::SetDynamicAccent(arg != "0")),
             "like" => self.handle(Action::ToggleLikeCurrent),
             "queue" => {
                 if let Some(id) = find_album(self, arg) {

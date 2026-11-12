@@ -113,6 +113,9 @@ impl Default for LastfmSettings {
 #[serde(default)]
 pub struct Settings {
     pub theme: ThemeMode,
+    /// Theme ids (see `themes.rs`) for dark and light mode.
+    pub dark_theme: String,
+    pub light_theme: String,
     pub dynamic_accent: bool,
     pub volume: f32,
     pub muted: bool,
@@ -132,6 +135,8 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             theme: ThemeMode::System,
+            dark_theme: crate::themes::DEFAULT_DARK.to_string(),
+            light_theme: crate::themes::DEFAULT_LIGHT.to_string(),
             dynamic_accent: true,
             volume: 0.8,
             muted: false,

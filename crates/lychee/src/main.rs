@@ -11,6 +11,7 @@ mod models;
 mod palette;
 mod screenshot;
 mod settings;
+mod themes;
 
 slint::include_modules!();
 
