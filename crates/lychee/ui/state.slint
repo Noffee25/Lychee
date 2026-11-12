@@ -315,8 +315,8 @@ export global AppState {
     in-out property <[Choice]> eq-presets;
     in-out property <string> eq-preset-name;
     in-out property <float> eq-headroom;
-    // Crossfade choice (0 = off, n = 2n seconds); crossfeed and its strength (0–2).
-    in-out property <int> crossfade;
+    // Mono audio; crossfeed (not used while mono is on) and its strength (0–2).
+    in-out property <bool> mono;
     in-out property <bool> crossfeed;
     in-out property <int> crossfeed-level: 1;
     // The output stream ("48 kHz, stereo"); empty until something has played.
@@ -429,7 +429,7 @@ export global Actions {
     callback set-eq-band(int, float);
     // A row of `AppState.eq-presets`.
     callback set-eq-preset(int);
-    callback set-crossfade(int);
+    callback set-mono(bool);
     callback set-crossfeed(bool);
     callback set-crossfeed-level(int);
 

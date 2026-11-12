@@ -1,11 +1,12 @@
-//! Sound shaping in the audio callback: a ten-band graphic equalizer and headphone crossfeed.
+//! Sound shaping in the audio callback: a ten-band graphic equalizer, headphone crossfeed and mono.
 //!
 //! The callback owns a [`Dsp`]. Settings reach it through [`DspParams`] in the shared state: atomics
 //! behind a version counter, so the real-time thread never locks or allocates and never uses a
-//! half-written update. Changes glide over about ten milliseconds, so moving a band or switching
-//! crossfeed on doesn't click. With everything off the samples pass through untouched.
+//! half-written update. Changes glide over a few tens of milliseconds at most, so moving a band or
+//! switching crossfeed or mono on doesn't click. With everything off the samples pass through
+//! untouched.
 
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering, fence};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering, fence};
 
 use parking_lot::Mutex;
 
@@ -152,6 +153,7 @@ pub struct DspParams {
     filters: [AtomicU32; EQ_BANDS],
     preamp: AtomicU32,
     crossfeed: AtomicU32,
+    mono: AtomicBool,
     writer: Mutex<()>,
 }
 
@@ -161,6 +163,7 @@ struct Snapshot {
     filters: [f64; EQ_BANDS],
     preamp: f64,
     crossfeed: u32,
+    mono: bool,
 }
 
 impl Default for DspParams {
@@ -170,6 +173,7 @@ impl Default for DspParams {
             filters: std::array::from_fn(|_| AtomicU32::new(0f32.to_bits())),
             preamp: AtomicU32::new(0f32.to_bits()),
             crossfeed: AtomicU32::new(0),
+            mono: AtomicBool::new(false),
             writer: Mutex::new(()),
         }
     }
@@ -193,6 +197,12 @@ impl DspParams {
         self.write(|p| p.crossfeed.store(level.min(CROSSFEED.len() as u32), Ordering::Relaxed));
     }
 
+    /// Mono: left and right mixed together and played on both sides (crossfeed then has nothing
+    /// to do, so it stays off).
+    pub fn set_mono(&self, on: bool) {
+        self.write(|p| p.mono.store(on, Ordering::Relaxed));
+    }
+
     fn write(&self, change: impl FnOnce(&Self)) {
         let _one_writer = self.writer.lock();
         let v = self.version.load(Ordering::Relaxed);
@@ -212,6 +222,7 @@ impl DspParams {
             filters: std::array::from_fn(|i| f64::from(f32::from_bits(self.filters[i].load(Ordering::Relaxed)))),
             preamp: f64::from(f32::from_bits(self.preamp.load(Ordering::Relaxed))),
             crossfeed: self.crossfeed.load(Ordering::Relaxed),
+            mono: self.mono.load(Ordering::Relaxed),
         };
         fence(Ordering::Acquire);
         (self.version.load(Ordering::Relaxed) == v1).then_some((v1, snapshot))
@@ -282,6 +293,9 @@ pub struct Dsp {
     lo: [f64; 2],
     hi: [f64; 2],
     last_in: [f64; 2],
+    // Mono: wanted, and how far the front left and right are mixed together (0–1, glides).
+    mono_want: bool,
+    mono_mix: f64,
     countdown: u32,
 }
 
@@ -307,6 +321,8 @@ impl Dsp {
             lo: [0.0; 2],
             hi: [0.0; 2],
             last_in: [0.0; 2],
+            mono_want: false,
+            mono_mix: 0.0,
             countdown: 0,
         }
     }
@@ -320,7 +336,10 @@ impl Dsp {
             self.pre_target = s.preamp;
         }
         if self.channels == 2 {
-            self.feed_want = s.crossfeed;
+            self.feed_want = if s.mono { 0 } else { s.crossfeed };
+        }
+        if self.channels >= 2 {
+            self.mono_want = s.mono;
         }
     }
 
@@ -328,6 +347,7 @@ impl Dsp {
     pub fn idle(&self) -> bool {
         !self.eq_on && self.eq_target.iter().all(|g| *g == 0.0) && self.pre_target == 0.0
             && self.feed_mix == 0.0 && self.feed_want == 0
+            && self.mono_mix == 0.0 && !self.mono_want
     }
 
     /// Move the settings a step towards their targets.
@@ -383,10 +403,8 @@ impl Dsp {
             }
         }
         let target = if self.feed_level > 0 && self.feed_want == self.feed_level { 1.0 } else { 0.0 };
-        if self.feed_mix != target {
-            let d = STEP_FRAMES as f64 / (0.02 * self.rate); // 20 ms
-            self.feed_mix = if target > self.feed_mix { (self.feed_mix + d).min(1.0) } else { (self.feed_mix - d).max(0.0) };
-        }
+        self.feed_mix = glide(self.feed_mix, target, self.rate);
+        self.mono_mix = glide(self.mono_mix, if self.mono_want { 1.0 } else { 0.0 }, self.rate);
         if self.feed_mix > 0.0 {
             for s in self.lo.iter_mut().chain(self.hi.iter_mut()).chain(self.last_in.iter_mut()) {
                 if s.abs() < 1e-25 {
@@ -433,7 +451,26 @@ impl Dsp {
             frame[0] = (l + (wet_l - l) * m) as f32;
             frame[1] = (r + (wet_r - r) * m) as f32;
         }
+        // Mono goes last, so both sides end up exactly the same.
+        if self.mono_mix > 0.0 && frame.len() >= 2 {
+            let (l, r) = (f64::from(frame[0]), f64::from(frame[1]));
+            let mid = (l + r) * 0.5;
+            if self.mono_mix >= 1.0 {
+                frame[0] = mid as f32;
+                frame[1] = mid as f32;
+            } else {
+                let m = self.mono_mix;
+                frame[0] = (l + (mid - l) * m) as f32;
+                frame[1] = (r + (mid - r) * m) as f32;
+            }
+        }
     }
+}
+
+/// One step of a 20 ms glide from `now` towards `target` (both 0–1).
+fn glide(now: f64, target: f64, rate: f64) -> f64 {
+    let d = f64::from(STEP_FRAMES) / (0.02 * rate);
+    if target > now { (now + d).min(target) } else { (now - d).max(target) }
 }
 
 #[cfg(test)]
@@ -510,12 +547,14 @@ mod tests {
         let mut dsp = Dsp::new(2, 48_000);
         params.set_eq(Some(&design([3.0; EQ_BANDS])));
         params.set_crossfeed(2);
+        params.set_mono(true);
         dsp.sync(&params);
         for _ in 0..4800 {
             dsp.process(&mut [0.3, -0.2]);
         }
         params.set_eq(None);
         params.set_crossfeed(0);
+        params.set_mono(false);
         dsp.sync(&params);
         for _ in 0..4800 {
             dsp.process(&mut [0.3, -0.2]);
@@ -556,6 +595,48 @@ mod tests {
             }
         }
         assert!((0.4..0.6).contains(&peak), "{peak}");
+    }
+
+    #[test]
+    fn mono_plays_the_same_on_both_sides_and_glides_there() {
+        let params = DspParams::default();
+        params.set_crossfeed(2);
+        params.set_mono(true);
+        let mut dsp = Dsp::new(2, 48_000);
+        dsp.sync(&params);
+        let tone = |i: usize| (std::f64::consts::TAU * 300.0 * i as f64 / 48_000.0).sin() as f32 * 0.5;
+        let (mut last, mut biggest_step) = ([0.0f32; 2], 0.0f32);
+        for i in 0..48_000 {
+            if i == 24_000 {
+                params.set_mono(false);
+                dsp.sync(&params);
+            }
+            // A tone on the left only, with a constant offset on the right.
+            let mut frame = [tone(i), 0.25];
+            dsp.process(&mut frame);
+            if i > 960 && i < 24_000 {
+                assert_eq!(frame[0], frame[1], "frame {i}: both sides the same");
+                assert!((frame[0] - (tone(i) + 0.25) / 2.0).abs() < 1e-6, "frame {i}: half of each side");
+            }
+            if i > 0 {
+                biggest_step = biggest_step.max((frame[0] - last[0]).abs()).max((frame[1] - last[1]).abs());
+            }
+            last = frame;
+        }
+        // Turning mono off glides back to stereo (crossfeed included) without a jump.
+        assert!(biggest_step < 0.03, "{biggest_step}");
+        assert_eq!(dsp.mono_mix, 0.0);
+        assert_eq!(dsp.feed_mix, 1.0, "crossfeed is back once mono is off");
+        // A mono stream (one channel) has nothing to mix.
+        let mut dsp = Dsp::new(1, 48_000);
+        dsp.sync(&params);
+        params.set_crossfeed(0);
+        params.set_mono(true);
+        dsp.sync(&params);
+        let mut frame = [0.3f32];
+        dsp.process(&mut frame);
+        assert_eq!(frame, [0.3]);
+        assert!(dsp.idle());
     }
 
     #[test]

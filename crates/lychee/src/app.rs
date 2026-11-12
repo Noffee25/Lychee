@@ -93,8 +93,7 @@ pub enum Action {
     SetEqBand(i32, f32),
     /// A row of the preset dropdown.
     SetEqPreset(i32),
-    /// Crossfade choice: 0 = off, else 2 × n seconds.
-    SetCrossfade(i32),
+    SetMono(bool),
     SetCrossfeed(bool),
     /// Crossfeed strength choice: 0–2 = light, medium, strong.
     SetCrossfeedLevel(i32),
@@ -229,7 +228,7 @@ macro_rules! wire_actions {
         a.on_set_eq_enabled({ let d = d.clone(); move |on| d.dispatch(Action::SetEqEnabled(on)) });
         a.on_set_eq_band({ let d = d.clone(); move |i, db| d.dispatch(Action::SetEqBand(i, db)) });
         a.on_set_eq_preset({ let d = d.clone(); move |i| d.dispatch(Action::SetEqPreset(i)) });
-        a.on_set_crossfade({ let d = d.clone(); move |i| d.dispatch(Action::SetCrossfade(i)) });
+        a.on_set_mono({ let d = d.clone(); move |on| d.dispatch(Action::SetMono(on)) });
         a.on_set_crossfeed({ let d = d.clone(); move |on| d.dispatch(Action::SetCrossfeed(on)) });
         a.on_set_crossfeed_level({ let d = d.clone(); move |i| d.dispatch(Action::SetCrossfeedLevel(i)) });
         a.on_lastfm_connect({ let d = d.clone(); move || d.dispatch(Action::LastfmConnect) });
@@ -493,8 +492,6 @@ pub struct App {
     token: u64,
     token_seq: u64,
     preloaded: Option<(u64, TrackId)>,
-    /// Whether the current track may fade into the pre-loaded one (crossfade).
-    preloaded_fade: bool,
     /// What the queue was started from: "album:ID", "playlist:ID", "artist:NAME", "songs",
     /// "favorites", "history", or "" (opened files, single songs). A page whose list is playing
     /// shows Pause instead of Play (`Player.source` against `ListHeader.source`).
@@ -615,7 +612,6 @@ impl App {
             token: 0,
             token_seq: 0,
             preloaded: None,
-            preloaded_fade: false,
             source: String::new(),
             eq_bands: Rc::new(VecModel::default()),
             output_rate: 48_000,
@@ -979,10 +975,10 @@ impl App {
                 self.settings_dirty = true;
                 self.apply_eq();
             }
-            Action::SetCrossfade(i) => {
-                self.settings.crossfade = (i.clamp(0, 6) * 2) as u32;
+            Action::SetMono(on) => {
+                self.settings.mono = on;
                 self.settings_dirty = true;
-                self.apply_crossfade();
+                self.apply_mono();
             }
             Action::SetCrossfeed(on) => {
                 self.settings.crossfeed = on;
@@ -1400,22 +1396,15 @@ impl App {
         let next = self.queue.peek_next(true);
         match next {
             Some(id) => {
-                if let Some((token, t)) = self.preloaded.filter(|(_, t)| *t == id) {
-                    // Same song, but its neighbours (and so album or track gain, and whether to
-                    // fade into it) may have changed.
+                if self.preloaded.is_some_and(|(_, t)| t == id) {
+                    // Same song, but its neighbours (and so album or track gain) may have changed.
                     self.refresh_gains(false);
-                    let fade = self.may_fade(t);
-                    if fade != self.preloaded_fade {
-                        self.preloaded_fade = fade;
-                        self.engine.set_fade(token, fade);
-                    }
                     return;
                 }
                 let Some(track) = self.library.index().track(id) else { return };
                 let token = self.next_token();
                 self.preloaded_gain = self.gain_at(&track, self.queue.peek_next_index(true));
-                self.preloaded_fade = self.may_fade(id);
-                self.engine.preload(token, track.path.clone(), factor(self.preloaded_gain), self.preloaded_fade);
+                self.engine.preload(token, track.path.clone(), factor(self.preloaded_gain));
                 self.preloaded = Some((token, id));
             }
             None => {
@@ -3267,27 +3256,10 @@ impl App {
         self.source = source;
     }
 
-    /// Whether the current track may fade into `next` (crossfade). Never between songs that
-    /// follow each other on an album (they play gaplessly), or from a song into itself.
-    fn may_fade(&self, next: TrackId) -> bool {
-        let Some(cur) = &self.current else { return false };
-        if cur.id == next {
-            return false;
-        }
-        let index = self.library.index();
-        let Some(n) = index.track(next) else { return false };
-        if n.album_id != cur.album_id {
-            return true;
-        }
-        let Some(album) = index.album(cur.album_id) else { return true };
-        let at = |id: TrackId| album.tracks.iter().position(|t| *t == id);
-        !matches!((at(cur.id), at(next)), (Some(a), Some(b)) if b == a + 1)
-    }
-
     /// Hand every audio setting to the engine (at start-up).
     fn apply_audio(&mut self) {
         self.apply_eq();
-        self.apply_crossfade();
+        self.apply_mono();
         self.apply_crossfeed();
     }
 
@@ -3299,12 +3271,13 @@ impl App {
         self.update_details();
     }
 
-    fn apply_crossfade(&mut self) {
-        self.engine.set_crossfade(self.settings.crossfade.min(12) * 1000);
+    fn apply_mono(&mut self) {
+        self.engine.set_mono(self.settings.mono);
         if let Some(ui) = self.ui.upgrade() {
-            ui.global::<AppState>().set_crossfade((self.settings.crossfade.min(12) / 2) as i32);
+            ui.global::<AppState>().set_mono(self.settings.mono);
         }
         self.update_audio_summary();
+        self.update_details();
     }
 
     fn apply_crossfeed(&mut self) {
@@ -3361,7 +3334,9 @@ impl App {
         if self.settings.eq.enabled {
             parts.push(format!("Equalizer ({})", eq_preset_name(&self.settings.eq)));
         }
-        if self.settings.crossfeed {
+        if self.settings.mono {
+            parts.push("mono".into());
+        } else if self.settings.crossfeed {
             parts.push(format!("crossfeed ({})", crossfeed_name(self.settings.crossfeed_level)));
         }
         let text = parts.join(", ");
@@ -3376,16 +3351,16 @@ impl App {
     fn update_audio_summary(&self) {
         let Some(ui) = self.ui.upgrade() else { return };
         let mut parts = vec![self.settings.output_device.clone().unwrap_or_else(|| "Default Audio Device".into())];
+        if self.settings.mono {
+            parts.push("Mono".into());
+        }
         if self.settings.eq.enabled {
             parts.push(format!("Equalizer: {}", eq_preset_name(&self.settings.eq)));
         }
         if self.settings.volume_levelling {
             parts.push("Volume levelling".into());
         }
-        if self.settings.crossfade > 0 {
-            parts.push(format!("Crossfade {} s", self.settings.crossfade));
-        }
-        if self.settings.crossfeed {
+        if self.settings.crossfeed && !self.settings.mono {
             parts.push("Crossfeed".into());
         }
         ui.global::<AppState>().set_audio_summary(parts.join(" · ").into());
@@ -3843,7 +3818,7 @@ impl App {
                     self.handle(Action::SetEqBand(band, db));
                 }
             }
-            "crossfade" => self.handle(Action::SetCrossfade(arg.parse::<i32>().unwrap_or(0) / 2)),
+            "mono" => self.handle(Action::SetMono(arg == "1")),
             "crossfeed" => match arg.parse::<i32>().unwrap_or(0) {
                 0 => self.handle(Action::SetCrossfeed(false)),
                 n => {

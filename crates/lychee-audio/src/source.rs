@@ -39,9 +39,6 @@ pub struct Source {
     pub sample_rate: u32,
     pub channels: usize,
     pub duration_ms: Option<u64>,
-    /// `duration_ms` comes from the container (exact), not an estimate. MPEG audio without a
-    /// Xing/VBRI header and raw ADTS AAC only have a length guessed from the first frames' bitrate.
-    pub exact_duration: bool,
     pub info: StreamInfo,
     /// Frames to drop after an accurate seek so playback starts exactly where requested.
     skip_frames: usize,
@@ -70,7 +67,6 @@ impl Source {
             .ok_or_else(|| AudioError::Unsupported("unknown audio codec".into()))?;
         let track_id = track.id;
         let time_base = track.time_base;
-        let exact_duration = !matches!(reader.format_info().short_name, "mp1" | "mp2" | "mp3" | "aac");
         let sample_rate = params.sample_rate.ok_or_else(|| AudioError::Unsupported("unknown sample rate".into()))?;
         let channels = params.channels.as_ref().map(|c| c.count()).unwrap_or(2).max(1);
 
@@ -116,7 +112,6 @@ impl Source {
             sample_rate: info.sample_rate,
             channels,
             duration_ms,
-            exact_duration,
             info,
             skip_frames: 0,
         })

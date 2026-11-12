@@ -34,8 +34,8 @@ crates/
                    volume levelling rules (gain.rs: tag parsing, album gain, album/track choice),
                    MD5 (md5.rs: Last.fm signatures and artwork cache keys)
   lychee-audio     Engine: Symphonia decode (+ pure-Rust Opus), remix, per-track gain, rubato resample,
-                   crossfade, rtrb ring buffer, cpal output, gapless hand-over, fades; dsp.rs (equalizer and
-                   crossfeed, in the callback); loudness.rs (EBU R128 meter). examples/decode.rs, engine_check.rs
+                   rtrb ring buffer, cpal output, gapless hand-over, fades; dsp.rs (equalizer, crossfeed and
+                   mono, in the callback); loudness.rs (EBU R128 meter). examples/decode.rs, engine_check.rs
   lychee-library   scanner (walkdir + scoped threads + lofty), SQLite store (db.rs), artwork cache + accent/tint
                    colours, in-memory LibraryIndex + fuzzy search, LRC lyrics, refresh_files()
   lychee-lastfm    Last.fm client and background Scrobbler with an offline queue
@@ -211,9 +211,9 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
   breadcrumb ("Settings › Audio") whose "Settings" leads back. Back/forward work as for any page, and the
   sidebar's Settings link stays lit. A new sub-page follows the same pattern. `Section` takes `has-switch`
   for cards that are one feature (Equalizer, Volume levelling).
-- **Equalizer, crossfeed, crossfade** (Settings → Audio):
-  - The equalizer and crossfeed run in the audio callback (`lychee_audio::dsp`), so changes are heard within
-    milliseconds; with everything off the callback leaves the samples untouched (bit-exact).
+- **Equalizer, crossfeed, mono** (Settings → Audio):
+  - The equalizer, crossfeed and mono run in the audio callback (`lychee_audio::dsp`), so changes are heard
+    within milliseconds; with everything off the callback leaves the samples untouched (bit-exact).
   - `EqDesign::new(bands)` turns band settings into filters: overlapping 1.5-octave peaking filters whose
     gains are solved so the curve passes through every band setting (within 0.1 dB), plus a pre-amp that
     lowers the level by the curve's highest point, so boosts never clip. The graph in Settings draws
@@ -225,19 +225,14 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
   - The graph doesn't take the mouse wheel: it's in the middle of a scrolling page, and Slint only keeps
     a ScrollView's wheel for 800 ms after it scrolled, so scrolling past nudged bands (and made the curve
     Custom).
-  - Crossfade happens while decoding (`Worker::fade`): when the decoder reaches the last seconds of the
-    playing track (from its duration), it opens the pre-loaded one and mixes the two (equal power) as the
-    device needs them. Don't hold the end of every track back instead: the decoder would have to run seconds
-    ahead, and the pure-Rust Opus decoder is only about 5× real time.
-  - Some lengths are guesses (`Source::exact_duration` is false for MPEG audio, whose length Symphonia
-    estimates from the first frames when there's no Xing/VBRI header, and for raw ADTS AAC). Fading from a
-    guessed end cut songs short, so for those the newest seconds are held back in `Worker::tail` near the
-    guessed end and the fade starts from the real one (MP3 and AAC decode fast enough for that).
-  - The app decides per transition with `may_fade`: never between songs that follow each other on an album
-    (they stay gapless), never into the same song; manual skips never fade. A fade lasts at most half of
-    either song; a late pre-load fades for what's left. A seek (or a restored session) that lands inside the
-    fade plays those seconds as they are: fading from the start of a fresh stream would show the next song at
-    once, even while paused. `engine.rs` tests run the decoder without a device (`Worker::test_format`).
+  - Mono audio (`settings.mono`, near the top of the page) mixes the front left and right, (L + R) / 2, after
+    the other effects, so both sides come out identical; it glides in and out over 20 ms. Crossfeed has
+    nothing to do on a mono signal (it would only tint it), so the callback fades it out while mono is on and
+    the page greys its row out: `Toggle` and `SettingRow` take `enabled: false` for a setting that has no
+    effect at the moment.
+  - **No crossfade.** It was built (Nov 2026) and then removed at the owner's request; songs always hand over
+    gaplessly. Don't add it back unasked. `engine.rs` tests run the decoder without a device
+    (`Worker::test_format`).
 - **Play turns into Pause.** `Player.source` says what the queue was started from (`App::source`: "album:ID",
   "playlist:ID", "artist:NAME", "songs", "favorites", "history", or ""), saved with the session. List and artist
   pages compare it with `ListHeader.source`; album pages and tiles use the playing track's album instead. Every
@@ -320,7 +315,7 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
       (0–3 = 0/+2/+4/+6 dB), `like`,
       `queue:`, `toast:`
     - audio (`page:audio` shows Settings → Audio): `eq:ID` (a preset id from `eq.rs`, or `off`), `eq-band:N=DB`,
-      `crossfade:SECONDS`, `crossfeed:0|1|2|3`
+      `mono:0|1`, `crossfeed:0|1|2|3`
     - library: `add-folder:`, `like-album:`
     - tag editor album picker: `album-picker:QUERY` (opens it), `album-picker-toggle:0,2`, `album-picker-add`
     - playlists: `make-playlist:Name=Album,Album`, `open-playlist:Name`, `playlist-cmd:what,Name` (the
@@ -363,8 +358,8 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
   - To test a second launch (single instance), start it with the nested app's own environment (read
     `/proc/PID/environ`: the nested display, the private bus and the same `LYCHEE_HOME`), so that if it
     doesn't hand over it opens in the nested session, not on the owner's desktop.
-  - MPRIS `SetPosition` on the private bus jumps near the end of a song, which is how crossfade timing was
-    checked (the next title arrived 1.8 s before the end with a 2 s crossfade; on the album, at the end).
+  - MPRIS `SetPosition` on the private bus jumps near the end of a song, which is how gapless hand-overs
+    are timed: the next title should arrive right at the old song's end.
 - Test fixtures: `crates/lychee-tagger/tests/fixtures` (tiny silent files in seven formats); the
   library test writes WAVs on the fly. Make larger test media with ffmpeg in a temp dir, never in the repo.
 

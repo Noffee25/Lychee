@@ -15,7 +15,7 @@
 - **Plays essentially anything:** MP3, FLAC (up to 24-bit/192 kHz), WAV, AIFF, ALAC, AAC/M4A, Ogg Vorbis, Opus, CAF and MKV/WebM audio. Decoding is pure Rust.
 - **Gapless playback.** High-quality resampling when your device's rate differs from the file's. Clickless pause, seek and volume.
 - **Volume levelling.** Every song plays at about the same loudness, using ReplayGain tags where your files have them and measuring the rest (EBU R128) in the background. Albums keep their own dynamics, and a pre-amp of up to +6 dB makes everything louder if you prefer.
-- **Equalizer, crossfade and crossfeed** (Settings → Audio). A ten-band equalizer with presets and a curve you drag into shape; it makes room for its boosts so they never distort. Crossfade of up to 12 seconds leaves songs that run into each other on an album gapless, and headphone crossfeed takes the edge off songs mixed hard left and right.
+- **Equalizer, crossfeed and mono audio** (Settings → Audio). A ten-band equalizer with presets and a curve you drag into shape; it makes room for its boosts so they never distort. Headphone crossfeed takes the edge off songs mixed hard left and right, and mono audio plays left and right together on both sides, for listening with one earbud.
 - **Fast library.** Parallel scanning, incremental rescans, embedded or folder artwork, and compilations grouped as "Various Artists". Browse Albums, Artists, Songs, Genres (several per song, with spellings like "Hip-Hop" and "Hip Hop" merged), Recently Added and Recently Played.
 - **The Flow interface.** A three-pane layout, album pages tinted with the colors of their artwork, and a Queue / Lyrics / Details side panel. Eleven colour themes, including Catppuccin, Tokyo Night, Gruvbox and Rosé Pine, with separate dark and light picks that can follow the system.
 - **Command palette (Ctrl+K).** Fuzzy-search your whole library and run any command from the keyboard.
@@ -153,8 +153,8 @@ Lychee only changes your music files when you save in the tag editor.
 ```
 crates/
   lychee-core      domain model, play queue (shuffle, repeat, play next), formatting helpers
-  lychee-audio     playback engine: Symphonia + pure-Rust Opus, rubato resampling, gapless and crossfade,
-                   cpal output, per-track gain, an EBU R128 loudness meter, equalizer and crossfeed
+  lychee-audio     playback engine: Symphonia + pure-Rust Opus, rubato resampling, gapless playback,
+                   cpal output, per-track gain, an EBU R128 loudness meter, equalizer, crossfeed and mono
   lychee-library   scanning, tags (lofty), artwork + colors, SQLite store, fuzzy search, lyrics
   lychee-lastfm    Last.fm auth, now playing, scrobbling with an offline queue
   lychee-platform  MPRIS (Linux), System Media Transport Controls (Windows), Now Playing (macOS),

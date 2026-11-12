@@ -157,10 +157,9 @@ pub struct Settings {
     /// Extra gain on top of volume levelling, in dB (0, 2, 4 or 6): a louder target than −18 LUFS.
     pub levelling_preamp: f32,
     pub eq: EqSettings,
-    /// Seconds one song fades into the next (0 = off). Songs that follow each other on an album
-    /// always play gaplessly.
-    pub crossfade: u32,
-    /// Headphone crossfeed, and its strength (1–3: light, medium, strong).
+    /// Mono audio: left and right mixed together and played on both sides.
+    pub mono: bool,
+    /// Headphone crossfeed, and its strength (1–3: light, medium, strong). Not used while `mono` is on.
     pub crossfeed: bool,
     pub crossfeed_level: u32,
     pub lastfm: LastfmSettings,
@@ -186,7 +185,7 @@ impl Default for Settings {
             volume_levelling: true,
             levelling_preamp: 0.0,
             eq: EqSettings::default(),
-            crossfade: 0,
+            mono: false,
             crossfeed: false,
             crossfeed_level: 2,
             lastfm: LastfmSettings::default(),

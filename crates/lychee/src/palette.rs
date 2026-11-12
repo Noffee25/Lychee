@@ -59,7 +59,7 @@ pub const COMMANDS: &[CommandInfo] = &[
     CommandInfo { command: Command::Songs, title: "Go to Songs", subtitle: "Library", hint: "", icon: "music" },
     CommandInfo { command: Command::Favorites, title: "Go to Favorites", subtitle: "Library", hint: "", icon: "heart" },
     CommandInfo { command: Command::Settings, title: "Open Settings", subtitle: "Preferences", hint: shortcut("⌘,", "Ctrl ,"), icon: "settings" },
-    CommandInfo { command: Command::Audio, title: "Audio settings", subtitle: "Output device, equalizer, volume levelling, crossfade", hint: "", icon: "volume" },
+    CommandInfo { command: Command::Audio, title: "Audio settings", subtitle: "Output device, mono audio, equalizer, volume levelling", hint: "", icon: "volume" },
     CommandInfo { command: Command::AddFolder, title: "Add music folder…", subtitle: "Library", hint: "", icon: "folder-plus" },
     CommandInfo { command: Command::Rescan, title: "Rescan library", subtitle: "Pick up new and changed files", hint: "", icon: "refresh" },
     CommandInfo { command: Command::Lastfm, title: "Connect Last.fm", subtitle: "Scrobbling", hint: "", icon: "scrobble" },

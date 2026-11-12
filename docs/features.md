@@ -32,13 +32,13 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 - [x] Output device selection
 - [x] Clickless pause, resume and seek (short fades)
 - [x] Resume where you left off: queue, track, position, volume, shuffle and repeat
-- [x] **Settings → Audio**, a page of its own: output device, equalizer, volume levelling, crossfade and crossfeed
+- [x] **Settings → Audio**, a page of its own: output device, mono audio, crossfeed, equalizer and volume levelling
 - [x] **Equalizer**: ten bands (32 Hz–16 kHz, ±12 dB), 16 presets and your own curve. Drag a point (double-click
   resets it); the curve passes through every band. The level drops by the biggest boost, so boosted songs never
   distort. Off means the samples are untouched
-- [x] **Crossfade** from 2 to 12 seconds, on automatic song changes. Songs that follow each other on an album
-  stay gapless, and short songs fade for at most half their length
-- [x] **Headphone crossfeed** (light, medium, strong): the Bauer stereophonic-to-binaural design
+- [x] **Mono audio**: left and right mixed together on both sides, for one earbud or a single speaker
+- [x] **Headphone crossfeed** (light, medium, strong): the Bauer stereophonic-to-binaural design (off while mono
+  audio is on)
 - [x] **Volume levelling** (ReplayGain 2.0, on by default in Settings → Audio): every song plays at about
   the same loudness (−18 LUFS). Gains come from ReplayGain tags (also APE tags on MP3s and Opus's `R128_*`
   tags); songs without them are measured in the background with Lychee's own EBU R128 / BS.1770 meter.
@@ -181,7 +181,6 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 
 ## v0.2 "Daily Driver"
 - [ ] System tray icon with controls; optionally close to tray
-- [x] Optional crossfade (never between gapless album tracks)
 - [ ] Waveform seek bar
 - [ ] Ratings and smart playlists (rules: genre, year, rating, play count, date added, format…)
 - [ ] Live folder watching, folder browser, M3U import/export

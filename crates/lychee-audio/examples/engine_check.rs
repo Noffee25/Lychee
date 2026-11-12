@@ -9,7 +9,7 @@ fn main() {
     let events = engine.events();
     println!("devices: {:?}", Engine::device_names());
     engine.load(1, args[0].clone().into(), 0, true, 1.0);
-    engine.preload(2, args[1].clone().into(), 1.0, false);
+    engine.preload(2, args[1].clone().into(), 1.0);
     let start = Instant::now();
     let mut seeked = false;
     while start.elapsed() < Duration::from_secs(6) {

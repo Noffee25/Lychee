@@ -2,17 +2,17 @@
 //!
 //! ```text
 //! file ─► Symphonia demuxer ─► decoder (Symphonia / pure-Rust Opus) ─► channel remix ─► track gain
-//!      ─► rubato resampler (only if the rates differ) ─► crossfade ─► lock-free ring buffer
-//!      ─► cpal callback (equalizer, crossfeed, volume)
+//!      ─► rubato resampler (only if the rates differ) ─► lock-free ring buffer
+//!      ─► cpal callback (equalizer, crossfeed, mono, volume)
 //! ```
 //!
 //! A control thread decodes about a second ahead of the device. The next track can be
-//! pre-loaded so it starts on the exact sample the previous one ends (gapless), or, with crossfade
-//! on, so the end of one track fades into the start of the next. The real-time callback never
-//! allocates or blocks; it runs the equalizer and headphone crossfeed ([`dsp`]) and applies volume
-//! and short fades to avoid clicks on pause, resume and seek. Each track can carry its own gain
-//! (volume levelling), applied while decoding so it changes on the exact sample where the next
-//! track starts. [`loudness`] measures files that have no ReplayGain tags.
+//! pre-loaded so it starts on the exact sample the previous one ends (gapless). The real-time
+//! callback never allocates or blocks; it runs the equalizer, headphone crossfeed and mono downmix
+//! ([`dsp`]) and applies volume and short fades to avoid clicks on pause, resume and seek. Each
+//! track can carry its own gain (volume levelling), applied while decoding so it changes on the
+//! exact sample where the next track starts. [`loudness`] measures files that have no ReplayGain
+//! tags.
 
 pub mod dsp;
 mod engine;
@@ -23,7 +23,7 @@ mod resample;
 mod source;
 
 pub use dsp::{EQ_BANDS, EQ_FREQS, EQ_RANGE_DB, EqDesign};
-pub use engine::{Engine, EngineEvent, MAX_CROSSFADE_MS};
+pub use engine::{Engine, EngineEvent};
 pub use output::perceptual;
 pub use source::{Source, StreamInfo};
 

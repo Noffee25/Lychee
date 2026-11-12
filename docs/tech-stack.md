@@ -99,7 +99,7 @@ rodio 0.23 (cpal + Symphonia) is excellent for simple playback, and we may use i
 
 - **Gapless playback:** open and pre-roll the next track before the current one ends.
 - **Sample-accurate position:** for synced lyrics, the waveform and scrobbling.
-- **A DSP chain:** ReplayGain, EQ, crossfade, limiter.
+- **A DSP chain:** ReplayGain, EQ, crossfeed, mono, limiter.
 - **Analysis taps:** spectrum and VU meters.
 - **Output switching:** change device without a restart, and later exclusive or bit-perfect modes.
 

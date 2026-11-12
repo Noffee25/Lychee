@@ -47,6 +47,8 @@ export component Section inherits Rectangle {
 export component SettingRow inherits HorizontalLayout {
     in property <string> label;
     in property <string> hint;
+    // A setting that has no effect at the moment (its label is greyed out).
+    in property <bool> enabled: true;
     spacing: 16px;
     VerticalLayout {
         horizontal-stretch: 1;
@@ -55,7 +57,7 @@ export component SettingRow inherits HorizontalLayout {
         Text {
             text: root.label;
             font-weight: 500;
-            color: Theme.text;
+            color: root.enabled ? Theme.text : Theme.text-3;
             wrap: word-wrap;
         }
         if root.hint != "": Text {
@@ -398,7 +400,7 @@ export component SettingsPage inherits Rectangle {
 
                     SettingsLink {
                         title: "Audio";
-                        description: "Output device, equalizer, volume levelling, crossfade and headphone crossfeed.";
+                        description: "Output device, mono audio, headphone crossfeed, equalizer and volume levelling.";
                         summary: AppState.audio-summary;
                         clicked => { Actions.navigate("audio"); }
                     }
