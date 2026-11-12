@@ -17,8 +17,8 @@ colour themes, and lets you drag playlists into order.
 ## What's new
 
 - **Volume levelling**, on by default: every song plays at about the same loudness (ReplayGain 2.0). Lychee
-  uses your files' ReplayGain tags and measures the rest itself. Songs from the same album keep their own
-  loud and quiet moments, and a pre-amp of up to +6 dB plays everything louder.
+  uses your files' ReplayGain tags and measures the rest itself. Albums keep their own loud and quiet
+  moments, and a pre-amp of up to +6 dB plays everything louder.
 - **Settings → Audio**, a page of its own:
   - A ten-band equalizer with 16 presets, or drag the curve into a shape of your own. It lowers the level by
     its biggest boost, so songs never distort.
@@ -37,7 +37,7 @@ colour themes, and lets you drag playlists into order.
 - **Genres:** a song can have several genres, and spellings like "Hip-Hop" and "Hip Hop" count as one. The
   tag editor's scanner can tidy genre names.
 - **Tag editor:** "Add albums" picks several albums from your library at once, and each open album gets a
-  card of its own in the file list (click its header to look that album up).
+  card of its own in the file list. Click a card's header to select the whole album, ready for Look up.
 - **Play and Pause:** the Play button of whatever is playing (an album, playlist or artist, Favorites, Songs)
   turns into Pause, clicking the playing song pauses it instead of starting it over, and the playing bars
   move while music plays.
