@@ -39,6 +39,9 @@ pub struct Stats {
     pub duration_ms: u64,
     pub bytes: u64,
     pub lossless_tracks: usize,
+    /// Songs with ReplayGain tags, and songs without them whose loudness Lychee measured.
+    pub levelled_tags: usize,
+    pub levelled_measured: usize,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -104,7 +107,11 @@ impl LibraryIndex {
             artists: artists.len(),
             duration_ms: library_tracks.clone().map(|t| t.duration_ms).sum(),
             bytes: library_tracks.clone().map(|t| t.file_size).sum(),
-            lossless_tracks: library_tracks.filter(|t| t.format.is_lossless()).count(),
+            lossless_tracks: library_tracks.clone().filter(|t| t.format.is_lossless()).count(),
+            levelled_tags: library_tracks.clone().filter(|t| t.replay_gain.track_gain.is_some()).count(),
+            levelled_measured: library_tracks
+                .filter(|t| t.replay_gain.track_gain.is_none() && t.loudness.is_some_and(|m| m.lufs.is_some()))
+                .count(),
         };
         let tracks = tracks.into_iter().map(|t| (t.id, Arc::new(t))).collect();
         LibraryIndex { tracks, albums, album_pos, artists, genres, playlists, accents, stats }
@@ -359,6 +366,8 @@ fn make_album(
         duration_ms: ts.iter().map(|t| t.duration_ms).sum(),
         format,
         folder: first.path.parent().map(PathBuf::from),
+        gain: lychee_core::gain::album_gain_db(ts.iter().map(|t| (t.track_gain_db().map(|(g, _)| g), t.duration_ms))),
+        peak: ts.iter().filter_map(|t| t.track_peak()).reduce(f32::max),
     }
 }
 

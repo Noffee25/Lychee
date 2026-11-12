@@ -15,8 +15,8 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::{Receiver, Sender};
 use lychee_audio::{Engine, EngineEvent, StreamInfo};
 use lychee_core::{
-    Album, AlbumId, AudioFormat, Lyrics, PlaybackStatus, PlaylistId, Queue, RepeatMode, TrackId, TrackRef, format_duration,
-    format_duration_ms,
+    Album, AlbumId, AudioFormat, Gain, GainSource, Lyrics, PlaybackStatus, PlaylistId, Queue, RepeatMode, Track, TrackId,
+    TrackRef, format_duration, format_duration_ms,
 };
 use lychee_lastfm::{Scrobble, Scrobbler};
 use lychee_library::{AlbumSort, Library, LibraryIndex, ScanProgress, ScanSummary, TrackSort};
@@ -84,6 +84,8 @@ pub enum Action {
     SetTheme(String),
     SetDynamicAccent(bool),
     SetMiniOnTop(bool),
+    SetVolumeLevelling(bool),
+    SetLevellingPreamp(i32),
     LastfmConnect,
     LastfmCancel,
     LastfmDisconnect,
@@ -199,6 +201,8 @@ macro_rules! wire_actions {
         a.on_set_theme({ let d = d.clone(); move |id| d.dispatch(Action::SetTheme(id.to_string())) });
         a.on_set_dynamic_accent({ let d = d.clone(); move |on| d.dispatch(Action::SetDynamicAccent(on)) });
         a.on_set_mini_on_top({ let d = d.clone(); move |on| d.dispatch(Action::SetMiniOnTop(on)) });
+        a.on_set_volume_levelling({ let d = d.clone(); move |on| d.dispatch(Action::SetVolumeLevelling(on)) });
+        a.on_set_levelling_preamp({ let d = d.clone(); move |i| d.dispatch(Action::SetLevellingPreamp(i)) });
         a.on_lastfm_connect({ let d = d.clone(); move || d.dispatch(Action::LastfmConnect) });
         a.on_lastfm_cancel({ let d = d.clone(); move || d.dispatch(Action::LastfmCancel) });
         a.on_lastfm_disconnect({ let d = d.clone(); move || d.dispatch(Action::LastfmDisconnect) });
@@ -266,6 +270,12 @@ impl Page {
 enum ScanMsg {
     Progress(ScanProgress),
     Done(Result<ScanSummary, String>),
+}
+
+/// From the thread that measures loudness for volume levelling.
+enum LoudnessMsg {
+    Progress { done: usize, total: usize },
+    Done(Result<usize, String>),
 }
 
 /// Album ids are 63-bit hashes; Slint ints are 32-bit. Hand out small handles per session.
@@ -408,6 +418,9 @@ pub struct App {
     token: u64,
     token_seq: u64,
     preloaded: Option<(u64, TrackId)>,
+    /// Volume levelling gains sent to the engine for the current and the pre-loaded track.
+    current_gain: Option<Gain>,
+    preloaded_gain: Option<Gain>,
     position_ms: u64,
     duration_ms: u64,
     stream_info: Option<StreamInfo>,
@@ -431,6 +444,13 @@ pub struct App {
 
     scan_tx: Sender<ScanMsg>,
     scan_rx: Receiver<ScanMsg>,
+    loudness_tx: Sender<LoudnessMsg>,
+    loudness_rx: Receiver<LoudnessMsg>,
+    /// Set to stop the running measurement.
+    loudness_stop: Option<Arc<AtomicBool>>,
+    /// Measure again when the running measurement ends (it was asked for while one ran).
+    loudness_again: bool,
+    loudness_progress: Option<(usize, usize)>,
     folder_tx: Sender<PathBuf>,
     folder_rx: Receiver<PathBuf>,
     devices_rx: Receiver<Vec<String>>,
@@ -461,6 +481,7 @@ impl App {
         state.set_version(env!("CARGO_PKG_VERSION").into());
 
         let (scan_tx, scan_rx) = crossbeam_channel::unbounded();
+        let (loudness_tx, loudness_rx) = crossbeam_channel::unbounded();
         let (folder_tx, folder_rx) = crossbeam_channel::unbounded();
         let (devices_tx, devices_rx) = crossbeam_channel::unbounded();
         std::thread::spawn(move || {
@@ -501,6 +522,8 @@ impl App {
             token: 0,
             token_seq: 0,
             preloaded: None,
+            current_gain: None,
+            preloaded_gain: None,
             position_ms: 0,
             duration_ms: 0,
             stream_info: None,
@@ -521,6 +544,11 @@ impl App {
             system_dark: s.system_dark,
             scan_tx,
             scan_rx,
+            loudness_tx,
+            loudness_rx,
+            loudness_stop: None,
+            loudness_again: false,
+            loudness_progress: None,
             folder_tx,
             folder_rx,
             devices_rx,
@@ -542,6 +570,8 @@ impl App {
         state.set_theme_mode(self.settings.theme.index());
         state.set_dynamic_accent(self.settings.dynamic_accent);
         state.set_mini_on_top(self.settings.mini_on_top);
+        state.set_volume_levelling(self.settings.volume_levelling);
+        state.set_levelling_preamp(preamp_index(self.settings.levelling_preamp));
         state.set_right_panel(self.settings.right_panel);
         state.set_right_tab(self.settings.right_tab.clone().into());
         state.set_album_sort(self.settings.album_sort);
@@ -789,6 +819,29 @@ impl App {
                 }
                 self.apply_accent();
             }
+            Action::SetVolumeLevelling(on) => {
+                self.settings.volume_levelling = on;
+                self.settings_dirty = true;
+                if let Some(ui) = self.ui.upgrade() {
+                    ui.global::<AppState>().set_volume_levelling(on);
+                }
+                if on {
+                    self.start_measuring();
+                } else {
+                    self.stop_measuring();
+                }
+                // Heard at once, not only from the next song on.
+                self.refresh_gains(true);
+                self.update_levelling_status();
+            }
+            Action::SetLevellingPreamp(i) => {
+                self.settings.levelling_preamp = (i.clamp(0, 3) * 2) as f32;
+                self.settings_dirty = true;
+                if let Some(ui) = self.ui.upgrade() {
+                    ui.global::<AppState>().set_levelling_preamp(i.clamp(0, 3));
+                }
+                self.refresh_gains(true);
+            }
             Action::SetMiniOnTop(on) => {
                 self.settings.mini_on_top = on;
                 self.settings_dirty = true;
@@ -947,6 +1000,9 @@ impl App {
         while let Ok(msg) = self.scan_rx.try_recv() {
             self.on_scan(msg);
         }
+        while let Ok(msg) = self.loudness_rx.try_recv() {
+            self.on_loudness(msg);
+        }
         while let Ok(msg) = self.lastfm_rx.try_recv() {
             self.on_lastfm(msg);
         }
@@ -1007,6 +1063,7 @@ impl App {
                 } else if self.preloaded.is_some_and(|(t, _)| t == token) {
                     // Gapless hand-over to the pre-loaded track.
                     let (_, next_id) = self.preloaded.take().expect("checked");
+                    self.current_gain = self.preloaded_gain.take();
                     let advanced = self.queue.advance(true);
                     if advanced != Some(next_id) {
                         // The queue changed after pre-loading; find the track we actually hear.
@@ -1132,7 +1189,9 @@ impl App {
             return;
         };
         self.token = self.next_token();
-        self.engine.load(self.token, track.path.clone(), start_ms, play);
+        self.current_gain = self.gain_at(&track, self.queue.current_index());
+        tracing::debug!("levelling {:?}: {:?}", track.title, self.current_gain);
+        self.engine.load(self.token, track.path.clone(), start_ms, play, factor(self.current_gain));
         self.engine_loaded = true;
         self.preloaded = None;
         self.set_current(track, start_ms, play);
@@ -1175,11 +1234,14 @@ impl App {
         match next {
             Some(id) => {
                 if self.preloaded.is_some_and(|(_, t)| t == id) {
+                    // Same song, but its neighbours (and so album or track gain) may have changed.
+                    self.refresh_gains(false);
                     return;
                 }
                 let Some(track) = self.library.index().track(id) else { return };
                 let token = self.next_token();
-                self.engine.preload(token, track.path.clone());
+                self.preloaded_gain = self.gain_at(&track, self.queue.peek_next_index(true));
+                self.engine.preload(token, track.path.clone(), factor(self.preloaded_gain));
                 self.preloaded = Some((token, id));
             }
             None => {
@@ -1631,8 +1693,135 @@ impl App {
                     Err(e) => self.toast(&format!("Scan failed: {e}")),
                 }
                 self.update_settings_ui();
+                self.start_measuring();
             }
         }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Volume levelling
+
+    /// The gain for `track` at `position` in the queue: album gain when the song next to it in
+    /// the play order is from the same album (an album is playing), else track gain. `None` when
+    /// levelling is off or the song's loudness isn't known yet.
+    fn gain_at(&self, track: &Track, position: Option<usize>) -> Option<Gain> {
+        if !self.settings.volume_levelling {
+            return None;
+        }
+        let index = self.library.index();
+        let track = index.track(track.id).unwrap_or_else(|| Arc::new(track.clone()));
+        let entries = self.queue.entries();
+        let same_album = |i: Option<usize>| {
+            i.and_then(|i| entries.get(i))
+                .filter(|e| e.track != track.id)
+                .and_then(|e| index.track(e.track))
+                .is_some_and(|t| t.album_id == track.album_id)
+        };
+        let as_album = position.is_some_and(|i| same_album(i.checked_sub(1)) || same_album(Some(i + 1)));
+        let preamp = self.settings.levelling_preamp.clamp(0.0, 6.0);
+        lychee_core::gain::choose(&track, index.album(track.album_id), as_album, preamp)
+    }
+
+    /// Re-send gains whose inputs changed: the setting, the queue around the next song, or new
+    /// measurements. `current` includes the playing song (only for the setting, so a song doesn't
+    /// change level halfway through because the measurement just finished).
+    fn refresh_gains(&mut self, current: bool) {
+        if current && self.engine_loaded {
+            if let Some(track) = self.current.clone() {
+                let gain = self.gain_at(&track, self.queue.current_index());
+                if gain != self.current_gain {
+                    self.current_gain = gain;
+                    self.engine.set_gain(self.token, factor(gain));
+                }
+            }
+        }
+        if let Some((token, id)) = self.preloaded {
+            if let Some(track) = self.library.index().track(id) {
+                let gain = self.gain_at(&track, self.queue.peek_next_index(true));
+                if gain != self.preloaded_gain {
+                    self.preloaded_gain = gain;
+                    self.engine.set_gain(token, factor(gain));
+                }
+            }
+        }
+        self.update_details();
+    }
+
+    /// Measure library songs that have no ReplayGain tags, in the background.
+    fn start_measuring(&mut self) {
+        if !self.settings.volume_levelling || self.library.folders().is_empty() {
+            return;
+        }
+        if self.library.is_measuring() {
+            self.loudness_again = true;
+            return;
+        }
+        let stop = Arc::new(AtomicBool::new(false));
+        self.loudness_stop = Some(stop.clone());
+        let library = self.library.clone();
+        let tx = self.loudness_tx.clone();
+        std::thread::Builder::new()
+            .name("lychee-loudness".into())
+            .spawn(move || {
+                let progress_tx = tx.clone();
+                let result = library.measure_loudness(&stop, &move |done, total| {
+                    let _ = progress_tx.send(LoudnessMsg::Progress { done, total });
+                });
+                let _ = tx.send(LoudnessMsg::Done(result.map_err(|e| e.to_string())));
+            })
+            .ok();
+    }
+
+    fn stop_measuring(&mut self) {
+        self.loudness_again = false;
+        if let Some(stop) = self.loudness_stop.take() {
+            stop.store(true, Ordering::Relaxed);
+        }
+    }
+
+    fn on_loudness(&mut self, msg: LoudnessMsg) {
+        match msg {
+            LoudnessMsg::Progress { done, total } => self.loudness_progress = Some((done, total)),
+            LoudnessMsg::Done(result) => {
+                self.loudness_progress = None;
+                self.loudness_stop = None;
+                match result {
+                    Ok(n) if n > 0 => tracing::info!("measured the loudness of {n} songs"),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("measuring loudness failed: {e}"),
+                }
+                if std::mem::take(&mut self.loudness_again) {
+                    self.start_measuring();
+                }
+                self.refresh_gains(false);
+            }
+        }
+        self.update_levelling_status();
+    }
+
+    fn update_levelling_status(&mut self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let text = match self.loudness_progress {
+            Some((done, total)) => {
+                format!("Measuring the loudness of songs without ReplayGain tags… {} of {}", thousands(done), thousands(total))
+            }
+            None => {
+                let index = self.library.index();
+                let s = index.stats();
+                if s.tracks == 0 {
+                    String::new()
+                } else {
+                    format!(
+                        "Levelling {} of {} songs: {} from ReplayGain tags, {} measured by Lychee",
+                        thousands(s.levelled_tags + s.levelled_measured),
+                        thousands(s.tracks),
+                        thousands(s.levelled_tags),
+                        thousands(s.levelled_measured)
+                    )
+                }
+            }
+        };
+        ui.global::<AppState>().set_levelling_status(text.into());
     }
 
     // ---------------------------------------------------------------------------------------
@@ -2516,6 +2705,10 @@ impl App {
                 add("Decoder", format!("{} · {} Hz · {} ch", info.codec, info.sample_rate, info.channels));
             }
             add("Output", self.output.clone());
+            if self.settings.volume_levelling {
+                let known = self.library.index().track(t.id).unwrap_or_else(|| t.clone());
+                add("Levelling", levelling_text(self.current_gain, &known));
+            }
             add("Duration", format_duration_ms(t.duration_ms));
             add("File size", human_bytes(t.file_size));
             add("Plays", if t.play_count > 0 { t.play_count.to_string() } else { "Never".into() });
@@ -2553,6 +2746,7 @@ impl App {
         state.set_library_empty(self.library.folders().is_empty() && s.tracks == 0);
         drop(index);
         self.update_lastfm_ui();
+        self.update_levelling_status();
     }
 
     fn is_dark(&self) -> bool {
@@ -2882,6 +3076,8 @@ impl App {
             "theme" => self.handle(Action::SetThemeMode(arg.parse().unwrap_or(1))),
             "look" => self.handle(Action::SetTheme(arg.to_string())),
             "art-colours" => self.handle(Action::SetDynamicAccent(arg != "0")),
+            "levelling" => self.handle(Action::SetVolumeLevelling(arg != "0")),
+            "preamp" => self.handle(Action::SetLevellingPreamp(arg.parse().unwrap_or(0))),
             "like" => self.handle(Action::ToggleLikeCurrent),
             "queue" => {
                 if let Some(id) = find_album(self, arg) {
@@ -2899,6 +3095,7 @@ impl App {
                 self.refresh_library_views();
                 self.refresh_page();
                 self.update_settings_ui();
+                self.start_measuring();
             }
             "like-album" => {
                 if let Some(id) = find_album(self, arg) {
@@ -3135,6 +3332,33 @@ fn long_format(f: &AudioFormat) -> String {
 
 fn plural(n: usize) -> &'static str {
     if n == 1 { "" } else { "s" }
+}
+
+/// The Settings choice (0..=3) for a pre-amp in dB (0, 2, 4, 6).
+fn preamp_index(db: f32) -> i32 {
+    ((db / 2.0).round() as i32).clamp(0, 3)
+}
+
+/// Linear engine gain for a levelling choice (1.0 when off or unknown).
+fn factor(gain: Option<Gain>) -> f32 {
+    gain.map_or(1.0, |g| g.factor())
+}
+
+/// The Details panel's "Levelling" line: "−6.2 dB · album gain, from tags".
+fn levelling_text(gain: Option<Gain>, track: &Track) -> String {
+    match gain {
+        Some(g) => {
+            let kind = if g.album { "album gain" } else { "track gain" };
+            let from = match g.source {
+                GainSource::Tags => "from tags",
+                GainSource::Measured => "measured",
+            };
+            format!("{} dB · {kind}, {from}", format!("{:+.1}", g.db).replace('-', "\u{2212}"))
+        }
+        None if track.track_gain_db().is_some() => "Measured; used from the next play".into(),
+        None if track.loudness.is_some() => "Couldn't be measured".into(),
+        None => "Not measured yet".into(),
+    }
 }
 
 fn thousands(n: usize) -> String {

@@ -8,9 +8,12 @@
 //! A control thread decodes about a second ahead of the device. The next track can be
 //! pre-loaded so it starts on the exact sample the previous one ends (gapless). The real-time
 //! callback never allocates or blocks; it applies volume and short fades to avoid clicks on pause,
-//! resume and seek.
+//! resume and seek. Each track can carry its own gain (volume levelling), applied while decoding
+//! so it changes on the exact sample where the next track starts. [`loudness`] measures files
+//! that have no ReplayGain tags.
 
 mod engine;
+pub mod loudness;
 mod output;
 mod remix;
 mod resample;

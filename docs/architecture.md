@@ -20,8 +20,9 @@ lives in its own crate with a small API. The UI never talks to services directly
 ```
 crates/
 ├─ lychee-core       Track/Album/Playlist model, the play Queue (shuffle, repeat, play-next), helpers
-├─ lychee-audio      Engine: Symphonia demux/decode (+ pure-Rust Opus), remix, rubato resample,
-│                    lock-free ring buffer, cpal output, gapless hand-over, clickless fades
+├─ lychee-audio      Engine: Symphonia demux/decode (+ pure-Rust Opus), remix, per-track gain, rubato
+│                    resample, lock-free ring buffer, cpal output, gapless hand-over, clickless fades;
+│                    BS.1770 / EBU R128 loudness meter (loudness.rs)
 ├─ lychee-library    Scanner (walkdir + scoped threads + lofty), artwork cache and colours, SQLite store,
 │                    in-memory LibraryIndex with fuzzy search, LRC parsing
 ├─ lychee-lastfm     Last.fm client (auth, now playing, scrobble, love) and a background Scrobbler
@@ -37,7 +38,7 @@ crates/
 ```
 
 Only `lychee` depends on Slint, and only `lychee-platform` has OS-specific code. Everything else is plain,
-testable Rust: `cargo test --workspace` runs 73 tests. They include an end-to-end scan of a temporary
+testable Rust: `cargo test --workspace` runs 115 tests. They include an end-to-end scan of a temporary
 music folder and tag round trips through seven container formats.
 
 ## Runtime
@@ -63,6 +64,12 @@ music folder and tag round trips through seven container formats.
 - **Engine tokens.** Each loaded or pre-loaded track gets a token. The engine reports `Loaded`, `Started`
   (audible, which is how gapless hand-overs are detected), `Ended` and `Error` per token, and exposes the
   audible position through atomics.
+- **Volume levelling.** The scanner reads ReplayGain tags into the database; `Library::measure_loudness`
+  measures songs without them on half the cores, in the background, and saves each batch (a measurement
+  survives tag edits as long as the duration and codec stay the same). `lychee_core::gain::choose` picks
+  album or track gain, and the app passes it with `Engine::load`/`preload` as a linear factor. The engine
+  multiplies samples while decoding, so the gain switches on the exact sample of a gapless hand-over;
+  `Engine::set_gain` re-decodes from the audible position, so turning levelling on or off is heard at once.
 - **Album handles.** Album ids are 63-bit hashes and Slint ints are 32-bit, so the UI uses session-local
   handles that map back to ids.
 
@@ -106,7 +113,7 @@ mini player is open, and showing it again maps a fresh window.
 | To add… | Implement / touch |
 |---|---|
 | A decoder (FFmpeg, libopus, DSD) | a new variant in `lychee-audio`'s `Decoder` (see `source.rs`) |
-| A DSP stage (ReplayGain, EQ, crossfade) | the decode → push path in `engine.rs::fill` (before the ring buffer) |
+| A DSP stage (EQ, crossfade) | the decode → push path in `engine.rs::fill` (before the ring buffer) |
 | A library source (Subsonic, Jellyfin) | a sibling of `Library` producing `Track`s; the index and UI are source-agnostic |
 | A scrobbler (ListenBrainz) | a sibling of `lychee-lastfm::Scrobbler`; the controller already tracks listens (`lastfm.rs::Listen`) |
 | A lyrics or artwork provider | `lychee-library::lyrics::load` / `ArtIngest`; online ones in `lychee-lookup` |
@@ -142,10 +149,10 @@ instead of fading.
 ## Testing
 
 - **Core:** queue rules (shuffle keeps the current track, user-queued tracks stay put, repeat modes, moves).
-- **Audio:** remix, exact-length resampling; `examples/decode.rs` and `examples/engine_check.rs` exercise
+- **Audio:** remix, exact-length resampling, the loudness meter against EBU Tech 3341's reference levels; `examples/decode.rs` and `examples/engine_check.rs` exercise
   every format and a silent gapless hand-over on a real device.
-- **Library:** schema, upserts that keep user data, playlists, LRC parsing, accent/tint, fuzzy ranking,
-  and an end-to-end scan of a generated folder.
+- **Library:** schema, upserts that keep user data (and loudness across tag edits), playlists, LRC parsing,
+  accent/tint, fuzzy ranking, and end-to-end scans of generated folders, including loudness measurement.
 - **Last.fm:** request signatures and error classification.
 - **Tagger:** masks, renaming, case rules, undo, and round trips through FLAC, MP3, Ogg Vorbis, Opus, M4A,
   WAV and AIFF fixtures (every field, pictures, clearing). Also checks that a private ID3 frame survives

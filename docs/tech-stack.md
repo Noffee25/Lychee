@@ -113,7 +113,8 @@ file ─► Symphonia reader ─► decoder ─► rubato (if rates differ) ─�
 
 Rules: the real-time callback never allocates, locks or does I/O. Decoding runs on its own thread, a little ahead.
 
-Supporting crates: **rubato** (resampling), **rtrb** (lock-free single-producer single-consumer ring buffer), **realfft** (spectrum), **ebur128** (loudness and ReplayGain analysis), **biquad** (EQ filters).
+Supporting crates: **rubato** (resampling), **rtrb** (lock-free single-producer single-consumer ring buffer), **realfft** (spectrum), **biquad** (EQ filters). Loudness for volume levelling is measured by Lychee's own
+BS.1770 meter (`lychee-audio/src/loudness.rs`, checked against the **ebur128** crate) instead of that crate.
 
 ---
 

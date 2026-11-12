@@ -7,7 +7,7 @@ use lofty::file::FileType;
 use lofty::picture::PictureType;
 use lofty::prelude::*;
 use lofty::tag::Tag;
-use lychee_core::AudioFormat;
+use lychee_core::{AudioFormat, ReplayGain};
 
 use crate::db::TrackRecord;
 
@@ -46,6 +46,10 @@ pub fn read(path: &Path) -> std::io::Result<FileMeta> {
             };
             if let Some(tag) = tagged.primary_tag().or_else(|| tagged.first_tag()) {
                 apply_tag(tag, &mut record);
+            }
+            record.replay_gain = replay_gain(tagged.primary_tag().into_iter().chain(tagged.tags()));
+            if tagged.file_type() == FileType::Opus {
+                opus_gain(path, &mut record.replay_gain);
             }
             picture = tagged.tags().iter().find_map(front_cover);
         }
@@ -108,6 +112,39 @@ fn apply_tag(tag: &Tag, record: &mut TrackRecord) {
     let genres: Vec<String> = tag.get_strings(ItemKey::Genre).flat_map(lychee_core::split_genres).map(clean).collect();
     record.genre = Some(lychee_core::join_genres(genres.iter().map(String::as_str))).filter(|g| !g.is_empty());
     record.composer = tag.get_string(ItemKey::Composer).map(clean).filter(|c| !c.is_empty());
+}
+
+/// ReplayGain values from the first tag that has them (MP3s often keep them in an APE tag, as
+/// mp3gain writes them, next to the ID3v2 tag).
+fn replay_gain<'a>(tags: impl Iterator<Item = &'a Tag> + Clone) -> ReplayGain {
+    use lychee_core::gain::{parse_gain, parse_peak};
+    let find = |key: ItemKey, parse: fn(&str) -> Option<f32>| tags.clone().find_map(|t| t.get_string(key).and_then(parse));
+    ReplayGain {
+        track_gain: find(ItemKey::ReplayGainTrackGain, parse_gain),
+        track_peak: find(ItemKey::ReplayGainTrackPeak, parse_peak),
+        album_gain: find(ItemKey::ReplayGainAlbumGain, parse_gain),
+        album_peak: find(ItemKey::ReplayGainAlbumPeak, parse_peak),
+    }
+}
+
+/// Opus keeps its gains in `R128_TRACK_GAIN`/`R128_ALBUM_GAIN` (relative to −23 LUFS), on top
+/// of the output gain in the stream header. Lychee's Opus decoder doesn't apply that header gain,
+/// so it is added to every gain here; Lychee's own measurements see the same undecorated signal.
+fn opus_gain(path: &Path, rg: &mut ReplayGain) {
+    use lofty::config::{ParseOptions, ParsingMode};
+    use lofty::file::AudioFile;
+    use lychee_core::gain::parse_r128;
+    let Ok(mut file) = std::fs::File::open(path) else { return };
+    let options = ParseOptions::new().parsing_mode(ParsingMode::Relaxed).read_cover_art(false);
+    let Ok(opus) = lofty::ogg::OpusFile::read_from(&mut file, options) else { return };
+    let comments = opus.vorbis_comments();
+    rg.track_gain = rg.track_gain.or_else(|| comments.get("R128_TRACK_GAIN").and_then(parse_r128));
+    rg.album_gain = rg.album_gain.or_else(|| comments.get("R128_ALBUM_GAIN").and_then(parse_r128));
+    let header = opus.properties().output_gain_db();
+    if header != 0.0 {
+        rg.track_gain = rg.track_gain.map(|g| g + header);
+        rg.album_gain = rg.album_gain.map(|g| g + header);
+    }
 }
 
 fn front_cover(tag: &Tag) -> Option<Vec<u8>> {
@@ -196,6 +233,22 @@ mod tests {
         let mut record = TrackRecord::default();
         apply_tag(&tag, &mut record);
         (record.artist, record.main_artist)
+    }
+
+    #[test]
+    fn reads_replay_gain_from_any_tag() {
+        let mut id3 = Tag::new(TagType::Id3v2);
+        id3.push(TagItem::new(ItemKey::TrackTitle, ItemValue::Text("Song".into())));
+        let mut ape = Tag::new(TagType::Ape);
+        ape.push(TagItem::new(ItemKey::ReplayGainTrackGain, ItemValue::Text("-7.25 dB".into())));
+        ape.push(TagItem::new(ItemKey::ReplayGainTrackPeak, ItemValue::Text("0.977".into())));
+        ape.push(TagItem::new(ItemKey::ReplayGainAlbumGain, ItemValue::Text("+1.5 dB".into())));
+        let tags = [id3, ape];
+        let rg = replay_gain(tags.iter());
+        assert_eq!(rg.track_gain, Some(-7.25));
+        assert_eq!(rg.track_peak, Some(0.977));
+        assert_eq!(rg.album_gain, Some(1.5));
+        assert_eq!(rg.album_peak, None);
     }
 
     #[test]

@@ -31,9 +31,11 @@ before changing code: they record decisions the owner made and pitfalls that alr
 ```
 crates/
   lychee-core      model (Track, Album, ids), the play Queue (shuffle/repeat/play-next), formatting,
+                   volume levelling rules (gain.rs: tag parsing, album gain, album/track choice),
                    MD5 (md5.rs: Last.fm signatures and artwork cache keys)
-  lychee-audio     Engine: Symphonia decode (+ pure-Rust Opus), remix, rubato resample, rtrb ring
-                   buffer, cpal output, gapless hand-over, fades. examples/decode.rs, engine_check.rs
+  lychee-audio     Engine: Symphonia decode (+ pure-Rust Opus), remix, per-track gain, rubato resample,
+                   rtrb ring buffer, cpal output, gapless hand-over, fades; loudness.rs (EBU R128 meter).
+                   examples/decode.rs, engine_check.rs
   lychee-library   scanner (walkdir + scoped threads + lofty), SQLite store (db.rs), artwork cache + accent/tint
                    colours, in-memory LibraryIndex + fuzzy search, LRC lyrics, refresh_files()
   lychee-lastfm    Last.fm client and background Scrobbler with an offline queue
@@ -172,6 +174,19 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
   - **Opening files:** Finder's "Open With" doesn't work, because winit 0.30 doesn't pass open-file
     events on. Drag and drop does work.
 
+- **Volume levelling** (ReplayGain 2.0, −18 LUFS):
+  - Gains are read from tags at scan time (any tag in the file; Opus `R128_*` tags are converted and include the
+    header output gain, which Lychee's Opus decoder doesn't apply). Songs without tags are measured in the
+    background (`Library::measure_loudness`) after every scan and when the setting is turned on.
+  - Album gain is used when a neighbour in the queue's play order is from the same album. A measured album's
+    gain is the duration-weighted power mean of its songs (within a fraction of a dB of gating the whole album).
+  - New measurements change only the pre-loaded song's gain, never the playing one (no jump mid-song); the
+    setting changes both at once (`Engine::set_gain` re-decodes from the audible position).
+  - The pre-amp (`levelling_preamp`, 0/2/4/6 dB) is added before the peak limit, so it never makes a song
+    clip; quiet songs that hit their peak simply stay below the rest. Songs with no loudness data get no
+    pre-amp (they play unlevelled, which is usually loud already).
+  - `RUST_LOG=lychee=debug,lychee_audio=debug` logs every gain decision.
+
 ## Slint pitfalls (1.18, winit + FemtoVG)
 
 - **No text inside rounded clips or faded containers.** FemtoVG draws `clip: true` with a
@@ -224,7 +239,9 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
   - Scene steps are `;`-separated (see `App::run_scene` and `screenshot.rs`):
     - pages: `page:`, `album:`, `artist:`
     - playback: `play-album:`, `track:N`, `seek:MS`, `pause`
-    - UI: `palette:`, `tab:`, `theme:N` (mode), `look:ID` (theme), `art-colours:0|1`, `like`, `queue:`, `toast:`
+    - UI: `palette:`, `tab:`, `theme:N` (mode), `look:ID` (theme), `art-colours:0|1`, `levelling:0|1`, `preamp:N`
+      (0–3 = 0/+2/+4/+6 dB), `like`,
+      `queue:`, `toast:`
     - library: `add-folder:`, `like-album:`
     - tag editor: `edit-album:`, `editor-open:PATH`, `editor-select:0,1`, `editor-tab:`,
       `editor-field:id=value`, `editor-more`, `editor-scanner:N` (3 = artists, 4 = genres), `editor-artists-style:N`,
@@ -235,6 +252,8 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
   - Extras: `LYCHEE_SCREENSHOT_SIZE=WxH`, `LYCHEE_SCREENSHOT_HOVER=x,y` (hover states), `LYCHEE_SCREENSHOT_CLICK=x,y`
     (one click, e.g. to open a dropdown),
     `LYCHEE_SCREENSHOT_MINI=mini.png`, and `LYCHEE_SCREENSHOT_MINI_CLICKS="x,y;x,y"`.
+  - Scenes that play music use the real audio device. Set `muted = true` in the `LYCHEE_HOME` profile's
+    `config.toml` first, or the owner hears it.
   - The software renderer can't show FemtoVG issues (layers and blur), rounded clipping, or compositor
     behaviour.
 - **Real compositor tests without touching the owner's desktop.** Run a nested headless mutter:
@@ -320,6 +339,8 @@ The owner asked for a lean dependency tree that loses no features. The Linux bui
   - Slint's `image-default-formats` (it pulled in an AV1 *encoder* and EXR); the `image` crate keeps
     jpeg/png/webp/gif/bmp/tiff.
   - `md-5` (replaced by `lychee_core::md5`, checked against RFC 1321 and the old crate's output);
+  - `ebur128` was never added: `lychee_audio::loudness` implements BS.1770 (it would have brought three crates,
+    one a second `bitflags`). It matched the crate to 0.0001 LU on FLAC, MP3, Opus, mono and 5.1 test files;
   - `rayon` (scoped threads in `parallel_filter_map`);
   - `open` (`lychee_platform::open`);
   - `tracing-subscriber`'s `env-filter` (`Targets` parses the same `RUST_LOG` syntax);
@@ -347,4 +368,5 @@ Done and planned work is tracked in `docs/features.md`. Notable gaps:
   about unsaved tag edits.
 - EasyTAG features not done yet: playlist generator, loading file names from a text file, ID3v2.3/2.4
   conversion, stripping tags.
-- Also planned: AcoustID fingerprints, ReplayGain, live folder watching, and a system tray.
+- Also planned: AcoustID fingerprints, live folder watching, and a system tray. Volume levelling could
+  later write its measurements into files' ReplayGain tags from the tag editor.

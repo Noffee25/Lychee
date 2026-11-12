@@ -3,10 +3,10 @@
 
 use std::path::{Path, PathBuf};
 
-use lychee_core::{AudioFormat, Playlist, PlaylistId, Track, TrackId, now_unix};
+use lychee_core::{AudioFormat, Measured, Playlist, PlaylistId, ReplayGain, Track, TrackId, now_unix};
 use rusqlite::{Connection, OptionalExtension, params};
 
-const SCHEMA_VERSION: i64 = 3;
+const SCHEMA_VERSION: i64 = 4;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -84,6 +84,20 @@ const SCHEMA_V3: &str = "
 UPDATE tracks SET mtime = 0;
 ";
 
+/// Volume levelling: ReplayGain tags (`rg_*`, dB and linear peaks) and Lychee's own measurement
+/// for files without them (`lufs`, `lufs_peak`; `lufs_done` = 1 once tried, even if it failed).
+/// Clearing the file stamps makes the next scan read the ReplayGain tags of every file.
+const SCHEMA_V4: &str = "
+ALTER TABLE tracks ADD COLUMN rg_track_gain REAL;
+ALTER TABLE tracks ADD COLUMN rg_track_peak REAL;
+ALTER TABLE tracks ADD COLUMN rg_album_gain REAL;
+ALTER TABLE tracks ADD COLUMN rg_album_peak REAL;
+ALTER TABLE tracks ADD COLUMN lufs REAL;
+ALTER TABLE tracks ADD COLUMN lufs_peak REAL;
+ALTER TABLE tracks ADD COLUMN lufs_done INTEGER NOT NULL DEFAULT 0;
+UPDATE tracks SET mtime = 0;
+";
+
 /// Metadata for one file, as written by the scanner.
 #[derive(Clone, Debug, Default)]
 pub struct TrackRecord {
@@ -106,6 +120,7 @@ pub struct TrackRecord {
     pub duration_ms: u64,
     pub format: AudioFormat,
     pub artwork: Option<String>,
+    pub replay_gain: ReplayGain,
 }
 
 pub struct Db {
@@ -136,6 +151,9 @@ impl Db {
         }
         if (1..3).contains(&version) {
             conn.execute_batch(SCHEMA_V3)?;
+        }
+        if version < 4 {
+            conn.execute_batch(SCHEMA_V4)?;
         }
         if version < SCHEMA_VERSION {
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -183,9 +201,9 @@ impl Db {
             let mut stmt = tx.prepare(
                 "INSERT INTO tracks (path, in_library, mtime, size, title, artist, album, album_artist, track_no,
                     disc_no, year, genre, composer, duration_ms, codec, sample_rate, bit_depth, channels, bitrate,
-                    artwork, added_at, main_artist)
+                    artwork, added_at, main_artist, rg_track_gain, rg_track_peak, rg_album_gain, rg_album_peak)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21,
-                    ?22)
+                    ?22, ?23, ?24, ?25, ?26)
                  ON CONFLICT(path) DO UPDATE SET
                     in_library = max(in_library, excluded.in_library), mtime = excluded.mtime, size = excluded.size,
                     title = excluded.title, artist = excluded.artist, album = excluded.album,
@@ -193,7 +211,17 @@ impl Db {
                     year = excluded.year, genre = excluded.genre, composer = excluded.composer,
                     duration_ms = excluded.duration_ms, codec = excluded.codec, sample_rate = excluded.sample_rate,
                     bit_depth = excluded.bit_depth, channels = excluded.channels, bitrate = excluded.bitrate,
-                    artwork = excluded.artwork, main_artist = excluded.main_artist
+                    artwork = excluded.artwork, main_artist = excluded.main_artist,
+                    rg_track_gain = excluded.rg_track_gain, rg_track_peak = excluded.rg_track_peak,
+                    rg_album_gain = excluded.rg_album_gain, rg_album_peak = excluded.rg_album_peak,
+                    -- A measurement stays valid while the audio does: saving tags changes the file
+                    -- but not its length or codec. (SQLite reads the old row on the right-hand side.)
+                    lufs_done = CASE WHEN duration_ms = excluded.duration_ms AND codec = excluded.codec
+                        THEN lufs_done ELSE 0 END,
+                    lufs = CASE WHEN duration_ms = excluded.duration_ms AND codec = excluded.codec
+                        THEN lufs END,
+                    lufs_peak = CASE WHEN duration_ms = excluded.duration_ms AND codec = excluded.codec
+                        THEN lufs_peak END
                  RETURNING id",
             )?;
             let now = now_unix();
@@ -223,6 +251,10 @@ impl Db {
                         r.artwork,
                         now,
                         r.main_artist,
+                        r.replay_gain.track_gain,
+                        r.replay_gain.track_peak,
+                        r.replay_gain.album_gain,
+                        r.replay_gain.album_peak,
                     ],
                     |row| row.get(0),
                 )?;
@@ -248,7 +280,8 @@ impl Db {
         let mut stmt = self.conn.prepare(
             "SELECT id, path, in_library, size, title, artist, album, album_artist, track_no, disc_no, year, genre,
                     composer, duration_ms, codec, sample_rate, bit_depth, channels, bitrate, artwork, added_at,
-                    play_count, last_played, liked, liked_at, main_artist
+                    play_count, last_played, liked, liked_at, main_artist, rg_track_gain, rg_track_peak,
+                    rg_album_gain, rg_album_peak, lufs, lufs_peak, lufs_done
              FROM tracks",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -281,10 +314,43 @@ impl Db {
                 liked: r.get::<_, i64>(23)? != 0,
                 liked_at: r.get(24)?,
                 main_artist: r.get(25)?,
+                replay_gain: ReplayGain {
+                    track_gain: r.get::<_, Option<f64>>(26)?.map(|v| v as f32),
+                    track_peak: r.get::<_, Option<f64>>(27)?.map(|v| v as f32),
+                    album_gain: r.get::<_, Option<f64>>(28)?.map(|v| v as f32),
+                    album_peak: r.get::<_, Option<f64>>(29)?.map(|v| v as f32),
+                },
+                loudness: (r.get::<_, i64>(32)? != 0).then_some(Measured {
+                    lufs: r.get::<_, Option<f64>>(30)?.map(|v| v as f32),
+                    peak: r.get::<_, Option<f64>>(31)?.map(|v| v as f32),
+                }),
                 album_id: 0,
             })
         })?;
         rows.collect()
+    }
+
+    /// Library songs that have no ReplayGain tags and haven't been measured yet.
+    pub fn loudness_todo(&self) -> rusqlite::Result<Vec<(TrackId, PathBuf)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, path FROM tracks
+             WHERE in_library = 1 AND lufs_done = 0 AND rg_track_gain IS NULL ORDER BY path",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, PathBuf::from(r.get::<_, String>(1)?))))?;
+        rows.collect()
+    }
+
+    /// Store measurements; `None` marks a song that couldn't be measured, so it isn't tried again.
+    pub fn set_loudness(&mut self, results: &[(TrackId, Option<Measured>)]) -> rusqlite::Result<()> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut stmt = tx.prepare("UPDATE tracks SET lufs = ?2, lufs_peak = ?3, lufs_done = 1 WHERE id = ?1")?;
+            for (id, m) in results {
+                let m = m.unwrap_or_default();
+                stmt.execute(params![id, m.lufs.map(f64::from), m.peak.map(f64::from)])?;
+            }
+        }
+        tx.commit()
     }
 
     /// A file moved: keep its row (and so its id, likes and plays) under the new path.
@@ -427,6 +493,37 @@ mod tests {
         assert_eq!(t.title, "A (remaster)");
         assert!(t.liked && t.liked_at.is_some());
         assert_eq!(t.play_count, 1);
+    }
+
+    #[test]
+    fn loudness_survives_tag_edits_but_not_new_audio() {
+        let mut db = Db::open_in_memory().unwrap();
+        let rec = |path: &str, duration_ms, gain| TrackRecord {
+            path: path.into(),
+            duration_ms,
+            replay_gain: ReplayGain { track_gain: gain, ..Default::default() },
+            ..Default::default()
+        };
+        let ids = db.upsert_tracks(&[rec("/m/a.flac", 1000, None), rec("/m/b.flac", 1000, Some(-6.0))], true).unwrap();
+        assert_eq!(db.loudness_todo().unwrap(), vec![(ids[0], PathBuf::from("/m/a.flac"))], "tagged songs need no measuring");
+
+        let m = Measured { lufs: Some(-9.0), peak: Some(0.9) };
+        db.set_loudness(&[(ids[0], Some(m))]).unwrap();
+        assert!(db.loudness_todo().unwrap().is_empty());
+
+        // New tags, same audio: the measurement stays.
+        db.upsert_tracks(&[TrackRecord { title: "New title".into(), ..rec("/m/a.flac", 1000, None) }], true).unwrap();
+        let find = |db: &Db| db.all_tracks().unwrap().into_iter().find(|t| t.id == ids[0]).unwrap();
+        assert_eq!(find(&db).loudness, Some(m));
+        // Different audio: measure again.
+        db.upsert_tracks(&[rec("/m/a.flac", 2000, None)], true).unwrap();
+        assert_eq!(find(&db).loudness, None);
+        assert_eq!(db.loudness_todo().unwrap().len(), 1);
+
+        // A song that couldn't be measured isn't tried again.
+        db.set_loudness(&[(ids[0], None)]).unwrap();
+        assert_eq!(find(&db).loudness, Some(Measured::default()));
+        assert!(db.loudness_todo().unwrap().is_empty());
     }
 
     #[test]

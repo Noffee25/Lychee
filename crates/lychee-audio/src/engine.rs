@@ -28,8 +28,9 @@ pub enum EngineEvent {
 }
 
 enum Cmd {
-    Load { token: u64, path: PathBuf, start_ms: u64, play: bool },
-    Preload { token: u64, path: PathBuf },
+    Load { token: u64, path: PathBuf, start_ms: u64, play: bool, gain: f32 },
+    Preload { token: u64, path: PathBuf, gain: f32 },
+    SetGain { token: u64, gain: f32 },
     CancelPreload,
     SetPlaying(bool),
     Seek(u64),
@@ -65,13 +66,20 @@ impl Engine {
     }
 
     /// Open `path` and start at `start_ms`. `token` identifies this track in later events.
-    pub fn load(&self, token: u64, path: PathBuf, start_ms: u64, play: bool) {
-        let _ = self.tx.send(Cmd::Load { token, path, start_ms, play });
+    /// `gain` is a linear factor for this track alone (volume levelling); 1.0 leaves it as is.
+    pub fn load(&self, token: u64, path: PathBuf, start_ms: u64, play: bool, gain: f32) {
+        let _ = self.tx.send(Cmd::Load { token, path, start_ms, play, gain });
     }
 
     /// Open the next track ahead of time so it starts without a gap.
-    pub fn preload(&self, token: u64, path: PathBuf) {
-        let _ = self.tx.send(Cmd::Preload { token, path });
+    pub fn preload(&self, token: u64, path: PathBuf, gain: f32) {
+        let _ = self.tx.send(Cmd::Preload { token, path, gain });
+    }
+
+    /// Change a loaded or pre-loaded track's gain. Audio already decoded with the old gain is
+    /// thrown away, so the change is heard at once.
+    pub fn set_gain(&self, token: u64, gain: f32) {
+        let _ = self.tx.send(Cmd::SetGain { token, gain });
     }
 
     pub fn cancel_preload(&self) {
@@ -127,8 +135,17 @@ struct Active {
     token: u64,
     path: PathBuf,
     source: Source,
+    gain: f32,
     resampler: Option<StreamResampler>,
     done: bool,
+}
+
+/// A track opened ahead of time for a gapless hand-over.
+struct Next {
+    token: u64,
+    path: PathBuf,
+    source: Source,
+    gain: f32,
 }
 
 struct Worker {
@@ -144,7 +161,7 @@ struct Worker {
     /// The previous track after a gapless hand-over, kept until it is no longer audible so a seek
     /// in its last second still works.
     retired: Option<Active>,
-    next: Option<(u64, PathBuf, Source)>,
+    next: Option<Next>,
     pending: Vec<f32>,
     scratch: Vec<f32>,
     remixed: Vec<f32>,
@@ -212,15 +229,16 @@ impl Worker {
 
     fn handle(&mut self, cmd: Cmd) -> bool {
         match cmd {
-            Cmd::Load { token, path, start_ms, play } => self.load(token, path, start_ms, play),
-            Cmd::Preload { token, path } => match Source::open(&path) {
-                Ok(source) => self.next = Some((token, path, source)),
+            Cmd::Load { token, path, start_ms, play, gain } => self.load(token, path, start_ms, play, gain),
+            Cmd::Preload { token, path, gain } => match Source::open(&path) {
+                Ok(source) => self.next = Some(Next { token, path, source, gain }),
                 Err(e) => {
                     tracing::warn!("could not pre-load {}: {e}", path.display());
                     self.next = None;
                 }
             },
             Cmd::CancelPreload => self.next = None,
+            Cmd::SetGain { token, gain } => self.set_gain(token, gain),
             Cmd::SetPlaying(playing) => self.shared.playing.store(playing, Relaxed),
             Cmd::Seek(ms) => self.seek(ms),
             Cmd::Stop => self.stop(),
@@ -279,7 +297,7 @@ impl Worker {
         }
     }
 
-    fn activate(&self, token: u64, path: PathBuf, source: Source) -> Active {
+    fn activate(&self, token: u64, path: PathBuf, source: Source, gain: f32) -> Active {
         let resampler = self.output.as_ref().and_then(|out| {
             if source.sample_rate == out.sample_rate {
                 return None;
@@ -292,10 +310,10 @@ impl Worker {
                 }
             }
         });
-        Active { token, path, source, resampler, done: false }
+        Active { token, path, source, gain, resampler, done: false }
     }
 
-    fn load(&mut self, token: u64, path: PathBuf, start_ms: u64, play: bool) {
+    fn load(&mut self, token: u64, path: PathBuf, start_ms: u64, play: bool, gain: f32) {
         self.ended_for = None;
         self.retired = None;
         self.next = None;
@@ -316,7 +334,7 @@ impl Worker {
         };
         let base = if start_ms > 0 { source.seek(start_ms).unwrap_or(0) } else { 0 };
         self.emit(EngineEvent::Loaded { token, duration_ms: source.duration_ms, info: source.info.clone() });
-        self.current = Some(self.activate(token, path, source));
+        self.current = Some(self.activate(token, path, source, gain));
         self.begin_segment(token, base, 0);
         self.last_started = 0;
         self.shared.playing.store(play, Relaxed);
@@ -329,7 +347,8 @@ impl Worker {
         if self.retired.as_ref().is_some_and(|r| r.token == audible) {
             if let Some(mut moved_on) = self.current.take() {
                 if moved_on.source.seek(0).is_ok() {
-                    self.next = Some((moved_on.token, moved_on.path, moved_on.source));
+                    self.next =
+                        Some(Next { token: moved_on.token, path: moved_on.path, source: moved_on.source, gain: moved_on.gain });
                 }
             }
             self.current = self.retired.take();
@@ -345,11 +364,32 @@ impl Worker {
         };
         let token = cur.token;
         cur.done = false;
-        let cur = self.activate(token, cur.path, cur.source); // fresh resampler state
+        let cur = self.activate(token, cur.path, cur.source, cur.gain); // fresh resampler state
         self.current = Some(cur);
         self.ended_for = None;
         self.new_pipe();
         self.begin_segment(token, actual, 0);
+    }
+
+    fn set_gain(&mut self, token: u64, gain: f32) {
+        if let Some(next) = self.next.as_mut().filter(|n| n.token == token) {
+            next.gain = gain;
+        }
+        // Samples of the current (or just retired) track already sit in the ring buffer with the
+        // old gain: decode again from what is audible now.
+        let mut decoded = false;
+        for active in [self.current.as_mut(), self.retired.as_mut()].into_iter().flatten() {
+            if active.token == token && active.gain != gain {
+                active.gain = gain;
+                decoded = true;
+            }
+        }
+        tracing::debug!("gain {gain:.3} for track {token}{}", if decoded { ", decoding again" } else { "" });
+        if decoded {
+            if let Some((_, ms)) = self.shared.position() {
+                self.seek(ms);
+            }
+        }
     }
 
     fn stop(&mut self) {
@@ -409,6 +449,10 @@ impl Worker {
                     Ok(true) => {
                         self.remixed.clear();
                         remix(&self.scratch, cur.source.channels, channels, &mut self.remixed);
+                        if cur.gain != 1.0 {
+                            let gain = cur.gain;
+                            self.remixed.iter_mut().for_each(|s| *s *= gain);
+                        }
                         match cur.resampler.as_mut() {
                             Some(r) => {
                                 if let Err(e) = r.process(&self.remixed, &mut self.pending) {
@@ -435,9 +479,9 @@ impl Worker {
             }
             // Current track fully pushed: hand over to the pre-loaded one without a gap.
             if self.pending.is_empty() {
-                if let Some((token, path, source)) = self.next.take() {
+                if let Some(Next { token, path, source, gain }) = self.next.take() {
                     self.emit(EngineEvent::Loaded { token, duration_ms: source.duration_ms, info: source.info.clone() });
-                    let next = self.activate(token, path, source);
+                    let next = self.activate(token, path, source, gain);
                     let at_frame = self.pushed_samples / channels as u64;
                     self.begin_segment(token, 0, at_frame);
                     self.retired = self.current.replace(next);

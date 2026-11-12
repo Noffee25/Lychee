@@ -128,6 +128,10 @@ pub struct Settings {
     pub track_sort: i32,
     /// Keep the mini player above other windows (on Wayland this runs it on XWayland).
     pub mini_on_top: bool,
+    /// Play every song at about the same loudness (ReplayGain, or Lychee's own measurement).
+    pub volume_levelling: bool,
+    /// Extra gain on top of volume levelling, in dB (0, 2, 4 or 6): a louder target than −18 LUFS.
+    pub levelling_preamp: f32,
     pub lastfm: LastfmSettings,
 }
 
@@ -148,6 +152,8 @@ impl Default for Settings {
             album_sort: 0,
             track_sort: 0,
             mini_on_top: true,
+            volume_levelling: true,
+            levelling_preamp: 0.0,
             lastfm: LastfmSettings::default(),
         }
     }

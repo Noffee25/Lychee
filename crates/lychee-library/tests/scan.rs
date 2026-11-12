@@ -4,6 +4,10 @@ use std::path::Path;
 use lychee_library::{AlbumSort, Library};
 
 fn write_wav(path: &Path, seconds: f32) {
+    write_sine(path, seconds, 8000.0);
+}
+
+fn write_sine(path: &Path, seconds: f32, amplitude: f32) {
     let rate = 44_100u32;
     let frames = (rate as f32 * seconds) as u32;
     let data_len = frames * 4;
@@ -21,7 +25,7 @@ fn write_wav(path: &Path, seconds: f32) {
     bytes.extend_from_slice(b"data");
     bytes.extend_from_slice(&data_len.to_le_bytes());
     for i in 0..frames {
-        let s = ((i as f32 * 440.0 * std::f32::consts::TAU / rate as f32).sin() * 8000.0) as i16;
+        let s = ((i as f32 * 440.0 * std::f32::consts::TAU / rate as f32).sin() * amplitude) as i16;
         bytes.extend_from_slice(&s.to_le_bytes());
         bytes.extend_from_slice(&s.to_le_bytes());
     }
@@ -122,4 +126,32 @@ fn edited_and_renamed_files_keep_their_identity() {
     assert_eq!(lib.scan(&|_| {}).unwrap().added_or_updated, 0);
     // Files outside the library are ignored.
     assert_eq!(lib.refresh_files(&[(root.path().join("x.wav"), root.path().join("y.wav"))]).unwrap(), 0);
+}
+
+#[test]
+fn measures_loudness_for_volume_levelling() {
+    let root = tempfile::tempdir().unwrap();
+    let album = root.path().join("Music").join("Levels");
+    std::fs::create_dir_all(&album).unwrap();
+    write_sine(&album.join("01 Loud.wav"), 2.0, 16_000.0);
+    write_sine(&album.join("02 Quiet.wav"), 2.0, 4_000.0); // 12 dB quieter
+
+    let lib = Library::open(&root.path().join("data"), &root.path().join("cache")).unwrap();
+    lib.add_folder(&root.path().join("Music")).unwrap();
+    lib.scan(&|_| {}).unwrap();
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    assert_eq!(lib.measure_loudness(&stop, &|_, _| {}).unwrap(), 2);
+    assert_eq!(lib.measure_loudness(&stop, &|_, _| {}).unwrap(), 0, "nothing left to measure");
+
+    let index = lib.index();
+    let album = index.albums(AlbumSort::Title)[0];
+    let tracks = index.album_tracks(album.id);
+    let gain = |i: usize| tracks[i].track_gain_db().unwrap().0;
+    // A stereo 440 Hz sine at −6.2 dBFS reads about −6.9 LUFS (K-weighting dips below 1 kHz),
+    // 11.1 dB above the −18 LUFS reference.
+    assert!((gain(0) + 11.1).abs() < 0.2, "{}", gain(0));
+    assert!((gain(1) - gain(0) - 12.04).abs() < 0.05, "{} vs {}", gain(0), gain(1));
+    assert!((tracks[0].track_peak().unwrap() - 16_000.0 / 32_768.0).abs() < 1e-3);
+    let album_gain = album.gain.expect("every song is measured");
+    assert!(album_gain < gain(0) + 3.0 && album_gain > gain(0), "{album_gain}");
 }

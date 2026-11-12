@@ -32,6 +32,12 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 - [x] Output device selection
 - [x] Clickless pause, resume and seek (short fades)
 - [x] Resume where you left off: queue, track, position, volume, shuffle and repeat
+- [x] **Volume levelling** (ReplayGain 2.0, on by default in Settings → Playback): every song plays at about
+  the same loudness (−18 LUFS). Gains come from ReplayGain tags (also APE tags on MP3s and Opus's `R128_*`
+  tags); songs without them are measured in the background with Lychee's own EBU R128 / BS.1770 meter.
+  Album gain while an album plays (the songs beside it in the queue are from the same album), track gain
+  otherwise; peaks keep quiet songs from clipping when they're raised. A pre-amp (0 to +6 dB) plays everything
+  louder for people who find −18 LUFS too quiet. The Details panel shows the gain in use
 
 ### Library
 - [x] Add and remove music folders; parallel first scan; fast incremental rescans (only changed files are read)
@@ -153,7 +159,6 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 
 ## v0.2 "Daily Driver"
 - [ ] System tray icon with controls; optionally close to tray
-- [ ] **ReplayGain** (track/album) from tags, plus EBU R128 analysis for untagged files
 - [ ] Optional crossfade (never between gapless album tracks)
 - [ ] Waveform seek bar
 - [ ] Ratings and smart playlists (rules: genre, year, rating, play count, date added, format…)

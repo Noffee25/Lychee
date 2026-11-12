@@ -396,6 +396,31 @@ export component SettingsPage inherits Rectangle {
                             color: Theme.text;
                         }
                         DeviceSelect { }
+                        Divider { }
+                        SettingRow {
+                            label: "Volume levelling";
+                            hint: "Plays every song at about the same loudness (ReplayGain), so you aren't reaching for the volume between a quiet ballad and a loud track. Albums keep their own quiet and loud moments.";
+                            Toggle {
+                                checked: AppState.volume-levelling;
+                                toggled(on) => { Actions.set-volume-levelling(on); }
+                            }
+                        }
+                        if AppState.volume-levelling: SettingRow {
+                            label: "Pre-amp";
+                            hint: "Plays levelled songs louder. Quiet songs that can't be raised this far without distorting stay a little below the rest.";
+                            Segmented {
+                                options: ["0 dB", "+2 dB", "+4 dB", "+6 dB"];
+                                selected <=> AppState.levelling-preamp;
+                                changed(i) => { Actions.set-levelling-preamp(i); }
+                            }
+                        }
+                        if AppState.volume-levelling && AppState.levelling-status != "": Text {
+                            text: AppState.levelling-status;
+                            font-family: Theme.mono;
+                            font-size: 12px;
+                            color: Theme.text-3;
+                            wrap: word-wrap;
+                        }
                     }
 
                     Section {

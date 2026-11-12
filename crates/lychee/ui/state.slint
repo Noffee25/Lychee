@@ -271,6 +271,11 @@ export global AppState {
     in-out property <ThemeCard> light-theme;
     in-out property <bool> dynamic-accent: true;
     in-out property <bool> mini-on-top: true;
+    in-out property <bool> volume-levelling: true;
+    // Pre-amp choice: 0 = 0 dB, 1 = +2, 2 = +4, 3 = +6.
+    in-out property <int> levelling-preamp;
+    // What volume levelling knows: "Measuring loudness… 40 of 120" or how many songs it covers.
+    in-out property <string> levelling-status;
     in-out property <bool> wayland;
     in-out property <string> toast;
     in-out property <string> version;
@@ -341,6 +346,8 @@ export global Actions {
     callback set-theme(string);
     callback set-dynamic-accent(bool);
     callback set-mini-on-top(bool);
+    callback set-volume-levelling(bool);
+    callback set-levelling-preamp(int);
 
     callback lastfm-connect();
     callback lastfm-cancel();

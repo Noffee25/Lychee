@@ -125,15 +125,20 @@ impl Queue {
     /// next file for gapless playback. Returns `None` when the next step can't be known in
     /// advance (for example when the queue will be reshuffled on wrap-around).
     pub fn peek_next(&self, auto: bool) -> Option<TrackId> {
+        self.peek_next_index(auto).map(|i| self.entries[i].track)
+    }
+
+    /// Where in [`Queue::entries`] `peek_next` finds its track.
+    pub fn peek_next_index(&self, auto: bool) -> Option<usize> {
         let cur = self.current?;
         if auto && self.repeat == RepeatMode::One {
-            return self.current();
+            return Some(cur);
         }
         if cur + 1 < self.entries.len() {
-            return Some(self.entries[cur + 1].track);
+            return Some(cur + 1);
         }
-        if self.repeat != RepeatMode::Off && !self.shuffle {
-            return self.entries.first().map(|e| e.track);
+        if self.repeat != RepeatMode::Off && !self.shuffle && !self.entries.is_empty() {
+            return Some(0);
         }
         None
     }

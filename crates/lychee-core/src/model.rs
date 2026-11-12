@@ -138,6 +138,10 @@ pub struct Track {
     pub liked_at: Option<i64>,
     /// False for files that were opened directly ("Open with…") but not imported.
     pub in_library: bool,
+    /// ReplayGain values from the file's tags.
+    pub replay_gain: crate::ReplayGain,
+    /// Loudness Lychee measured, for files without ReplayGain tags (`None` until measured).
+    pub loudness: Option<crate::Measured>,
 }
 
 impl Track {
@@ -181,6 +185,10 @@ pub struct Album {
     /// The "best" format among the album's tracks, for badges.
     pub format: AudioFormat,
     pub folder: Option<PathBuf>,
+    /// Album gain in dB (see [`crate::gain::album_gain_db`]), when every song's loudness is known.
+    pub gain: Option<f32>,
+    /// The highest peak among the album's songs, when known.
+    pub peak: Option<f32>,
 }
 
 /// Stable album id from album artist and title (case-insensitive).

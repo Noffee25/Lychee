@@ -42,6 +42,7 @@ pub struct Library {
     index: RwLock<Arc<LibraryIndex>>,
     artwork: ArtworkCache,
     scanning: AtomicBool,
+    measuring: AtomicBool,
 }
 
 impl Library {
@@ -50,7 +51,13 @@ impl Library {
         std::fs::create_dir_all(data_dir).context("creating the data directory")?;
         let db = db::Db::open(&data_dir.join("library.db")).context("opening the library database")?;
         let artwork = ArtworkCache::new(cache_dir.join("artwork")).context("creating the artwork cache")?;
-        let library = Library { db: Mutex::new(db), index: RwLock::new(Arc::default()), artwork, scanning: AtomicBool::new(false) };
+        let library = Library {
+            db: Mutex::new(db),
+            index: RwLock::new(Arc::default()),
+            artwork,
+            scanning: AtomicBool::new(false),
+            measuring: AtomicBool::new(false),
+        };
         library.reload()?;
         Ok(library)
     }
@@ -148,7 +155,7 @@ impl Library {
         let total = to_read.len();
         let done = AtomicUsize::new(0);
         let art = ArtIngest::new(&self.artwork);
-        let records: Vec<TrackRecord> = parallel_filter_map(&to_read, |path| {
+        let records: Vec<TrackRecord> = parallel_filter_map(&to_read, all_cores(), |path| {
                 let meta = match tags::read(path) {
                     Ok(meta) => meta,
                     Err(e) => {
@@ -178,6 +185,68 @@ impl Library {
         }
         self.reload()?;
         Ok(ScanSummary { added_or_updated: records.len(), removed: removed.len(), total: found.len() })
+    }
+
+    pub fn is_measuring(&self) -> bool {
+        self.measuring.load(Ordering::Relaxed)
+    }
+
+    /// Measure the loudness of library songs that have no ReplayGain tags, for volume levelling.
+    /// Uses half the cores so playback and the UI stay smooth; results are saved as they come, so
+    /// a stopped run continues where it left off. `progress(done, total)` follows each batch, and
+    /// the index is refreshed every few seconds and at the end. Returns how many songs were measured.
+    pub fn measure_loudness(&self, stop: &AtomicBool, progress: &(dyn Fn(usize, usize) + Sync)) -> anyhow::Result<usize> {
+        if self.measuring.swap(true, Ordering::SeqCst) {
+            return Ok(0);
+        }
+        let result = self.measure_inner(stop, progress);
+        self.measuring.store(false, Ordering::SeqCst);
+        result
+    }
+
+    fn measure_inner(&self, stop: &AtomicBool, progress: &(dyn Fn(usize, usize) + Sync)) -> anyhow::Result<usize> {
+        let workers = (all_cores() / 2).max(1);
+        let mut measured = 0;
+        let mut tried: HashSet<TrackId> = HashSet::new();
+        loop {
+            // Songs added by a scan during the run are picked up by the next round.
+            let todo: Vec<(TrackId, PathBuf)> =
+                self.db.lock().loudness_todo()?.into_iter().filter(|(id, _)| !tried.contains(id)).collect();
+            if todo.is_empty() || stop.load(Ordering::Relaxed) {
+                break;
+            }
+            tried.extend(todo.iter().map(|(id, _)| *id));
+            let total = todo.len();
+            let mut last_reload = std::time::Instant::now();
+            progress(0, total);
+            for (n, batch) in todo.chunks(workers * 4).enumerate() {
+                if stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                let results = parallel_filter_map(batch, workers, |(id, path)| {
+                    if stop.load(Ordering::Relaxed) {
+                        return None;
+                    }
+                    let m = match lychee_audio::loudness::measure(path) {
+                        Ok(l) => Some(lychee_core::Measured { lufs: l.lufs.map(|v| v as f32), peak: Some(l.peak) }),
+                        Err(e) => {
+                            tracing::debug!("could not measure {}: {e}", path.display());
+                            None
+                        }
+                    };
+                    Some((*id, m))
+                });
+                measured += results.iter().filter(|(_, m)| m.is_some()).count();
+                self.db.lock().set_loudness(&results)?;
+                progress((n * workers * 4 + batch.len()).min(total), total);
+                if last_reload.elapsed() > std::time::Duration::from_secs(10) {
+                    self.reload()?;
+                    last_reload = std::time::Instant::now();
+                }
+            }
+            self.reload()?;
+        }
+        Ok(measured)
     }
 
     /// Make files that aren't in the library playable ("Open with…", drag and drop, CLI).
@@ -402,10 +471,14 @@ impl<'a> ArtIngest<'a> {
     }
 }
 
-/// `filter_map` over all cores: workers pull the next item from a shared counter, so slow files
-/// don't hold up a whole chunk. (Scoped threads; no thread-pool crate needed.)
-fn parallel_filter_map<T: Sync, R: Send>(items: &[T], f: impl Fn(&T) -> Option<R> + Sync) -> Vec<R> {
-    let workers = std::thread::available_parallelism().map_or(4, |n| n.get()).min(items.len()).max(1);
+fn all_cores() -> usize {
+    std::thread::available_parallelism().map_or(4, |n| n.get())
+}
+
+/// `filter_map` on up to `workers` threads: workers pull the next item from a shared counter, so
+/// slow files don't hold up a whole chunk. (Scoped threads; no thread-pool crate needed.)
+fn parallel_filter_map<T: Sync, R: Send>(items: &[T], workers: usize, f: impl Fn(&T) -> Option<R> + Sync) -> Vec<R> {
+    let workers = workers.min(items.len()).max(1);
     let next = AtomicUsize::new(0);
     std::thread::scope(|s| {
         let handles: Vec<_> = (0..workers)

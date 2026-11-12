@@ -14,6 +14,7 @@
 
 - **Plays essentially anything:** MP3, FLAC (up to 24-bit/192 kHz), WAV, AIFF, ALAC, AAC/M4A, Ogg Vorbis, Opus, CAF and MKV/WebM audio. Decoding is pure Rust.
 - **Gapless playback.** High-quality resampling when your device's rate differs from the file's. Clickless pause, seek and volume.
+- **Volume levelling.** Every song plays at about the same loudness, using ReplayGain tags where your files have them and measuring the rest (EBU R128) in the background. Albums keep their own dynamics, and a pre-amp of up to +6 dB makes everything louder if you prefer.
 - **Fast library.** Parallel scanning, incremental rescans, embedded or folder artwork, and compilations grouped as "Various Artists". Browse Albums, Artists, Songs, Genres (several per song, with spellings like "Hip-Hop" and "Hip Hop" merged), Recently Added and Recently Played.
 - **The Flow interface.** A three-pane layout, album pages tinted with the colors of their artwork, and a Queue / Lyrics / Details side panel. Eleven colour themes, including Catppuccin, Tokyo Night, Gruvbox and Rosé Pine, with separate dark and light picks that can follow the system.
 - **Command palette (Ctrl+K).** Fuzzy-search your whole library and run any command from the keyboard.
@@ -150,7 +151,8 @@ Lychee only changes your music files when you save in the tag editor.
 ```
 crates/
   lychee-core      domain model, play queue (shuffle, repeat, play next), formatting helpers
-  lychee-audio     playback engine: Symphonia + pure-Rust Opus, rubato resampling, gapless, cpal output
+  lychee-audio     playback engine: Symphonia + pure-Rust Opus, rubato resampling, gapless, cpal output,
+                   per-track gain and an EBU R128 loudness meter
   lychee-library   scanning, tags (lofty), artwork + colors, SQLite store, fuzzy search, lyrics
   lychee-lastfm    Last.fm auth, now playing, scrobbling with an offline queue
   lychee-platform  MPRIS (Linux), System Media Transport Controls (Windows), Now Playing (macOS)
