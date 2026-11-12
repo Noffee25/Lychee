@@ -27,6 +27,8 @@ pub struct Credits {
     pub split_commas: bool,
     pub split_ampersands: bool,
     pub split_slashes: bool,
+    /// Join the last name with a comma too ("A feat. B, C, D" rather than "A feat. B, C & D").
+    pub commas_only: bool,
     /// Names kept whole even though they contain a separator, lower-cased with single spaces
     /// ("simon & garfunkel").
     pub keep: HashSet<String>,
@@ -62,14 +64,19 @@ impl Credits {
         if all.is_empty() {
             return artist.to_string();
         }
+        let and = if self.commas_only { ", " } else { " & " };
         match self.style {
-            CreditStyle::FirstFeaturing => featuring(&all[..1], &all[1..]),
+            CreditStyle::FirstFeaturing => featuring(&all[..1], &all[1..], and),
             CreditStyle::KeepFeatured => {
                 let leads: Vec<&str> = p.leads.iter().map(String::as_str).collect();
                 let featured: Vec<&str> = p.featured.iter().map(String::as_str).collect();
-                if leads.is_empty() { featuring(&featured[..1], &featured[1..]) } else { featuring(&leads, &featured) }
+                if leads.is_empty() {
+                    featuring(&featured[..1], &featured[1..], and)
+                } else {
+                    featuring(&leads, &featured, and)
+                }
             }
-            CreditStyle::List => join_list(&all),
+            CreditStyle::List => join_list(&all, and),
             CreditStyle::Semicolons => all.join("; "),
         }
     }
@@ -153,17 +160,21 @@ impl Credits {
     }
 }
 
-/// "A", "A & B", "A, B & C"
-fn join_list(names: &[&str]) -> String {
+/// "A", "A & B", "A, B & C"; `and` is what goes before the last name (" & " or ", ").
+fn join_list(names: &[&str], and: &str) -> String {
     match names {
         [] => String::new(),
         [one] => one.to_string(),
-        [rest @ .., last] => format!("{} & {last}", rest.join(", ")),
+        [rest @ .., last] => format!("{}{and}{last}", rest.join(", ")),
     }
 }
 
-fn featuring(leads: &[&str], featured: &[&str]) -> String {
-    if featured.is_empty() { join_list(leads) } else { format!("{} feat. {}", join_list(leads), join_list(featured)) }
+fn featuring(leads: &[&str], featured: &[&str], and: &str) -> String {
+    if featured.is_empty() {
+        join_list(leads, and)
+    } else {
+        format!("{} feat. {}", join_list(leads, and), join_list(featured, and))
+    }
 }
 
 /// Trim a piece, and the closing bracket a "(feat. B)" leaves behind.
@@ -182,7 +193,14 @@ mod tests {
     use super::*;
 
     fn credits(style: CreditStyle) -> Credits {
-        Credits { style, split_commas: true, split_ampersands: true, split_slashes: false, keep: HashSet::new() }
+        Credits {
+            style,
+            split_commas: true,
+            split_ampersands: true,
+            split_slashes: false,
+            commas_only: false,
+            keep: HashSet::new(),
+        }
     }
 
     #[test]
@@ -217,6 +235,21 @@ mod tests {
         assert_eq!(credits(CreditStyle::FirstFeaturing).apply("Daft Punk"), "Daft Punk");
         assert_eq!(credits(CreditStyle::FirstFeaturing).apply(""), "");
         assert_eq!(credits(CreditStyle::FirstFeaturing).apply(" , "), " , ");
+    }
+
+    #[test]
+    fn commas_only_drops_the_ampersand() {
+        let lupe = "Lupe Fiasco feat. Billy Blue, Buk of Psychodrama, Trouble, Trae tha Truth, Fam‐Lay & Glasses Malone";
+        let c = Credits { commas_only: true, ..credits(CreditStyle::FirstFeaturing) };
+        assert_eq!(
+            c.apply(lupe),
+            "Lupe Fiasco feat. Billy Blue, Buk of Psychodrama, Trouble, Trae tha Truth, Fam‐Lay, Glasses Malone"
+        );
+        assert_eq!(c.apply("A & B"), "A feat. B");
+        let list = Credits { commas_only: true, ..credits(CreditStyle::List) };
+        assert_eq!(list.apply("A feat. B & C"), "A, B, C");
+        let keep = Credits { commas_only: true, ..credits(CreditStyle::KeepFeatured) };
+        assert_eq!(keep.apply("A & B feat. C & D"), "A, B feat. C, D");
     }
 
     #[test]

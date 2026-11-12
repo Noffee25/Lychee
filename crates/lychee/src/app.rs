@@ -1955,10 +1955,9 @@ impl App {
                 self.set_album_grid(&self.models.album_rows.clone(), ids, &index);
             }
             Page::Genre(name) => {
-                let ids: Vec<AlbumId> =
-                    index.genres().iter().find(|(g, _)| g.eq_ignore_ascii_case(&name)).map(|(_, a)| a.clone()).unwrap_or_default();
+                let (title, ids) = index.genre_albums(&name).cloned().unwrap_or((name.clone(), Vec::new()));
                 let subtitle = format!("{} album{}", ids.len(), plural(ids.len()));
-                self.set_albums_header(&name, &subtitle, false);
+                self.set_albums_header(&title, &subtitle, false);
                 self.set_album_grid(&self.models.album_rows.clone(), ids, &index);
             }
             Page::Album(id) => self.show_album(id, &index),
@@ -2199,8 +2198,8 @@ impl App {
             meta.push(y.to_string());
         }
         meta.push(format!("{} song{}, {}", tracks.len(), plural(tracks.len()), human_duration(album.duration_ms)));
-        if let Some(g) = &album.genre {
-            meta.push(g.clone());
+        if !album.genres.is_empty() {
+            meta.push(album.genres.iter().take(3).cloned().collect::<Vec<_>>().join(", "));
         }
         let f = &album.format;
         let mut tags = vec![f.codec.clone()];
@@ -2948,6 +2947,12 @@ impl App {
             "editor-artists-style" => {
                 if let Some(ui) = self.ui.upgrade() {
                     ui.global::<crate::Editor>().set_artists_style(arg.parse().unwrap_or(0));
+                }
+                self.handle(Action::Editor(EditorAction::ScannerChanged));
+            }
+            "editor-artists-commas-only" => {
+                if let Some(ui) = self.ui.upgrade() {
+                    ui.global::<crate::Editor>().set_artists_commas_only(arg != "0");
                 }
                 self.handle(Action::Editor(EditorAction::ScannerChanged));
             }

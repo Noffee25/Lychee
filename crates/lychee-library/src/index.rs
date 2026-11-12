@@ -4,7 +4,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use lychee_core::{Album, AlbumId, Artist, AudioFormat, Playlist, PlaylistId, Track, TrackId, TrackRef, album_id_for};
+use lychee_core::{
+    Album, AlbumId, Artist, AudioFormat, Playlist, PlaylistId, Track, TrackId, TrackRef, album_id_for, genre_key,
+};
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 
@@ -70,7 +72,8 @@ impl LibraryIndex {
         for t in tracks.iter().filter(|t| t.in_library) {
             grouped.entry(t.album_id).or_default().push(t);
         }
-        let mut albums: Vec<Album> = grouped.into_iter().map(|(id, ts)| make_album(id, ts, &accents)).collect();
+        let names = genre_names(tracks.iter().filter(|t| t.in_library));
+        let mut albums: Vec<Album> = grouped.into_iter().map(|(id, ts)| make_album(id, ts, &accents, &names)).collect();
         albums.sort_by_cached_key(|a| (sort_key(&a.artist), a.year.unwrap_or(i32::MAX), sort_key(&a.title)));
         let album_pos = albums.iter().enumerate().map(|(i, a)| (a.id, i)).collect();
 
@@ -83,13 +86,15 @@ impl LibraryIndex {
         let mut artists: Vec<Artist> = by_artist.into_values().collect();
         artists.sort_by_cached_key(|a| sort_key(&a.name));
 
-        let mut by_genre: HashMap<String, (String, Vec<AlbumId>)> = HashMap::new();
+        // Album genres already use one spelling per genre, so they group by name.
+        let mut by_genre: HashMap<&str, Vec<AlbumId>> = HashMap::new();
         for a in &albums {
-            if let Some(g) = &a.genre {
-                by_genre.entry(g.to_lowercase()).or_insert_with(|| (g.clone(), Vec::new())).1.push(a.id);
+            for g in &a.genres {
+                by_genre.entry(g).or_default().push(a.id);
             }
         }
-        let mut genres: Vec<(String, Vec<AlbumId>)> = by_genre.into_values().collect();
+        let by_genre: Vec<(String, Vec<AlbumId>)> = by_genre.into_iter().map(|(g, ids)| (g.to_string(), ids)).collect();
+        let mut genres = by_genre;
         genres.sort_by_cached_key(|(g, _)| g.to_lowercase());
 
         let library_tracks = tracks.iter().filter(|t| t.in_library);
@@ -168,8 +173,16 @@ impl LibraryIndex {
         out
     }
 
+    /// Every genre with its albums, by name. "Hip-Hop", "Hip Hop" and "hip-hop" are one genre,
+    /// named the way most of the library's songs spell it.
     pub fn genres(&self) -> &[(String, Vec<AlbumId>)] {
         &self.genres
+    }
+
+    /// The albums of a genre, matched however `name` is spelled.
+    pub fn genre_albums(&self, name: &str) -> Option<&(String, Vec<AlbumId>)> {
+        let key = genre_key(name);
+        self.genres.iter().find(|(g, _)| genre_key(g) == key)
     }
 
     pub fn tracks(&self, sort: TrackSort) -> Vec<TrackRef> {
@@ -286,11 +299,49 @@ fn assign_album_artists(tracks: &mut [Track]) {
     }
 }
 
-fn make_album(id: AlbumId, mut ts: Vec<&Track>, accents: &HashMap<String, crate::Colors>) -> Album {
+/// The library's spelling of each genre, by [`genre_key`]: the one most of its songs use. Ties go
+/// to the spelling with more capitals ("Hip-Hop" over "hip-hop"), then the alphabetically first.
+fn genre_names<'a>(tracks: impl Iterator<Item = &'a Track>) -> HashMap<String, String> {
+    let mut spellings: HashMap<String, HashMap<&str, usize>> = HashMap::new();
+    for t in tracks {
+        for g in t.genres() {
+            *spellings.entry(genre_key(g)).or_default().entry(g).or_default() += 1;
+        }
+    }
+    spellings
+        .into_iter()
+        .filter_map(|(key, counts)| {
+            let capitals = |g: &str| g.chars().filter(|c| c.is_uppercase()).count();
+            let best = counts.into_iter().max_by(|(a, na), (b, nb)| {
+                na.cmp(nb).then(capitals(a).cmp(&capitals(b))).then(b.cmp(a))
+            })?;
+            Some((key, best.0.to_string()))
+        })
+        .collect()
+}
+
+fn make_album(
+    id: AlbumId,
+    mut ts: Vec<&Track>,
+    accents: &HashMap<String, crate::Colors>,
+    names: &HashMap<String, String>,
+) -> Album {
     ts.sort_by_key(|t| (t.disc_number.unwrap_or(1), t.track_number.unwrap_or(u32::MAX), sort_key(&t.title)));
     let first = ts[0];
     let year = ts.iter().filter_map(|t| t.year).min();
-    let genre = most_common(ts.iter().filter_map(|t| t.genre.clone()));
+    // Every genre of every song, the most common first.
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut keys: Vec<String> = Vec::new();
+    for g in ts.iter().flat_map(|t| t.genres()) {
+        let key = genre_key(g);
+        let c = counts.entry(key.clone()).or_insert(0);
+        if *c == 0 {
+            keys.push(key);
+        }
+        *c += 1;
+    }
+    keys.sort_by_key(|k| std::cmp::Reverse(counts[k]));
+    let genres = keys.iter().filter_map(|k| names.get(k).cloned()).collect();
     let artwork = most_common(ts.iter().filter_map(|t| t.artwork.clone()));
     let colors = artwork.as_ref().and_then(|k| accents.get(k).copied()).unwrap_or_default();
     let format = ts.iter().map(|t| t.format.clone()).max_by_key(format_rank).unwrap_or_default();
@@ -299,7 +350,7 @@ fn make_album(id: AlbumId, mut ts: Vec<&Track>, accents: &HashMap<String, crate:
         title: first.album.clone(),
         artist: first.album_artist.clone(),
         year,
-        genre,
+        genres,
         tracks: ts.iter().map(|t| t.id).collect(),
         artwork,
         accent: colors.accent,
@@ -385,6 +436,27 @@ mod tests {
         assert_eq!(index.stats().albums, 1);
         assert_eq!(index.albums(AlbumSort::Title)[0].artist, "Hollow Coast");
         assert_eq!(index.artist_tracks("Hollow Coast").len(), 3);
+    }
+
+    #[test]
+    fn genre_spellings_are_one_genre() {
+        let genre = |mut t: Track, g: &str| {
+            t.genre = Some(g.into());
+            t
+        };
+        let tracks = vec![
+            genre(track(1, "A", "One", "First", "", "a", 1), "hip-hop"),
+            genre(track(2, "B", "Two", "Second", "", "b", 1), "Hip Hop"),
+            genre(track(3, "C", "Two", "Second", "", "b", 2), "Hip Hop"),
+            genre(track(4, "D", "Three", "Third", "", "c", 1), "Hip-Hop; Rap"),
+            genre(track(5, "E", "Four", "Fourth", "", "d", 1), "Hip-Hop/Rap"),
+        ];
+        let index = LibraryIndex::build(tracks, vec![], HashMap::new());
+        let names: Vec<&str> = index.genres().iter().map(|(g, _)| g.as_str()).collect();
+        assert_eq!(names, ["Hip Hop", "Hip-Hop/Rap", "Rap"], "the most used spelling names the genre");
+        assert_eq!(index.genre_albums("hiphop").unwrap().1.len(), 3);
+        let third = index.albums(AlbumSort::Title).into_iter().find(|a| a.title == "Third").unwrap();
+        assert_eq!(third.genres, ["Hip Hop", "Rap"]);
     }
 
     #[test]

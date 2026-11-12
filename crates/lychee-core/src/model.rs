@@ -122,6 +122,7 @@ pub struct Track {
     pub track_number: Option<u32>,
     pub disc_number: Option<u32>,
     pub year: Option<i32>,
+    /// One or more genres, joined with "; " (see [`Track::genres`]).
     pub genre: Option<String>,
     pub composer: Option<String>,
     pub duration_ms: u64,
@@ -144,6 +145,11 @@ impl Track {
         if self.artist.is_empty() { "Unknown Artist" } else { &self.artist }
     }
 
+    /// The track's genres, in tag order.
+    pub fn genres(&self) -> impl Iterator<Item = &str> {
+        self.genre.as_deref().into_iter().flat_map(crate::split_genres)
+    }
+
     /// The main artist (see [`Track::main_artist`]), or "Unknown Artist".
     pub fn display_main_artist(&self) -> &str {
         let main = if self.main_artist.is_empty() { crate::main_artist(&self.artist) } else { &self.main_artist };
@@ -160,7 +166,9 @@ pub struct Album {
     pub title: String,
     pub artist: String,
     pub year: Option<i32>,
-    pub genre: Option<String>,
+    /// The album's genres, most common among its songs first, spelled the way most of the library
+    /// spells them.
+    pub genres: Vec<String>,
     /// Track ids in disc/track order.
     pub tracks: Vec<TrackId>,
     pub artwork: Option<String>,

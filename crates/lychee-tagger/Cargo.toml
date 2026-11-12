@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+lychee-core.workspace = true
 lofty = "0.25"
 thiserror.workspace = true
 tracing.workspace = true

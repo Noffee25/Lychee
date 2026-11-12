@@ -5,12 +5,14 @@
 //! and small helpers for formatting values the same way everywhere.
 
 mod artist;
+mod genre;
 pub mod md5;
 mod model;
 mod queue;
 mod time;
 
 pub use artist::main_artist;
+pub use genre::{genre_key, join_genres, split_genres};
 pub use model::*;
 pub use queue::{Queue, QueueEntry};
 pub use time::{format_duration, format_duration_ms, now_unix};

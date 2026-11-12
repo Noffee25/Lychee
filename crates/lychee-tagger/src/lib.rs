@@ -13,6 +13,7 @@
 pub mod credits;
 pub mod fields;
 pub mod file;
+pub mod genres;
 pub mod mask;
 pub mod process;
 pub mod session;
@@ -20,6 +21,7 @@ pub mod session;
 pub use credits::{CreditStyle, Credits};
 pub use fields::Field;
 pub use file::{FileInfo, Picture, PictureKind, ReadFile, TagData};
+pub use genres::Genres;
 pub use mask::Mask;
 pub use process::{Case, Cleanup};
 pub use session::{EditFile, SaveJob, Session, Value};

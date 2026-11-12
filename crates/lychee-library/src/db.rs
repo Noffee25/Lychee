@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use lychee_core::{AudioFormat, Playlist, PlaylistId, Track, TrackId, now_unix};
 use rusqlite::{Connection, OptionalExtension, params};
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -78,6 +78,12 @@ ALTER TABLE tracks ADD COLUMN main_artist TEXT NOT NULL DEFAULT '';
 UPDATE tracks SET mtime = 0;
 ";
 
+/// Reads every genre of a file (v2 kept only the first): clearing the file stamps makes the next
+/// scan re-read every file.
+const SCHEMA_V3: &str = "
+UPDATE tracks SET mtime = 0;
+";
+
 /// Metadata for one file, as written by the scanner.
 #[derive(Clone, Debug, Default)]
 pub struct TrackRecord {
@@ -94,6 +100,7 @@ pub struct TrackRecord {
     pub track_number: Option<u32>,
     pub disc_number: Option<u32>,
     pub year: Option<i32>,
+    /// Every genre, joined with "; ".
     pub genre: Option<String>,
     pub composer: Option<String>,
     pub duration_ms: u64,
@@ -126,6 +133,9 @@ impl Db {
         }
         if version < 2 {
             conn.execute_batch(SCHEMA_V2)?;
+        }
+        if (1..3).contains(&version) {
+            conn.execute_batch(SCHEMA_V3)?;
         }
         if version < SCHEMA_VERSION {
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -439,6 +449,26 @@ mod tests {
         let t = &db.all_tracks().unwrap()[0];
         assert_eq!(t.main_artist, "");
         assert_eq!(t.display_main_artist(), "X");
+    }
+
+    #[test]
+    fn v2_libraries_get_rescanned_for_every_genre() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("library.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(SCHEMA_V1).unwrap();
+            conn.execute_batch(SCHEMA_V2).unwrap();
+            conn.pragma_update(None, "user_version", 2).unwrap();
+            conn.execute(
+                "INSERT INTO tracks (path, mtime, title, artist, album, album_artist, added_at)
+                 VALUES ('/m/a.flac', 1234, 'A', 'X', 'Al', '', 1)",
+                [],
+            )
+            .unwrap();
+        }
+        let db = Db::open(&path).unwrap();
+        assert_eq!(db.file_stamps().unwrap()[0].2, 0, "stale, so the next scan re-reads it");
     }
 
     #[test]

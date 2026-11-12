@@ -37,11 +37,11 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 - [x] Add and remove music folders; parallel first scan; fast incremental rescans (only changed files are read)
 - [x] Rescan on startup and on demand
 - [ ] Live file watching
-- [x] Tags: title, artist, album, album artist, track and disc number, year, genre, composer
+- [x] Tags: title, artist, album, album artist, track and disc number, year, genres (several per song), composer
 - [x] Technical info: duration, codec, bitrate, sample rate, bit depth, channels, file size
 - [x] **Album art**: embedded, then folder images (`cover`/`folder`/`front`…), then a generated colour tile
 - [x] Accent and tint colours extracted from every cover
-- [x] Browse **Albums** (grid with four sort orders), **Artists**, **Songs** (five sort orders), **Genres**, **Recently Added**, **Recently Played**
+- [x] Browse **Albums** (grid with four sort orders), **Artists**, **Songs** (five sort orders), **Genres** (spellings like "Hip-Hop" and "Hip Hop" are one genre; an album is listed under each of its genres), **Recently Added**, **Recently Played**
 - [ ] Folder browser
 - [x] Multi-disc albums (disc headers) and compilations ("Various Artists"); a guest on one track
       ("A feat. B") doesn't turn an album into a compilation
@@ -100,9 +100,12 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 - [x] Scanner, "Fill tags": read tags from file and folder names with EasyTAG masks (`%a %b %t %n %y %g`…, `/` for a folder), with a live preview
 - [x] Scanner, "Rename files": new names from tags. Renames wait until you save; `.lrc` lyrics move along; names are safe on Windows
 - [x] Scanner, "Clean up": Title Case (keeps acronyms and Roman numerals), Sentence case, UPPER, lower, underscores and `%20` to spaces, tidy spaces, find and replace
-- [x] Scanner, "Artists": write artist credits one way ("A feat. B & C", "A & B feat. C", "A, B & C" or "A; B; C").
+- [x] Scanner, "Artists": write artist credits one way ("A feat. B & C", "A & B feat. C", "A, B & C" or "A; B; C";
+  optionally with a comma before the last name: "A feat. B, C, D").
   `;` and feat./ft./featuring always separate artists; `,`, `&` and `/` do when switched on; artists you have
   albums by ("Simon & Garfunkel") stay whole
+- [x] Scanner, "Genres": one spelling per genre (the library's most common, or Capitalised Words), with `;` (and
+  optionally `,` or `/`) splitting several genres, which are saved as a real list (MP4 keeps one "A; B" line)
 - [x] Undo and redo for every step, and revert per file or for everything
 - [x] Lossless writing: MP3, WAV, AIFF, AAC and MP4 tags are edited in place, so frames the editor doesn't know about survive (Serato/Traktor data, private frames, chapters)
 - [x] Saved files are re-read into the library, keeping play counts, Favorites and playlists, even after renames

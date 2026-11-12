@@ -4,7 +4,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 
 use lofty::config::{ParseOptions, WriteOptions};
-use lofty::file::AudioFile;
+use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::id3::v2::{Frame, Id3v2Tag, PrivateFrame};
 use lofty::mpeg::MpegFile;
 use lychee_tagger::session::{EditFile, Session};
@@ -80,6 +80,31 @@ fn every_format_round_trips() {
         assert!(again.tags.pictures.is_empty(), "{ext}: pictures cleared");
         assert_eq!(again.tags.get(Field::Title), VALUES[0].1, "{ext}: title kept");
         assert_eq!(again.tags.get(Field::Track), "3", "{ext}: track kept");
+    }
+}
+
+#[test]
+fn several_genres_are_stored_as_a_list() {
+    let dir = tempfile::tempdir().unwrap();
+    for ext in FORMATS {
+        let path = fixture(dir.path(), ext);
+        let read = file::read(&path).unwrap();
+        if !read.supported.contains(&Field::Genre) {
+            continue;
+        }
+        let mut after = read.tags.clone();
+        after.set(Field::Genre, "Hip-Hop; Rap");
+        file::write(&path, &read.tags, &after).unwrap_or_else(|e| panic!("{ext}: {e}"));
+        assert_eq!(file::read(&path).unwrap().tags.get(Field::Genre), "Hip-Hop; Rap", "{ext}");
+
+        let tagged = lofty::read_from_path(&path).unwrap();
+        let tag = tagged.primary_tag().unwrap();
+        let stored: Vec<&str> = tag.get_strings(lofty::tag::ItemKey::Genre).collect();
+        let expected: &[&str] = match tag.tag_type() {
+            lofty::tag::TagType::VorbisComments | lofty::tag::TagType::Id3v2 => &["Hip-Hop", "Rap"],
+            _ => &["Hip-Hop; Rap"],
+        };
+        assert_eq!(stored, expected, "{ext}");
     }
 }
 

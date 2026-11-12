@@ -21,7 +21,7 @@ use lofty::mpeg::MpegFile;
 use lofty::picture::{MimeType, Picture as LoftyPicture, PictureType};
 use lofty::probe::Probe;
 use lofty::tag::items::Timestamp;
-use lofty::tag::{MergeTag, SplitTag, Tag, TagType};
+use lofty::tag::{ItemValue, MergeTag, SplitTag, Tag, TagItem, TagType};
 
 use crate::{Error, Field};
 
@@ -497,7 +497,19 @@ fn put(tag: &mut Tag, field: Field, value: &str) {
             tag.remove_key(alt.clone());
         }
     }
-    if !value.is_empty() && !tag.insert_text(key, value.to_string()) {
+    if value.is_empty() {
+        return;
+    }
+    // "Hip-Hop; Rap" is two genres: formats with lists store them as separate values. MP4 keeps
+    // one string, because Apple's apps show only the first of several.
+    let list = matches!(tag.tag_type(), TagType::VorbisComments | TagType::Id3v2 | TagType::Ape);
+    if field == Field::Genre && list && value.contains(';') {
+        for genre in lychee_core::split_genres(value) {
+            tag.push(TagItem::new(key.clone(), ItemValue::Text(genre.to_string())));
+        }
+        return;
+    }
+    if !tag.insert_text(key, value.to_string()) {
         tracing::debug!("{:?} can't store {field:?}", tag.tag_type());
     }
 }

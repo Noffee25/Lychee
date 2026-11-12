@@ -2919,6 +2919,7 @@ name = "lychee-tagger"
 version = "0.1.1"
 dependencies = [
  "lofty",
+ "lychee-core",
  "tempfile",
  "thiserror 2.0.21",
  "tracing",

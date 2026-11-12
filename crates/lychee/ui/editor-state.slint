@@ -82,7 +82,7 @@ export global Editor {
     in-out property <float> busy-progress: -1;
 
     // Scanner (EasyTAG's three modes, plus one): 0 fill tags, 1 rename files, 2 clean up,
-    // 3 standardise artist credits.
+    // 3 standardise artist credits, 4 standardise genres.
     in-out property <bool> scanner-open;
     in-out property <int> scanner-mode;
     in-out property <string> fill-mask: "%n - %t";
@@ -104,6 +104,13 @@ export global Editor {
     in-out property <bool> artists-ampersands: true;
     in-out property <bool> artists-slashes;
     in-out property <bool> artists-keep: true;
+    // "A feat. B, C, D": a comma before the last name instead of "&".
+    in-out property <bool> artists-commas-only;
+    // Genres: split at , and / too, use the library's spelling, capitalise words.
+    in-out property <bool> genres-commas;
+    in-out property <bool> genres-slashes;
+    in-out property <bool> genres-library: true;
+    in-out property <bool> genres-capitalise: true;
 
     // Online lookup.
     in-out property <bool> lookup-open;

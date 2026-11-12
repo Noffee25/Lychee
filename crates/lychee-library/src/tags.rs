@@ -104,7 +104,9 @@ fn apply_tag(tag: &Tag, record: &mut TrackRecord) {
         .or_else(|| tag.get_string(ItemKey::Year).and_then(leading_year))
         .or_else(|| tag.get_string(ItemKey::RecordingDate).and_then(leading_year))
         .filter(|y| *y > 0);
-    record.genre = tag.genre().map(|g| clean(&g)).filter(|g| !g.is_empty());
+    // Several genres arrive as repeated fields, an ID3v2.4 list or one "A; B" string.
+    let genres: Vec<String> = tag.get_strings(ItemKey::Genre).flat_map(lychee_core::split_genres).map(clean).collect();
+    record.genre = Some(lychee_core::join_genres(genres.iter().map(String::as_str))).filter(|g| !g.is_empty());
     record.composer = tag.get_string(ItemKey::Composer).map(clean).filter(|c| !c.is_empty());
 }
 

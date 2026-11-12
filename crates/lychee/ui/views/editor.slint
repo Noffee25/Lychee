@@ -1120,7 +1120,7 @@ export component ScannerDialog inherits Dialog {
                 color: Theme.text;
             }
             Segmented {
-                options: ["Fill tags", "Rename files", "Clean up", "Artists"];
+                options: ["Fill tags", "Rename files", "Clean up", "Artists", "Genres"];
                 selected <=> Editor.scanner-mode;
                 changed(i) => {
                     Editor.scanner-changed();
@@ -1141,7 +1141,8 @@ export component ScannerDialog inherits Dialog {
             text: Editor.scanner-mode == 0 ? "Read tags from the names of the " + Editor.selected-count + " selected files and their folders. Each / in the mask is one folder up."
                 : Editor.scanner-mode == 1 ? "Give the " + Editor.selected-count + " selected files new names built from their tags. Files are renamed when you save; a / in the mask makes a folder."
                 : Editor.scanner-mode == 2 ? "Tidy the text of the " + Editor.selected-count + " selected files."
-                : "Write the artists of the " + Editor.selected-count + " selected files one way. ; and feat., ft. or featuring always separate artists.";
+                : Editor.scanner-mode == 3 ? "Write the artists of the " + Editor.selected-count + " selected files one way. ; and feat., ft. or featuring always separate artists."
+                : "Spell the genres of the " + Editor.selected-count + " selected files one way. ; separates genres, and several are saved as a list.";
             color: Theme.text-2;
             wrap: word-wrap;
         }
@@ -1360,6 +1361,22 @@ export component ScannerDialog inherits Dialog {
                     wrap: word-wrap;
                 }
             }
+            if Editor.artists-style != 3: HorizontalLayout {
+                spacing: 8px;
+                cross-axis-alignment: center;
+                padding-left: 82px;
+                Toggle {
+                    checked <=> Editor.artists-commas-only;
+                    toggled => {
+                        Editor.scanner-changed();
+                    }
+                }
+                Text {
+                    text: "Comma before the last name too (A feat. B, C, D)";
+                    color: Theme.text-2;
+                    font-size: 12.5px;
+                }
+            }
             HorizontalLayout {
                 spacing: 18px;
                 alignment: start;
@@ -1430,6 +1447,93 @@ export component ScannerDialog inherits Dialog {
                     text: "Keep artists from your library whole (like Simon & Garfunkel)";
                     color: Theme.text-2;
                     font-size: 12.5px;
+                }
+            }
+        }
+        if Editor.scanner-mode == 4: VerticalLayout {
+            spacing: 12px;
+            HorizontalLayout {
+                spacing: 18px;
+                alignment: start;
+                cross-axis-alignment: center;
+                Text {
+                    width: 70px;
+                    text: "Also split at";
+                    color: Theme.text-2;
+                    font-size: 12.5px;
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    Toggle {
+                        checked <=> Editor.genres-commas;
+                        toggled => {
+                            Editor.scanner-changed();
+                        }
+                    }
+                    Text {
+                        text: "Commas (,)";
+                        color: Theme.text-2;
+                        font-size: 12.5px;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    Toggle {
+                        checked <=> Editor.genres-slashes;
+                        toggled => {
+                            Editor.scanner-changed();
+                        }
+                    }
+                    Text {
+                        text: "Slashes (/)";
+                        color: Theme.text-2;
+                        font-size: 12.5px;
+                    }
+                }
+            }
+            HorizontalLayout {
+                padding-left: 82px;
+                Text {
+                    text: "Leave slashes off for Apple's genres, like Hip-Hop/Rap and R&B/Soul: each is one genre.";
+                    color: Theme.text-3;
+                    font-size: 12px;
+                    wrap: word-wrap;
+                }
+            }
+            VerticalLayout {
+                spacing: 12px;
+                padding-left: 82px;
+                HorizontalLayout {
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    Toggle {
+                        checked <=> Editor.genres-library;
+                        toggled => {
+                            Editor.scanner-changed();
+                        }
+                    }
+                    Text {
+                        text: "Use your library's spelling (the one most of your songs use)";
+                        color: Theme.text-2;
+                        font-size: 12.5px;
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    cross-axis-alignment: center;
+                    Toggle {
+                        checked <=> Editor.genres-capitalise;
+                        toggled => {
+                            Editor.scanner-changed();
+                        }
+                    }
+                    Text {
+                        text: "Capitalise words (hip hop → Hip Hop)";
+                        color: Theme.text-2;
+                        font-size: 12.5px;
+                    }
                 }
             }
         }

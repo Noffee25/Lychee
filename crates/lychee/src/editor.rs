@@ -18,7 +18,7 @@ use lychee_lookup::matching::{self, Candidate, FileFacts, Guess, TrackTags};
 use lychee_lookup::musicbrainz::Release;
 use lychee_tagger::session::{EditFile, SaveJob, Session, Value};
 use lychee_tagger::credits::keep_key;
-use lychee_tagger::{Case, Cleanup, CreditStyle, Credits, Field, Mask, Picture, PictureKind};
+use lychee_tagger::{Case, Cleanup, CreditStyle, Credits, Field, Genres, Mask, Picture, PictureKind};
 use slint::{ComponentHandle, Image, Model, ModelRc, Rgba8Pixel, SharedPixelBuffer, SharedString, VecModel};
 
 use crate::app::{Action, Dispatcher};
@@ -461,7 +461,7 @@ impl EditorCtl {
             EditorAction::OpenScanner(mode) => {
                 if let Some(ui) = self.ui.upgrade() {
                     let e = ui.global::<Editor>();
-                    e.set_scanner_mode(mode.clamp(0, 3));
+                    e.set_scanner_mode(mode.clamp(0, 4));
                     e.set_scanner_open(true);
                 }
                 self.scanner_preview();
@@ -741,18 +741,24 @@ impl EditorCtl {
                 }
                 (format!("Changes {changed} of {} file{}", sel.len(), plural(sel.len())), changed > 0)
             }
-            _ => {
-                let credits = self.credits_settings(&e);
+            mode => {
+                let (field, empty, rewrite): (Field, &str, Box<dyn Fn(&str) -> String>) = if mode == 3 {
+                    let credits = self.credits_settings(&e);
+                    (Field::Artist, "No artist", Box::new(move |old| credits.apply(old)))
+                } else {
+                    let genres = self.genres_settings(&e);
+                    (Field::Genre, "No genre", Box::new(move |old| genres.apply(old)))
+                };
                 let mut changed = 0;
                 for &i in &sel {
-                    let old = self.session.files()[i].tags.get(Field::Artist);
-                    let new = credits.apply(old);
+                    let old = self.session.files()[i].tags.get(field);
+                    let new = rewrite(old);
                     let differs = !old.is_empty() && new != old;
                     if differs {
                         changed += 1;
                     }
                     if rows.len() < PREVIEW_ROWS {
-                        let before = if old.is_empty() { "No artist".to_string() } else { old.to_string() };
+                        let before = if old.is_empty() { empty.to_string() } else { old.to_string() };
                         let after = if differs { new } else { "No change".into() };
                         rows.push(ScanRow { before: before.into(), after: after.into(), ok: differs });
                     }
@@ -805,7 +811,23 @@ impl EditorCtl {
             split_commas: e.get_artists_commas(),
             split_ampersands: e.get_artists_ampersands(),
             split_slashes: e.get_artists_slashes(),
+            commas_only: e.get_artists_commas_only(),
             keep,
+        }
+    }
+
+    fn genres_settings(&self, e: &Editor<'_>) -> Genres {
+        let names = if e.get_genres_library() {
+            let index = self.library.index();
+            index.genres().iter().map(|(name, _)| (lychee_core::genre_key(name), name.clone())).collect()
+        } else {
+            Default::default()
+        };
+        Genres {
+            split_commas: e.get_genres_commas(),
+            split_slashes: e.get_genres_slashes(),
+            capitalise: e.get_genres_capitalise(),
+            names,
         }
     }
 
@@ -834,10 +856,15 @@ impl EditorCtl {
                 let n = self.session.cleanup(&sel, &fields, &cleanup);
                 format!("Cleaned up {n} file{}", plural(n))
             }
-            _ => {
+            3 => {
                 let credits = self.credits_settings(&e);
                 let n = self.session.rewrite(&sel, "Standardise artists", &[Field::Artist], |old| credits.apply(old));
                 format!("Standardised the artists of {n} file{}", plural(n))
+            }
+            _ => {
+                let genres = self.genres_settings(&e);
+                let n = self.session.rewrite(&sel, "Standardise genres", &[Field::Genre], |old| genres.apply(old));
+                format!("Standardised the genres of {n} file{}", plural(n))
             }
         };
         e.set_scanner_open(false);
