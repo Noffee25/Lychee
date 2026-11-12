@@ -72,6 +72,8 @@ export struct NavPlaylist {
     count: int,
     cover: image,
     has-cover: bool,
+    // Covers of the first four albums, for a 2×2 mosaic (fewer than four: `cover` alone).
+    covers: [image],
     seed: color,
 }
 
@@ -122,8 +124,12 @@ export struct ListHeader {
     cover: image,
     has-cover: bool,
     seed: color,
+    // As in NavPlaylist: a playlist's mosaic.
+    covers: [image],
     id: int,
     editable: bool,
+    // Songs that appear more than once (playlists), for "Remove duplicates".
+    duplicates: int,
 }
 
 export struct NowPlaying {
@@ -278,6 +284,15 @@ export global AppState {
     in-out property <string> levelling-status;
     in-out property <bool> wayland;
     in-out property <string> toast;
+    // A button in the toast ("Undo", "Open"); Actions.toast-action runs it. Ctrl+Z runs "Undo".
+    in-out property <string> toast-action;
+    // Dragging a row to reorder it: "playlist" (songs on a playlist page), "queue" or "nav"
+    // (sidebar playlists). `drag-to` is where it would land; both are -1 when nothing is dragged.
+    in-out property <string> drag-kind;
+    in-out property <int> drag-from: -1;
+    in-out property <int> drag-to: -1;
+    // The playlist page shows its name as a text field (Rename from a menu).
+    in-out property <bool> renaming-playlist;
     in-out property <string> version;
 }
 
@@ -327,6 +342,15 @@ export global Actions {
     callback queue-jump(int);
     callback queue-remove(int);
     callback queue-move(int, int);
+    callback save-queue();
+    callback toast-action();
+    // Move a song on the open playlist from one row to another.
+    callback playlist-move(int, int);
+    // "play", "shuffle", "play-next", "add-queue", "rename", "duplicate", "delete", "sort-title",
+    // "sort-artist", "sort-album", "sort-duration", "reverse", "dedupe" on playlist `id`.
+    callback playlist-command(string, int);
+    // Move sidebar playlist `id` to row `to`.
+    callback nav-playlist-move(int, int);
     callback queue-clear();
     callback lyric-seek(int);
 

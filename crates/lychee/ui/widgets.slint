@@ -57,6 +57,8 @@ export component IconButton inherits Rectangle {
 export component Cover inherits Rectangle {
     in property <image> source;
     in property <bool> has-image;
+    // Four covers make a 2×2 mosaic (playlists); with fewer, `source` is shown.
+    in property <[image]> tiles;
     in property <color> seed: #3a3a46;
     in property <length> radius: Theme.radius-m;
     in property <bool> round;
@@ -69,11 +71,69 @@ export component Cover inherits Rectangle {
         width: root.width * 0.34;
         height: root.width * 0.34;
     }
-    if root.has-image: Image {
+    if root.has-image && root.tiles.length < 4: Image {
         source: root.source;
         width: root.width;
         height: root.height;
         image-fit: cover;
+    }
+    if root.tiles.length >= 4: Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        for tile[i] in root.tiles: Image {
+            x: Math.mod(i, 2) * root.width / 2;
+            y: Math.floor(i / 2) * root.height / 2;
+            width: root.width / 2;
+            height: root.height / 2;
+            source: tile;
+            image-fit: cover;
+        }
+    }
+}
+
+// Where a dragged row would land: a line at the top or bottom of the row it's over. Place it with
+// `x: 8px; width: parent.width - 16px; y: below ? parent.height - 1px : -1px;`.
+export component DropLine inherits Rectangle {
+    height: 2px;
+    border-radius: 1px;
+    background: Theme.accent;
+}
+
+// The click area of a row that can also be dragged up and down (playlist songs, the queue, sidebar
+// playlists). A press and release is `tapped`. Once the pointer moves a few pixels with the button
+// down, it's a drag instead: `dragged` reports the distance, and `released` comes when the button is
+// let go (`drop` is false if the drag was cancelled). Buttons and links inside the row keep their own
+// clicks, because they sit on top of this area.
+export component DragTouch inherits TouchArea {
+    in property <bool> draggable;
+    out property <bool> dragging;
+    property <bool> after-drag;
+    callback tapped();
+    callback dragged(length);
+    callback released(bool);
+    mouse-cursor: root.dragging ? MouseCursor.grabbing : MouseCursor.pointer;
+    clicked => {
+        if (!root.dragging && !root.after-drag) {
+            root.tapped();
+        }
+        root.after-drag = false;
+    }
+    moved => {
+        if (root.draggable && self.pressed && (root.dragging || Math.abs(self.mouse-y - self.pressed-y) > 4px)) {
+            root.dragging = true;
+            root.dragged(self.mouse-y - self.pressed-y);
+        }
+    }
+    pointer-event(e) => {
+        if (e.kind == PointerEventKind.down) {
+            root.after-drag = false;
+        } else if ((e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) && root.dragging) {
+            root.dragging = false;
+            root.after-drag = true;
+            root.released(e.kind == PointerEventKind.up);
+        }
     }
 }
 
@@ -438,7 +498,13 @@ export component NavItem inherits Rectangle {
     in property <image> cover;
     in property <bool> has-cover;
     in property <color> seed: #444;
+    in property <[image]> tiles;
+    // Rows can be dragged up and down (sidebar playlists): `drag-moved` reports the distance once
+    // the pointer has moved a few pixels, and a drag doesn't count as a click.
+    in property <bool> draggable;
     callback clicked;
+    callback drag-moved(length);
+    callback drag-released(bool);
     height: 32px;
     border-radius: 8px;
     background: root.active ? Theme.surface-2 : nav-ta.has-hover ? Theme.hover : transparent;
@@ -462,6 +528,7 @@ export component NavItem inherits Rectangle {
             radius: 5px;
             source: root.cover;
             has-image: root.has-cover;
+            tiles: root.tiles;
             seed: root.seed;
         }
         if !root.use-cover && !root.liked-tile: Image {
@@ -486,9 +553,11 @@ export component NavItem inherits Rectangle {
             vertical-alignment: center;
         }
     }
-    nav-ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { root.clicked(); }
+    nav-ta := DragTouch {
+        draggable: root.draggable;
+        tapped => { root.clicked(); }
+        dragged(dy) => { root.drag-moved(dy); }
+        released(drop) => { root.drag-released(drop); }
     }
 }
 

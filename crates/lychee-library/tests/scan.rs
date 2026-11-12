@@ -155,3 +155,39 @@ fn measures_loudness_for_volume_levelling() {
     let album_gain = album.gain.expect("every song is measured");
     assert!(album_gain < gain(0) + 3.0 && album_gain > gain(0), "{album_gain}");
 }
+
+#[test]
+fn playlist_editing() {
+    let root = tempfile::tempdir().unwrap();
+    let album = root.path().join("Music").join("Mix");
+    std::fs::create_dir_all(&album).unwrap();
+    for n in 1..=3 {
+        write_wav(&album.join(format!("0{n} Song.wav")), 0.1);
+    }
+    let lib = Library::open(&root.path().join("data"), &root.path().join("cache")).unwrap();
+    lib.add_folder(&root.path().join("Music")).unwrap();
+    lib.scan(&|_| {}).unwrap();
+    let index = lib.index();
+    let ids: Vec<_> = index.album_tracks(index.albums(AlbumSort::Title)[0].id).iter().map(|t| t.id).collect();
+    drop(index);
+
+    let mix = lib.create_playlist("Mix", &ids[..2]).unwrap();
+    // Songs already there are skipped, including repeats within what's added.
+    assert_eq!(lib.add_to_playlist(mix, &[ids[1], ids[2], ids[2]]).unwrap(), 1);
+    assert_eq!(lib.index().playlist(mix).unwrap().tracks, ids);
+    assert_eq!(lib.add_to_playlist(mix, &ids).unwrap(), 0);
+
+    assert_eq!(lib.unique_playlist_name("mix"), "mix 2");
+    assert_eq!(lib.unique_playlist_name("  "), "New playlist");
+    let copy = lib.duplicate_playlist(mix).unwrap();
+    let other = lib.create_playlist("Other", &[]).unwrap();
+    let order = |lib: &Library| lib.index().playlists().iter().map(|p| p.name.clone()).collect::<Vec<_>>();
+    assert_eq!(order(&lib), ["Other", "Mix", "Mix copy"], "copies sit below the original");
+    assert_eq!(lib.index().playlist(copy).unwrap().tracks, ids);
+
+    lib.move_playlist(other, 2).unwrap();
+    assert_eq!(order(&lib), ["Mix", "Mix copy", "Other"]);
+    lib.delete_playlist(mix).unwrap();
+    lib.insert_playlist("Mix", &ids, 0).unwrap();
+    assert_eq!(order(&lib), ["Mix", "Mix copy", "Other"], "an undone delete returns to its place");
+}

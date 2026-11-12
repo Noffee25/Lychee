@@ -274,16 +274,41 @@ export component Welcome inherits Rectangle {
 
 export component Toast inherits Rectangle {
     in property <string> text;
+    // A button after the message, such as "Undo".
+    in property <string> action;
+    callback action-clicked();
     height: 40px;
-    width: toast-text.preferred-width + 32px;
+    width: row.preferred-width;
     border-radius: 20px;
     background: Theme.dark ? #F4F4F5 : #18181B;
     drop-shadow-blur: 24px;
     drop-shadow-offset-y: 8px;
     drop-shadow-color: #00000060;
-    toast-text := Text {
-        text: root.text;
-        color: Theme.dark ? #0B0B0D : #F4F4F5;
-        font-weight: 500;
+    row := HorizontalLayout {
+        cross-axis-alignment: center;
+        padding-left: 16px;
+        padding-right: root.action != "" ? 6px : 16px;
+        spacing: 6px;
+        Text {
+            text: root.text;
+            color: Theme.dark ? #0B0B0D : #F4F4F5;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+        if root.action != "": Rectangle {
+            width: action-text.preferred-width + 20px;
+            height: 30px;
+            border-radius: 15px;
+            background: action-ta.has-hover ? (Theme.dark ? #0B0B0D18 : #F4F4F520) : transparent;
+            action-text := Text {
+                text: root.action;
+                color: Theme.dark ? Theme.accent.darker(0.25) : Theme.accent.brighter(0.2);
+                font-weight: 650;
+            }
+            action-ta := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.action-clicked(); }
+            }
+        }
     }
 }

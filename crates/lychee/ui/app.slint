@@ -173,6 +173,8 @@ export component AppWindow inherits Window {
             activated => {
                 if (AppState.page == "editor") {
                     Editor.undo();
+                } else if (AppState.toast-action == "Undo") {
+                    Actions.toast-action();
                 }
             }
         }
@@ -253,6 +255,8 @@ export component AppWindow inherits Window {
             x: (parent.width - self.width) / 2;
             y: parent.height - 84px - self.height - 18px;
             text: AppState.toast;
+            action: AppState.toast-action;
+            action-clicked => { Actions.toast-action(); }
         }
 
         if Editor.scanner-open: ScannerDialog {

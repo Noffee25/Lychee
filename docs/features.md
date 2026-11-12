@@ -68,10 +68,18 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 
 ### Queue and playlists
 - [x] Up Next with "Queued by you" and "Next from …" sections: play now, play next, add to queue, remove, clear
-- [x] Reorder via the context menu (move up / down)
-- [ ] Drag to reorder
+- [x] Drag songs anywhere on their row to reorder the queue and playlists; the context menu also
+  moves them (queue: up / down; playlists: to the top, up, down, to the bottom)
 - [x] Playlists: create, rename, delete, add albums or songs, remove songs
-- [ ] Reorder playlists; import and export M3U/M3U8
+- [x] Undo from the toast (or Ctrl+Z) after deleting a playlist, removing a song, sorting or removing duplicates
+- [x] Adding songs that are already in a playlist skips them and says so; new playlists get unique names
+- [x] Save the queue as a playlist (Queue panel, Ctrl+K); add the playing song to a playlist from the player
+  bar's right-click menu or Ctrl+K
+- [x] Playlist covers are a 2×2 mosaic of their first four albums; drag playlists to reorder the sidebar
+- [x] Right-click a sidebar playlist: play, shuffle, play next, add to queue, rename, duplicate, delete.
+  The playlist page's "⋯" menu: play next, add to queue, sort once (title, artist, album, length, reverse),
+  remove duplicates, duplicate the playlist
+- [ ] Import and export M3U/M3U8
 - [x] Favorites (♥), ordered by when you liked them
 - [x] Play counts and "Recently Played" history
 
@@ -162,7 +170,7 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 - [ ] Optional crossfade (never between gapless album tracks)
 - [ ] Waveform seek bar
 - [ ] Ratings and smart playlists (rules: genre, year, rating, play count, date added, format…)
-- [ ] Live folder watching, folder browser, M3U import/export, drag-to-reorder
+- [ ] Live folder watching, folder browser, M3U import/export
 - [ ] Single instance and desktop notifications
 - [ ] A faster Opus decoder: the pure-Rust one uses about 20% of a CPU core; libopus would make it optional
 

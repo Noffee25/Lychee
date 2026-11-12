@@ -407,10 +407,59 @@ impl Library {
         self.refresh_playlists()
     }
 
-    pub fn add_to_playlist(&self, id: PlaylistId, tracks: &[TrackId]) -> anyhow::Result<()> {
+    /// Append songs that aren't in the playlist yet. Returns how many were added; the rest were
+    /// already there (or repeated in `tracks`).
+    pub fn add_to_playlist(&self, id: PlaylistId, tracks: &[TrackId]) -> anyhow::Result<usize> {
         let mut all = self.index().playlist(id).map(|p| p.tracks.clone()).unwrap_or_default();
-        all.extend_from_slice(tracks);
-        self.set_playlist_tracks(id, &all)
+        let mut present: HashSet<TrackId> = all.iter().copied().collect();
+        let before = all.len();
+        all.extend(tracks.iter().copied().filter(|t| present.insert(*t)));
+        let added = all.len() - before;
+        if added > 0 {
+            self.set_playlist_tracks(id, &all)?;
+        }
+        Ok(added)
+    }
+
+    /// `base`, or "base 2", "base 3"… if a playlist already has that name (ignoring case).
+    pub fn unique_playlist_name(&self, base: &str) -> String {
+        let index = self.index();
+        let taken = |name: &str| index.playlists().iter().any(|p| p.name.eq_ignore_ascii_case(name));
+        let base = base.trim();
+        let base = if base.is_empty() { "New playlist" } else { base };
+        if !taken(base) {
+            return base.to_string();
+        }
+        (2..).map(|n| format!("{base} {n}")).find(|name| !taken(name)).expect("some number is free")
+    }
+
+    /// Move a playlist to `to` (0 = top) in the sidebar.
+    pub fn move_playlist(&self, id: PlaylistId, to: usize) -> anyhow::Result<()> {
+        let mut order: Vec<PlaylistId> = self.index().playlists().iter().map(|p| p.id).collect();
+        let Some(from) = order.iter().position(|p| *p == id) else { return Ok(()) };
+        let moved = order.remove(from);
+        order.insert(to.min(order.len()), moved);
+        self.db.lock().set_playlist_order(&order)?;
+        self.refresh_playlists()
+    }
+
+    /// Create a playlist with `tracks` at sidebar position `at` (undoing a delete, duplicating).
+    pub fn insert_playlist(&self, name: &str, tracks: &[TrackId], at: usize) -> anyhow::Result<PlaylistId> {
+        let id = self.create_playlist(name, tracks)?;
+        self.move_playlist(id, at)?;
+        Ok(id)
+    }
+
+    /// Copy a playlist ("Mix copy") and place it right below the original.
+    pub fn duplicate_playlist(&self, id: PlaylistId) -> anyhow::Result<PlaylistId> {
+        let index = self.index();
+        let Some(pos) = index.playlists().iter().position(|p| p.id == id) else {
+            anyhow::bail!("the playlist no longer exists");
+        };
+        let original = index.playlists()[pos].clone();
+        drop(index);
+        let name = self.unique_playlist_name(&format!("{} copy", original.name));
+        self.insert_playlist(&name, &original.tracks, pos + 1)
     }
 
     pub fn get_kv(&self, key: &str) -> Option<String> {

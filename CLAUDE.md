@@ -174,6 +174,19 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
   - **Opening files:** Finder's "Open With" doesn't work, because winit 0.30 doesn't pass open-file
     events on. Drag and drop does work.
 
+- **Playlists.**
+  - The sidebar order is stored (`playlists.position`, schema v5); new playlists go to the top.
+  - Rows are reordered by dragging anywhere on them (the owner didn't want grip handles): playlist songs,
+    queue rows and sidebar playlists use `DragTouch`, a TouchArea that turns a press-and-move of a few
+    pixels into a drag and otherwise reports a plain `tapped`. Buttons inside a row (the heart, the queue's
+    remove button) sit on top and keep their own clicks. The drag lives in `AppState.drag-kind/-from/-to`;
+    rows draw a `DropLine` where it would land, and the move is sent on release. Queue drags stay inside
+    their section ("Queued by you" or "Next from").
+  - Toasts can carry a button (`show_toast` with `ToastAction::Undo` or `Open`). Undo keeps what to restore
+    (`Undo::Playlist` puts a deleted playlist back at its row; `Undo::Songs` restores a playlist's songs).
+    Ctrl+Z runs "Undo" outside the tag editor.
+  - Adding never duplicates a song in a playlist (`Library::add_to_playlist` returns how many were added);
+    auto-named playlists go through `unique_playlist_name`.
 - **Volume levelling** (ReplayGain 2.0, −18 LUFS):
   - Gains are read from tags at scan time (any tag in the file; Opus `R128_*` tags are converted and include the
     header output gain, which Lychee's Opus decoder doesn't apply). Songs without tags are measured in the
@@ -217,6 +230,8 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
     window then has no app id, and GNOME shows a generic icon called "Unknown" instead of
     matching `lychee.desktop`.
   - Check it in a nested mutter with `WAYLAND_DEBUG=1`: look for `xdg_toplevel…set_app_id("lychee")`.
+- A component's root can't refer to `parent` (place such elements where they're used, see `DropLine`), and a
+  component must be declared before the first component that uses it.
 - An element that has a width or height but no `x`/`y`, and isn't in a layout, is *centred* in its
   parent. Overlays need `x: 0px; y: 0px;`: without them the side panel drawer sat 42 px too low.
 - Don't put icons in empty states. The owner had them all removed, and a `VerticalLayout` puts a
@@ -243,6 +258,9 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
       (0–3 = 0/+2/+4/+6 dB), `like`,
       `queue:`, `toast:`
     - library: `add-folder:`, `like-album:`
+    - playlists: `make-playlist:Name=Album,Album`, `open-playlist:Name`, `playlist-cmd:what,Name` (the
+      `Actions.playlist-command` words: `sort-title`, `dedupe`, `delete`…), `playlist-move:from,to`,
+      `drag:kind,from,to` (a drag in progress: `playlist`, `queue` or `nav`), `save-queue`, `toast-action`
     - tag editor: `edit-album:`, `editor-open:PATH`, `editor-select:0,1`, `editor-tab:`,
       `editor-field:id=value`, `editor-more`, `editor-scanner:N` (3 = artists, 4 = genres), `editor-artists-style:N`,
       `editor-artists-commas-only:0|1`,
@@ -250,7 +268,8 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
       `editor-lookup-apply`, `editor-save`, `editor-quit`
     - waiting: `wait:MS`, to let threads and network finish
   - Extras: `LYCHEE_SCREENSHOT_SIZE=WxH`, `LYCHEE_SCREENSHOT_HOVER=x,y` (hover states), `LYCHEE_SCREENSHOT_CLICK=x,y`
-    (one click, e.g. to open a dropdown),
+    (one click, e.g. to open a dropdown), `LYCHEE_SCREENSHOT_DRAG=x1,y1,x2,y2[,hold]` (a real press, move and
+    release, e.g. dragging a row; `hold` keeps the button down),
     `LYCHEE_SCREENSHOT_MINI=mini.png`, and `LYCHEE_SCREENSHOT_MINI_CLICKS="x,y;x,y"`.
   - Scenes that play music use the real audio device. Set `muted = true` in the `LYCHEE_HOME` profile's
     `config.toml` first, or the owner hears it.

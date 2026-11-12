@@ -11,6 +11,7 @@ pub enum Command {
     Shuffle,
     Repeat,
     ClearQueue,
+    SaveQueue,
     Mini,
     Lyrics,
     SidePanel,
@@ -46,6 +47,7 @@ pub const COMMANDS: &[CommandInfo] = &[
     CommandInfo { command: Command::Shuffle, title: "Toggle shuffle", subtitle: "Playback", hint: "", icon: "shuffle" },
     CommandInfo { command: Command::Repeat, title: "Cycle repeat (off / all / one)", subtitle: "Playback", hint: "", icon: "repeat" },
     CommandInfo { command: Command::ClearQueue, title: "Clear the queue", subtitle: "Removes everything after the current song", hint: "", icon: "trash" },
+    CommandInfo { command: Command::SaveQueue, title: "Save the queue as a playlist", subtitle: "The playing song and what comes next", hint: "", icon: "save" },
     CommandInfo { command: Command::Mini, title: "Open mini player", subtitle: "Compact, always-on-top window", hint: shortcut("⌘M", "Ctrl M"), icon: "mini" },
     CommandInfo { command: Command::Lyrics, title: "Show lyrics", subtitle: "Side panel", hint: "", icon: "lyrics" },
     CommandInfo { command: Command::SidePanel, title: "Toggle the side panel", subtitle: "Queue, lyrics and details", hint: shortcut("⌃⌘S", "Ctrl Q"), icon: "sidebar" },
@@ -68,10 +70,13 @@ pub enum Entry {
     Track(TrackId),
     Playlist(PlaylistId),
     Command(Command),
+    /// Add the playing song to this playlist.
+    AddToPlaylist(PlaylistId),
 }
 
 /// Results in display order, each with the section label to show above it (or "").
-pub fn search(index: &LibraryIndex, query: &str) -> Vec<(&'static str, Entry)> {
+/// `playing`: a song is playing, so playlists matching the query offer to take it.
+pub fn search(index: &LibraryIndex, query: &str, playing: bool) -> Vec<(&'static str, Entry)> {
     let q = query.trim();
     let mut out: Vec<(&'static str, Entry)> = Vec::new();
     let push_section = |label: &'static str, entries: Vec<Entry>, out: &mut Vec<(&'static str, Entry)>| {
@@ -80,9 +85,27 @@ pub fn search(index: &LibraryIndex, query: &str) -> Vec<(&'static str, Entry)> {
         }
     };
 
+    let add_to = |q: &str, limit: usize| -> Vec<Entry> {
+        if !playing {
+            return Vec::new();
+        }
+        // "add to mix", "add mix" and "mix" all find "Mix".
+        let lower = q.to_lowercase();
+        let name = lower.strip_prefix("add to ").or_else(|| lower.strip_prefix("add ")).unwrap_or(&lower).trim();
+        let name = if "add to".starts_with(name) || "add".starts_with(name) { "" } else { name };
+        index
+            .playlists()
+            .iter()
+            .filter(|p| name.is_empty() || p.name.to_lowercase().contains(name))
+            .take(limit)
+            .map(|p| Entry::AddToPlaylist(p.id))
+            .collect()
+    };
+
     if let Some(cmd_query) = q.strip_prefix('>') {
         let cmds = matching_commands(cmd_query.trim(), 12);
         push_section("Commands", cmds, &mut out);
+        push_section("Add the playing song to", add_to(cmd_query.trim(), 6), &mut out);
         return out;
     }
     if q.is_empty() {
@@ -97,6 +120,7 @@ pub fn search(index: &LibraryIndex, query: &str) -> Vec<(&'static str, Entry)> {
     push_section("Songs", results.tracks.into_iter().take(5).map(Entry::Track).collect(), &mut out);
     push_section("Playlists", results.playlists.into_iter().take(3).map(Entry::Playlist).collect(), &mut out);
     push_section("Commands", matching_commands(q, 3), &mut out);
+    push_section("Add the playing song to", add_to(q, 3), &mut out);
     out
 }
 

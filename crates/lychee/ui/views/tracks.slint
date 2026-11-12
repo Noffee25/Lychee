@@ -1,7 +1,7 @@
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
 import { AppState, Actions, Player, TrackRow } from "../state.slint";
-import { Cover, PlayingBars, IconButton, PillButton, Segmented, Divider } from "../widgets.slint";
+import { Cover, PlayingBars, IconButton, PillButton, Segmented, Divider, DragTouch, DropLine } from "../widgets.slint";
 import { Grid } from "albums.slint";
 import { ListView, LineEdit } from "std-widgets.slint";
 
@@ -43,13 +43,31 @@ export component TrackRowView inherits Rectangle {
     in property <bool> show-cover;
     in property <bool> show-album;
     in property <bool> in-playlist;
+    // This row is being dragged (playlist pages), or a dragged row would land next to it.
+    property <bool> dragged: AppState.drag-kind == "playlist" && AppState.drag-from == root.track.index;
+    property <bool> drop-target: AppState.drag-kind == "playlist" && AppState.drag-from >= 0
+        && AppState.drag-to == root.track.index && AppState.drag-to != AppState.drag-from;
     property <bool> hovered: row-ta.has-hover || like-ta.has-hover;
     height: 48px;
     border-radius: 9px;
-    background: root.track.current ? Theme.accent.with-alpha(0.10) : root.hovered ? Theme.hover : transparent;
-    row-ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { Actions.play-from(root.context, root.track.index); }
+    background: root.dragged ? Theme.accent.with-alpha(0.14)
+        : root.track.current ? Theme.accent.with-alpha(0.10) : root.hovered ? Theme.hover : transparent;
+    // Click to play; on a playlist page, press anywhere on the row and drag to move the song.
+    row-ta := DragTouch {
+        draggable: root.in-playlist;
+        tapped => { Actions.play-from(root.context, root.track.index); }
+        dragged(dy) => {
+            AppState.drag-kind = "playlist";
+            AppState.drag-from = root.track.index;
+            AppState.drag-to = Math.clamp(root.track.index + Math.round(dy / root.height), 0, AppState.tracks.length - 1);
+        }
+        released(drop) => {
+            if (drop && AppState.drag-kind == "playlist" && AppState.drag-from >= 0 && AppState.drag-to != AppState.drag-from) {
+                Actions.playlist-move(AppState.drag-from, AppState.drag-to);
+            }
+            AppState.drag-from = -1;
+            AppState.drag-to = -1;
+        }
     }
     HorizontalLayout {
         cross-axis-alignment: center;
@@ -142,6 +160,11 @@ export component TrackRowView inherits Rectangle {
             vertical-alignment: center;
         }
     }
+    if root.drop-target: DropLine {
+        x: 8px;
+        width: parent.width - 16px;
+        y: AppState.drag-to > AppState.drag-from ? parent.height - 1px : -1px;
+    }
     ContextMenuArea {
         Menu {
             MenuItem {
@@ -189,6 +212,30 @@ export component TrackRowView inherits Rectangle {
                 title: "Edit tags…";
                 activated => { Actions.track-action("edit-tags", root.track.id); }
             }
+            if root.in-playlist: MenuSeparator { }
+            if root.in-playlist: Menu {
+                title: "Move";
+                MenuItem {
+                    title: "To the top";
+                    enabled: root.track.index > 0;
+                    activated => { Actions.playlist-move(root.track.index, 0); }
+                }
+                MenuItem {
+                    title: "Up";
+                    enabled: root.track.index > 0;
+                    activated => { Actions.playlist-move(root.track.index, root.track.index - 1); }
+                }
+                MenuItem {
+                    title: "Down";
+                    enabled: root.track.index < AppState.tracks.length - 1;
+                    activated => { Actions.playlist-move(root.track.index, root.track.index + 1); }
+                }
+                MenuItem {
+                    title: "To the bottom";
+                    enabled: root.track.index < AppState.tracks.length - 1;
+                    activated => { Actions.playlist-move(root.track.index, AppState.tracks.length - 1); }
+                }
+            }
             if root.in-playlist: MenuItem {
                 title: "Remove from this playlist";
                 activated => { Actions.track-action("remove-from-playlist", root.track.index); }
@@ -197,9 +244,73 @@ export component TrackRowView inherits Rectangle {
     }
 }
 
+// The "⋯" button on a playlist page: queueing, copying and one-off sorting.
+component PlaylistMore inherits Rectangle {
+    width: 40px;
+    height: 40px;
+    property <int> id: AppState.list-header.id;
+    property <bool> has-songs: AppState.tracks.length > 0;
+    more-menu := ContextMenuArea {
+        IconButton {
+            icon: Icons.more;
+            size: 40px;
+            tooltip: "More";
+            clicked => { more-menu.show({ x: 0px, y: self.height + 4px }); }
+        }
+        Menu {
+            MenuItem {
+                title: "Play next";
+                enabled: root.has-songs;
+                activated => { Actions.playlist-command("play-next", root.id); }
+            }
+            MenuItem {
+                title: "Add to queue";
+                enabled: root.has-songs;
+                activated => { Actions.playlist-command("add-queue", root.id); }
+            }
+            MenuSeparator { }
+            Menu {
+                title: "Sort by";
+                enabled: AppState.tracks.length > 1;
+                MenuItem {
+                    title: "Title";
+                    activated => { Actions.playlist-command("sort-title", root.id); }
+                }
+                MenuItem {
+                    title: "Artist";
+                    activated => { Actions.playlist-command("sort-artist", root.id); }
+                }
+                MenuItem {
+                    title: "Album";
+                    activated => { Actions.playlist-command("sort-album", root.id); }
+                }
+                MenuItem {
+                    title: "Length";
+                    activated => { Actions.playlist-command("sort-duration", root.id); }
+                }
+                MenuSeparator { }
+                MenuItem {
+                    title: "Reverse the order";
+                    activated => { Actions.playlist-command("reverse", root.id); }
+                }
+            }
+            MenuItem {
+                title: AppState.list-header.duplicates > 0
+                    ? "Remove duplicates (" + AppState.list-header.duplicates + ")" : "Remove duplicates";
+                enabled: AppState.list-header.duplicates > 0;
+                activated => { Actions.playlist-command("dedupe", root.id); }
+            }
+            MenuSeparator { }
+            MenuItem {
+                title: "Duplicate playlist";
+                activated => { Actions.playlist-command("duplicate", root.id); }
+            }
+        }
+    }
+}
+
 // Header block for list pages: Favorites, playlists, songs, history.
 component ListHero inherits HorizontalLayout {
-    property <bool> renaming;
     padding-left: Grid.side-padding;
     padding-right: Grid.side-padding;
     padding-bottom: 16px;
@@ -225,6 +336,7 @@ component ListHero inherits HorizontalLayout {
         radius: 12px;
         source: AppState.list-header.cover;
         has-image: AppState.list-header.has-cover;
+        tiles: AppState.list-header.covers;
         seed: AppState.list-header.seed;
         drop-shadow-blur: 22px;
         drop-shadow-offset-y: 10px;
@@ -240,7 +352,7 @@ component ListHero inherits HorizontalLayout {
             font-weight: 600;
             color: Theme.text-2;
         }
-        if !root.renaming: Text {
+        if !AppState.renaming-playlist: Text {
             text: AppState.list-header.title;
             font-size: AppState.page == "favorites" || AppState.page == "playlist" ? 40px : 30px;
             font-weight: 750;
@@ -248,14 +360,18 @@ component ListHero inherits HorizontalLayout {
             color: Theme.text;
             overflow: elide;
         }
-        if root.renaming: LineEdit {
+        if AppState.renaming-playlist: LineEdit {
             text: AppState.list-header.title;
             font-size: 20px;
+            init => {
+                self.focus();
+                self.select-all();
+            }
             accepted(name) => {
                 if (name != "") {
                     Actions.rename-playlist(AppState.list-header.id, name);
                 }
-                root.renaming = false;
+                AppState.renaming-playlist = false;
             }
         }
         Text {
@@ -285,14 +401,15 @@ component ListHero inherits HorizontalLayout {
                 icon: Icons.edit;
                 size: 40px;
                 tooltip: "Rename playlist";
-                clicked => { root.renaming = !root.renaming; }
+                clicked => { AppState.renaming-playlist = !AppState.renaming-playlist; }
             }
             if AppState.list-header.editable: IconButton {
                 icon: Icons.trash;
                 size: 40px;
                 tooltip: "Delete playlist";
-                clicked => { Actions.delete-playlist(AppState.list-header.id); }
+                clicked => { Actions.playlist-command("delete", AppState.list-header.id); }
             }
+            if AppState.list-header.editable: PlaylistMore { }
             Rectangle { horizontal-stretch: 1; }
             if AppState.page == "songs": VerticalLayout {
                 alignment: center;

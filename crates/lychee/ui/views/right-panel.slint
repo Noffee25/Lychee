@@ -1,17 +1,38 @@
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
 import { AppState, Player, Actions, QueueItem } from "../state.slint";
-import { IconButton, Cover, Segmented, Divider, ArtistLinks } from "../widgets.slint";
+import { IconButton, Cover, Segmented, Divider, ArtistLinks, DragTouch, DropLine } from "../widgets.slint";
 import { ScrollView } from "std-widgets.slint";
 
 component QueueRow inherits Rectangle {
     in property <QueueItem> item;
+    // Queue indices of the first and last row of this row's section: a drag stays inside it.
+    in property <int> first;
+    in property <int> last;
+    property <bool> hovered: q-ta.has-hover || rm.has-hover;
+    property <bool> dragged: AppState.drag-kind == "queue" && AppState.drag-from == root.item.index;
+    property <bool> drop-target: AppState.drag-kind == "queue" && AppState.drag-from >= 0
+        && AppState.drag-to == root.item.index && AppState.drag-to != AppState.drag-from;
     height: 52px;
     border-radius: 9px;
-    background: q-ta.has-hover ? Theme.hover : transparent;
-    q-ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { Actions.queue-jump(root.item.index); }
+    background: root.dragged ? Theme.accent.with-alpha(0.14) : root.hovered ? Theme.hover : transparent;
+    // Click to play; press anywhere on the row and drag to move it within its section.
+    q-ta := DragTouch {
+        draggable: true;
+        tapped => { Actions.queue-jump(root.item.index); }
+        dragged(dy) => {
+            AppState.drag-kind = "queue";
+            AppState.drag-from = root.item.index;
+            // Rows are 52 px tall with 2 px between them.
+            AppState.drag-to = Math.clamp(root.item.index + Math.round(dy / 54px), root.first, root.last);
+        }
+        released(drop) => {
+            if (drop && AppState.drag-kind == "queue" && AppState.drag-from >= 0 && AppState.drag-to != AppState.drag-from) {
+                Actions.queue-move(AppState.drag-from, AppState.drag-to);
+            }
+            AppState.drag-from = -1;
+            AppState.drag-to = -1;
+        }
     }
     HorizontalLayout {
         cross-axis-alignment: center;
@@ -41,7 +62,7 @@ component QueueRow inherits Rectangle {
                 overflow: elide;
             }
         }
-        if !q-ta.has-hover && !remove.has-hover: Text {
+        if !root.hovered: Text {
             text: root.item.duration;
             font-family: Theme.mono;
             font-size: 12px;
@@ -49,9 +70,8 @@ component QueueRow inherits Rectangle {
             vertical-alignment: center;
         }
         remove := Rectangle {
-            property <bool> has-hover: rm.has-hover;
-            width: q-ta.has-hover || rm.has-hover ? 28px : 0px;
-            visible: q-ta.has-hover || rm.has-hover;
+            width: root.hovered ? 28px : 0px;
+            visible: root.hovered;
             Image {
                 source: Icons.x;
                 colorize: rm.has-hover ? Theme.text : Theme.text-3;
@@ -63,6 +83,11 @@ component QueueRow inherits Rectangle {
                 clicked => { Actions.queue-remove(root.item.index); }
             }
         }
+    }
+    if root.drop-target: DropLine {
+        x: 8px;
+        width: parent.width - 16px;
+        y: AppState.drag-to > AppState.drag-from ? parent.height - 1px : -1px;
     }
     ContextMenuArea {
         Menu {
@@ -90,9 +115,12 @@ component QueueRow inherits Rectangle {
 component SectionTitle inherits HorizontalLayout {
     in property <string> text;
     in property <bool> clearable;
+    // Offers "Save as playlist" (on the first section shown).
+    in property <bool> savable;
     height: 34px;
     padding-left: 4px;
     padding-right: 4px;
+    spacing: 12px;
     Text {
         text: root.text;
         font-size: 12px;
@@ -101,6 +129,16 @@ component SectionTitle inherits HorizontalLayout {
         vertical-alignment: center;
         overflow: elide;
         horizontal-stretch: 1;
+    }
+    if root.savable: Text {
+        text: "Save as playlist";
+        font-size: 12px;
+        color: save-ta.has-hover ? Theme.text : Theme.text-2;
+        vertical-alignment: center;
+        save-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Actions.save-queue(); }
+        }
     }
     if root.clearable: Text {
         text: "Clear";
@@ -199,16 +237,22 @@ component QueueTab inherits ScrollView {
         }
         if AppState.queue-manual.length > 0: SectionTitle {
             text: "Queued by you";
+            savable: true;
         }
         for item in AppState.queue-manual: QueueRow {
             item: item;
+            first: AppState.queue-manual[0].index;
+            last: AppState.queue-manual[AppState.queue-manual.length - 1].index;
         }
         if AppState.queue-context.length > 0: SectionTitle {
             text: "Next from " + AppState.queue-context-name;
             clearable: true;
+            savable: AppState.queue-manual.length == 0;
         }
         for item in AppState.queue-context: QueueRow {
             item: item;
+            first: AppState.queue-context[0].index;
+            last: AppState.queue-context[AppState.queue-context.length - 1].index;
         }
     }
 }

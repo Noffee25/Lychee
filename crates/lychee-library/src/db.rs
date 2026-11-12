@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use lychee_core::{AudioFormat, Measured, Playlist, PlaylistId, ReplayGain, Track, TrackId, now_unix};
 use rusqlite::{Connection, OptionalExtension, params};
 
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 const SCHEMA_V1: &str = "
 CREATE TABLE folders (
@@ -98,6 +98,16 @@ ALTER TABLE tracks ADD COLUMN lufs_done INTEGER NOT NULL DEFAULT 0;
 UPDATE tracks SET mtime = 0;
 ";
 
+/// Playlists keep the order the user gives them in the sidebar; existing ones start alphabetical.
+const SCHEMA_V5: &str = "
+ALTER TABLE playlists ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+UPDATE playlists SET position = (
+    SELECT COUNT(*) FROM playlists AS p
+    WHERE p.name COLLATE NOCASE < playlists.name COLLATE NOCASE
+       OR (p.name COLLATE NOCASE = playlists.name COLLATE NOCASE AND p.id < playlists.id)
+);
+";
+
 /// Metadata for one file, as written by the scanner.
 #[derive(Clone, Debug, Default)]
 pub struct TrackRecord {
@@ -154,6 +164,9 @@ impl Db {
         }
         if version < 4 {
             conn.execute_batch(SCHEMA_V4)?;
+        }
+        if version < 5 {
+            conn.execute_batch(SCHEMA_V5)?;
         }
         if version < SCHEMA_VERSION {
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -414,7 +427,7 @@ impl Db {
     // ---- playlists -----------------------------------------------------------------------
 
     pub fn playlists(&self) -> rusqlite::Result<Vec<Playlist>> {
-        let mut stmt = self.conn.prepare("SELECT id, name, updated_at FROM playlists ORDER BY name COLLATE NOCASE")?;
+        let mut stmt = self.conn.prepare("SELECT id, name, updated_at FROM playlists ORDER BY position, id")?;
         let mut playlists: Vec<Playlist> = stmt
             .query_map([], |r| Ok(Playlist { id: r.get(0)?, name: r.get(1)?, updated_at: r.get(2)?, tracks: vec![] }))?
             .collect::<rusqlite::Result<_>>()?;
@@ -425,13 +438,27 @@ impl Db {
         Ok(playlists)
     }
 
+    /// A new playlist goes to the top of the sidebar, where it's seen.
     pub fn create_playlist(&self, name: &str) -> rusqlite::Result<PlaylistId> {
         let now = now_unix();
         self.conn.execute(
-            "INSERT INTO playlists (name, created_at, updated_at) VALUES (?1, ?2, ?2)",
+            "INSERT INTO playlists (name, created_at, updated_at, position)
+             VALUES (?1, ?2, ?2, (SELECT COALESCE(MIN(position), 0) - 1 FROM playlists))",
             params![name, now],
         )?;
         Ok(self.conn.last_insert_rowid())
+    }
+
+    /// The sidebar order: `ids` top to bottom. Playlists not listed keep their place after them.
+    pub fn set_playlist_order(&mut self, ids: &[PlaylistId]) -> rusqlite::Result<()> {
+        let tx = self.conn.transaction()?;
+        {
+            let mut stmt = tx.prepare("UPDATE playlists SET position = ?2 WHERE id = ?1")?;
+            for (pos, id) in ids.iter().enumerate() {
+                stmt.execute(params![id, pos as i64])?;
+            }
+        }
+        tx.commit()
     }
 
     pub fn rename_playlist(&self, id: PlaylistId, name: &str) -> rusqlite::Result<()> {
@@ -566,6 +593,40 @@ mod tests {
         }
         let db = Db::open(&path).unwrap();
         assert_eq!(db.file_stamps().unwrap()[0].2, 0, "stale, so the next scan re-reads it");
+    }
+
+    #[test]
+    fn playlists_have_a_sidebar_order() {
+        let mut db = Db::open_in_memory().unwrap();
+        let a = db.create_playlist("A").unwrap();
+        let b = db.create_playlist("B").unwrap();
+        let names = |db: &Db| db.playlists().unwrap().into_iter().map(|p| p.name).collect::<Vec<_>>();
+        assert_eq!(names(&db), ["B", "A"], "new playlists go to the top");
+        db.set_playlist_order(&[a, b]).unwrap();
+        assert_eq!(names(&db), ["A", "B"]);
+        let c = db.create_playlist("C").unwrap();
+        assert_eq!(names(&db), ["C", "A", "B"]);
+        db.set_playlist_order(&[a, c, b]).unwrap();
+        assert_eq!(names(&db), ["A", "C", "B"]);
+    }
+
+    #[test]
+    fn v4_playlists_start_alphabetical() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("library.db");
+        {
+            let conn = Connection::open(&path).unwrap();
+            for schema in [SCHEMA_V1, SCHEMA_V2, SCHEMA_V4] {
+                conn.execute_batch(schema).unwrap();
+            }
+            conn.pragma_update(None, "user_version", 4).unwrap();
+            for name in ["rainy", "Focus", "drive"] {
+                conn.execute("INSERT INTO playlists (name, created_at, updated_at) VALUES (?1, 1, 1)", [name]).unwrap();
+            }
+        }
+        let db = Db::open(&path).unwrap();
+        let names: Vec<String> = db.playlists().unwrap().into_iter().map(|p| p.name).collect();
+        assert_eq!(names, ["drive", "Focus", "rainy"]);
     }
 
     #[test]

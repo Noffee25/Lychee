@@ -271,6 +271,44 @@ export component PlayerBar inherits Rectangle {
                             }
                         }
                     }
+                    // Right-click the playing song: the same things as on a song row.
+                    ContextMenuArea {
+                        Menu {
+                            Menu {
+                                title: "Add to playlist";
+                                MenuItem {
+                                    title: "New playlist";
+                                    activated => { Actions.add-to-playlist(-1, "track", Player.now.id); }
+                                }
+                                MenuSeparator { }
+                                for playlist in AppState.playlists: MenuItem {
+                                    title: playlist.name;
+                                    activated => { Actions.add-to-playlist(playlist.id, "track", Player.now.id); }
+                                }
+                            }
+                            MenuItem {
+                                title: Player.now.liked ? "Remove from Favorites" : "Add to Favorites";
+                                activated => { Actions.toggle-like-current(); }
+                            }
+                            MenuSeparator { }
+                            MenuItem {
+                                title: "Go to album";
+                                activated => { Actions.open-album(Player.now.album-id); }
+                            }
+                            MenuItem {
+                                title: "Go to artist";
+                                activated => { Actions.track-action("go-artist", Player.now.id); }
+                            }
+                            MenuItem {
+                                title: "Show in folder";
+                                activated => { Actions.track-action("show-folder", Player.now.id); }
+                            }
+                            MenuItem {
+                                title: "Edit tags…";
+                                activated => { Actions.track-action("edit-tags", Player.now.id); }
+                            }
+                        }
+                    }
                 }
                 IconButton {
                     icon: Player.now.liked ? Icons.heart-fill : Icons.heart;

@@ -19,7 +19,7 @@
 - **The Flow interface.** A three-pane layout, album pages tinted with the colors of their artwork, and a Queue / Lyrics / Details side panel. Eleven colour themes, including Catppuccin, Tokyo Night, Gruvbox and Rosé Pine, with separate dark and light picks that can follow the system.
 - **Command palette (Ctrl+K).** Fuzzy-search your whole library and run any command from the keyboard.
 - **Synced lyrics** from `.lrc` files next to your music or embedded in the file. Click a line to jump to it.
-- **Queue and playlists.** Play next, add to queue, reorder, Favorites, and playlists you can create, rename and delete.
+- **Queue and playlists.** Play next, add to queue, Favorites, and playlists with cover mosaics. Drag songs and playlists into order, save the queue as a playlist, sort a playlist once or clear out duplicates, and undo deletes and removals from the toast (or Ctrl+Z).
 - **Last.fm scrobbling.** Sign in through the browser, send "now playing" updates, scrobble with an offline queue, and optionally love tracks you favorite. A status icon sits in the bottom-right corner.
 - **Tag editor, modelled on EasyTAG.** Edit many files at once (mixed values show as "Multiple values"),
   number tracks, edit artwork and lyrics, and undo anything. Its scanner fills tags from file names

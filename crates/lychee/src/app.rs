@@ -19,7 +19,7 @@ use lychee_core::{
     TrackRef, format_duration, format_duration_ms,
 };
 use lychee_lastfm::{Scrobble, Scrobbler};
-use lychee_library::{AlbumSort, Library, LibraryIndex, ScanProgress, ScanSummary, TrackSort};
+use lychee_library::{AlbumSort, Library, LibraryIndex, ScanProgress, ScanSummary, TrackSort, sort_key};
 use lychee_platform::{MediaAction, MediaControls, NowPlaying as OsNowPlaying, Playback, Repeat};
 use slint::{Color, ComponentHandle, Image, ModelRc, SharedString, VecModel};
 
@@ -97,6 +97,14 @@ pub enum Action {
     CreatePlaylist(String),
     RenamePlaylist(i32, String),
     DeletePlaylist(i32),
+    /// A row of the open playlist moved (from, to).
+    PlaylistMove(i32, i32),
+    /// A playlist menu command (see `Actions.playlist-command`) on a playlist.
+    PlaylistCommand(String, i32),
+    /// A sidebar playlist moved to a row.
+    NavPlaylistMove(i32, i32),
+    SaveQueue,
+    ToastAction,
     OpenMini,
     CloseMini,
     RaiseMain,
@@ -214,6 +222,11 @@ macro_rules! wire_actions {
         a.on_create_playlist({ let d = d.clone(); move |n| d.dispatch(Action::CreatePlaylist(n.into())) });
         a.on_rename_playlist({ let d = d.clone(); move |id, n| d.dispatch(Action::RenamePlaylist(id, n.into())) });
         a.on_delete_playlist({ let d = d.clone(); move |id| d.dispatch(Action::DeletePlaylist(id)) });
+        a.on_playlist_move({ let d = d.clone(); move |f, t| d.dispatch(Action::PlaylistMove(f, t)) });
+        a.on_playlist_command({ let d = d.clone(); move |w, id| d.dispatch(Action::PlaylistCommand(w.into(), id)) });
+        a.on_nav_playlist_move({ let d = d.clone(); move |id, t| d.dispatch(Action::NavPlaylistMove(id, t)) });
+        a.on_save_queue({ let d = d.clone(); move || d.dispatch(Action::SaveQueue) });
+        a.on_toast_action({ let d = d.clone(); move || d.dispatch(Action::ToastAction) });
         a.on_open_mini({ let d = d.clone(); move || d.dispatch(Action::OpenMini) });
         a.on_close_mini({ let d = d.clone(); move || d.dispatch(Action::CloseMini) });
         a.on_raise_main({ let d = d.clone(); move || d.dispatch(Action::RaiseMain) });
@@ -270,6 +283,22 @@ impl Page {
 enum ScanMsg {
     Progress(ScanProgress),
     Done(Result<ScanSummary, String>),
+}
+
+/// The button in a toast.
+enum ToastAction {
+    /// "Undo": put a playlist back.
+    Undo(Undo),
+    /// "Open": show a playlist that was just made.
+    Open(PlaylistId),
+}
+
+/// What a toast's Undo restores.
+enum Undo {
+    /// A deleted playlist, at its sidebar row; `was_open` reopens it.
+    Playlist { name: String, tracks: Vec<TrackId>, row: usize, was_open: bool },
+    /// A playlist's songs before a removal, sort or clean-up.
+    Songs { id: PlaylistId, tracks: Vec<TrackId> },
 }
 
 /// From the thread that measures loudness for volume levelling.
@@ -456,6 +485,7 @@ pub struct App {
     devices_rx: Receiver<Vec<String>>,
     devices: Vec<String>,
     toast_until: Option<Instant>,
+    toast_action: Option<ToastAction>,
     last_position_tick: Instant,
     last_media_position: Instant,
     settings_dirty: bool,
@@ -554,6 +584,7 @@ impl App {
             devices_rx,
             devices: Vec::new(),
             toast_until: None,
+            toast_action: None,
             last_position_tick: Instant::now(),
             last_media_position: Instant::now(),
             settings_dirty: false,
@@ -905,16 +936,16 @@ impl App {
                     self.refresh_page();
                 }
             }
-            Action::DeletePlaylist(id) => {
-                let name = self.library.index().playlist(i64::from(id)).map(|p| p.name.clone()).unwrap_or_default();
-                if self.library.delete_playlist(i64::from(id)).is_ok() {
+            Action::DeletePlaylist(id) => self.delete_playlist(i64::from(id)),
+            Action::PlaylistMove(from, to) => self.move_in_playlist(from, to),
+            Action::PlaylistCommand(what, id) => self.playlist_command(&what, i64::from(id)),
+            Action::NavPlaylistMove(id, to) => {
+                if self.library.move_playlist(i64::from(id), to.max(0) as usize).is_ok() {
                     self.update_playlists_nav();
-                    self.history.retain(|p| *p != Page::Playlist(i64::from(id)));
-                    self.forward.retain(|p| *p != Page::Playlist(i64::from(id)));
-                    self.show_page(Page::Albums, false);
-                    self.toast(&format!("Deleted “{name}”"));
                 }
             }
+            Action::SaveQueue => self.save_queue(),
+            Action::ToastAction => self.run_toast_action(),
             Action::OpenMini => self.open_mini(),
             Action::CloseMini => {
                 if let Some(mini) = &self.mini {
@@ -1030,8 +1061,10 @@ impl App {
         }
         if self.toast_until.is_some_and(|t| Instant::now() >= t) {
             self.toast_until = None;
+            self.toast_action = None;
             if let Some(ui) = self.ui.upgrade() {
                 ui.global::<AppState>().set_toast(SharedString::new());
+                ui.global::<AppState>().set_toast_action(SharedString::new());
             }
         }
         if self.settings_dirty && self.last_settings_save.elapsed() > Duration::from_secs(1) {
@@ -1458,12 +1491,18 @@ impl App {
         if what == "remove-from-playlist" {
             // `id` is the row index on the playlist page.
             if let Page::Playlist(pid) = self.page {
-                let mut tracks = self.list_ids.clone();
+                let before = self.list_ids.clone();
+                let mut tracks = before.clone();
                 if (id as usize) < tracks.len() {
-                    tracks.remove(id as usize);
+                    let removed = tracks.remove(id as usize);
                     if self.library.set_playlist_tracks(pid, &tracks).is_ok() {
                         self.update_playlists_nav();
                         self.refresh_page();
+                        let index = self.library.index();
+                        let title = index.track(removed).map(|t| t.title.clone()).unwrap_or_default();
+                        let name = index.playlist(pid).map(|p| p.name.clone()).unwrap_or_default();
+                        drop(index);
+                        self.undo_toast(&format!("Removed “{title}” from “{name}”"), Undo::Songs { id: pid, tracks: before });
                     }
                 }
             }
@@ -1586,14 +1625,23 @@ impl App {
             }
         };
         if playlist < 0 {
-            match self.library.create_playlist(&label, &ids) {
-                Ok(_) => self.toast(&format!("Created the playlist “{label}”")),
+            let name = self.library.unique_playlist_name(&label);
+            match self.library.create_playlist(&name, &ids) {
+                Ok(id) => self.show_toast(&format!("Created the playlist “{name}”"), Some(ToastAction::Open(id))),
                 Err(e) => self.toast(&format!("Could not create the playlist: {e}")),
             }
         } else {
             let name = self.library.index().playlist(i64::from(playlist)).map(|p| p.name.clone()).unwrap_or_default();
             match self.library.add_to_playlist(i64::from(playlist), &ids) {
-                Ok(()) => self.toast(&format!("Added to “{name}”")),
+                Ok(0) if ids.len() == 1 => self.toast(&format!("Already in “{name}”")),
+                Ok(0) => self.toast(&format!("All {} songs are already in “{name}”", ids.len())),
+                Ok(n) if n < ids.len() => self.toast(&format!(
+                    "Added {n} song{} to “{name}” ({} already there)",
+                    plural(n),
+                    ids.len() - n
+                )),
+                Ok(n) if n > 1 => self.toast(&format!("Added {n} songs to “{name}”")),
+                Ok(_) => self.toast(&format!("Added to “{name}”")),
                 Err(e) => self.toast(&format!("Could not add to the playlist: {e}")),
             }
         }
@@ -1695,6 +1743,144 @@ impl App {
                 self.update_settings_ui();
                 self.start_measuring();
             }
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Playlists
+
+    /// Move a song on the open playlist (drag, or the Move menu).
+    fn move_in_playlist(&mut self, from: i32, to: i32) {
+        let Page::Playlist(id) = self.page else { return };
+        let mut tracks = self.list_ids.clone();
+        let (Ok(from), Ok(to)) = (usize::try_from(from), usize::try_from(to)) else { return };
+        if from >= tracks.len() || to >= tracks.len() || from == to {
+            return;
+        }
+        let moved = tracks.remove(from);
+        tracks.insert(to, moved);
+        if self.library.set_playlist_tracks(id, &tracks).is_ok() {
+            self.update_playlists_nav();
+            self.refresh_page();
+        }
+    }
+
+    fn delete_playlist(&mut self, id: PlaylistId) {
+        let index = self.library.index();
+        let Some(row) = index.playlists().iter().position(|p| p.id == id) else { return };
+        let p = index.playlists()[row].clone();
+        drop(index);
+        if self.library.delete_playlist(id).is_err() {
+            return;
+        }
+        self.update_playlists_nav();
+        self.history.retain(|page| *page != Page::Playlist(id));
+        self.forward.retain(|page| *page != Page::Playlist(id));
+        let was_open = self.page == Page::Playlist(id);
+        if was_open {
+            self.show_page(Page::Albums, false);
+        }
+        let text = format!("Deleted “{}”", p.name);
+        self.undo_toast(&text, Undo::Playlist { name: p.name, tracks: p.tracks, row, was_open });
+    }
+
+    fn playlist_command(&mut self, what: &str, id: PlaylistId) {
+        let Some(p) = self.library.index().playlist(id).cloned() else { return };
+        match what {
+            "play" | "shuffle" => self.play_ids(p.tracks, 0, p.name, Some(what == "shuffle")),
+            "play-next" => self.enqueue(p.tracks, true, &p.name),
+            "add-queue" => self.enqueue(p.tracks, false, &p.name),
+            "rename" => {
+                self.show_page(Page::Playlist(id), true);
+                if let Some(ui) = self.ui.upgrade() {
+                    ui.global::<AppState>().set_renaming_playlist(true);
+                }
+            }
+            "duplicate" => match self.library.duplicate_playlist(id) {
+                Ok(copy) => {
+                    self.update_playlists_nav();
+                    let name = self.library.index().playlist(copy).map(|c| c.name.clone()).unwrap_or_default();
+                    self.show_toast(&format!("Made “{name}”"), Some(ToastAction::Open(copy)));
+                }
+                Err(e) => self.toast(&format!("Could not copy the playlist: {e}")),
+            },
+            "delete" => self.delete_playlist(id),
+            _ => self.rearrange_playlist(&p, what),
+        }
+    }
+
+    /// One-off sorts and clean-ups of a playlist's songs, undoable from the toast.
+    fn rearrange_playlist(&mut self, p: &lychee_core::Playlist, what: &str) {
+        let index = self.library.index();
+        let mut tracks = p.tracks.clone();
+        let key = |id: &TrackId| index.track(*id);
+        let (done, nothing) = match what {
+            "sort-title" => {
+                tracks.sort_by_cached_key(|id| key(id).map(|t| (sort_key(&t.title), sort_key(t.display_artist()))));
+                ("Sorted by title", "Already sorted by title")
+            }
+            "sort-artist" => {
+                tracks.sort_by_cached_key(|id| {
+                    key(id).map(|t| {
+                        let year = index.album(t.album_id).and_then(|a| a.year).unwrap_or(0);
+                        (sort_key(t.display_artist()), year, sort_key(&t.album), t.disc_number, t.track_number)
+                    })
+                });
+                ("Sorted by artist", "Already sorted by artist")
+            }
+            "sort-album" => {
+                tracks.sort_by_cached_key(|id| key(id).map(|t| (sort_key(&t.album), t.disc_number, t.track_number)));
+                ("Sorted by album", "Already sorted by album")
+            }
+            "sort-duration" => {
+                tracks.sort_by_cached_key(|id| key(id).map(|t| t.duration_ms));
+                ("Sorted by length", "Already sorted by length")
+            }
+            "reverse" => {
+                tracks.reverse();
+                ("Reversed the order", "Nothing to reverse")
+            }
+            "dedupe" => {
+                let mut seen = HashSet::new();
+                tracks.retain(|id| seen.insert(*id));
+                ("Removed duplicates", "No duplicates")
+            }
+            _ => return,
+        };
+        drop(index);
+        if tracks == p.tracks {
+            self.toast(nothing);
+            return;
+        }
+        if self.library.set_playlist_tracks(p.id, &tracks).is_ok() {
+            self.update_playlists_nav();
+            if self.page == Page::Playlist(p.id) {
+                self.refresh_page();
+            }
+            let text = match what {
+                "dedupe" => format!("Removed {} duplicate{}", p.tracks.len() - tracks.len(), plural(p.tracks.len() - tracks.len())),
+                _ => done.to_string(),
+            };
+            self.undo_toast(&text, Undo::Songs { id: p.id, tracks: p.tracks.clone() });
+        }
+    }
+
+    /// Save the playing song and everything after it as a new playlist.
+    fn save_queue(&mut self) {
+        let start = self.queue.current_index().unwrap_or(0);
+        let ids: Vec<TrackId> = self.queue.entries().iter().skip(start).map(|e| e.track).collect();
+        if ids.is_empty() {
+            self.toast("The queue is empty");
+            return;
+        }
+        let context = self.queue.context().trim().to_string();
+        let name = self.library.unique_playlist_name(if context.is_empty() { "Saved queue" } else { &context });
+        match self.library.create_playlist(&name, &ids) {
+            Ok(id) => {
+                self.update_playlists_nav();
+                self.show_toast(&format!("Saved the queue as “{name}”"), Some(ToastAction::Open(id)));
+            }
+            Err(e) => self.toast(&format!("Could not save the queue: {e}")),
         }
     }
 
@@ -1927,7 +2113,7 @@ impl App {
     fn palette_search(&mut self, query: &str) {
         let Some(ui) = self.ui.upgrade() else { return };
         let index = self.library.index();
-        let results = palette::search(&index, query);
+        let results = palette::search(&index, query, self.current.is_some());
         let icons = ui.global::<Icons>();
         let mut items = Vec::with_capacity(results.len());
         self.palette_entries.clear();
@@ -1971,6 +2157,13 @@ impl App {
                     let art = p.tracks.first().and_then(|t| index.track(*t)).and_then(|t| t.artwork.clone());
                     self.fill_cover(&mut item.cover, &mut item.has_cover, art.as_deref());
                     item.seed = seed_color(&p.name);
+                }
+                Entry::AddToPlaylist(id) => {
+                    let (Some(p), Some(t)) = (index.playlist(*id), self.current.as_ref()) else { continue };
+                    item.kind = "command".into();
+                    item.title = format!("Add “{}” to “{}”", t.title, p.name).into();
+                    item.subtitle = format!("Playlist · {} song{}", p.tracks.len(), plural(p.tracks.len())).into();
+                    item.icon = icon_by_name(&icons, "plus-square");
                 }
                 Entry::Command(cmd) => {
                     let info = palette::info(*cmd);
@@ -2047,6 +2240,12 @@ impl App {
                 drop(index);
                 self.run_command(cmd);
             }
+            Entry::AddToPlaylist(id) => {
+                drop(index);
+                if let Some(t) = self.current.clone() {
+                    self.add_to_playlist(id as i32, "track", t.id as i32);
+                }
+            }
         }
     }
 
@@ -2058,6 +2257,7 @@ impl App {
             Command::Shuffle => self.set_shuffle(!self.queue.shuffle()),
             Command::Repeat => self.set_repeat(self.queue.repeat().cycle()),
             Command::ClearQueue => self.handle(Action::QueueClear),
+            Command::SaveQueue => self.save_queue(),
             Command::Mini => self.open_mini(),
             Command::Lyrics | Command::SidePanel => {
                 if let Some(ui) = self.ui.upgrade() {
@@ -2188,6 +2388,7 @@ impl App {
                     seed: seed_color(&name),
                     id: 0,
                     editable: false,
+                    ..Default::default()
                 });
                 self.list_name = name.clone();
                 self.set_track_list(top.iter().map(|t| t.id).collect(), true);
@@ -2256,11 +2457,17 @@ impl App {
                     return;
                 };
                 let total: u64 = p.tracks.iter().filter_map(|t| index.track(*t)).map(|t| t.duration_ms).sum();
-                let art = p.tracks.iter().filter_map(|t| index.track(*t)).find_map(|t| t.artwork.clone());
-                let (cover, has_cover) = match art.as_deref().and_then(|k| self.images.get_now(k, Size::Thumb)) {
+                let art = playlist_art(&index, &p.tracks);
+                let (cover, has_cover) = match art.first().and_then(|k| self.images.get_now(k, Size::Thumb)) {
                     Some(img) => (img, true),
                     None => (Image::default(), false),
                 };
+                let covers: Vec<Image> = if art.len() == 4 {
+                    art.iter().map(|k| self.images.get_now(k, Size::Thumb).unwrap_or_default()).collect()
+                } else {
+                    Vec::new()
+                };
+                let unique: HashSet<TrackId> = p.tracks.iter().copied().collect();
                 self.set_list_header(ListHeader {
                     kind: "Playlist".into(),
                     title: p.name.clone().into(),
@@ -2268,8 +2475,10 @@ impl App {
                     cover,
                     has_cover,
                     seed: seed_color(&p.name),
+                    covers: ModelRc::new(VecModel::from(covers)),
                     id: p.id as i32,
                     editable: true,
+                    duplicates: (p.tracks.len() - unique.len()) as i32,
                 });
                 self.list_name = p.name.clone();
                 self.list_play.clear();
@@ -2489,19 +2698,26 @@ impl App {
 
     fn update_playlists_nav(&mut self) {
         let index = self.library.index();
-        let playlists: Vec<(i64, String, usize, Option<String>)> = index
+        let playlists: Vec<(i64, String, usize, Vec<String>)> = index
             .playlists()
             .iter()
-            .map(|p| {
-                let art = p.tracks.iter().filter_map(|t| index.track(*t)).find_map(|t| t.artwork.clone());
-                (p.id, p.name.clone(), p.tracks.len(), art)
-            })
+            .map(|p| (p.id, p.name.clone(), p.tracks.len(), playlist_art(&index, &p.tracks)))
             .collect();
         let images = self.images.clone();
         self.models.playlists.set(playlists.len(), move |row, need| {
             let (id, name, count, art) = &playlists[row];
-            let (cover, has_cover) = thumb(&images, art.as_deref(), need);
-            NavPlaylist { id: *id as i32, name: name.into(), count: *count as i32, cover, has_cover, seed: seed_color(name) }
+            let (cover, has_cover) = thumb(&images, art.first().map(String::as_str), need);
+            let covers: Vec<Image> =
+                if art.len() == 4 { art.iter().map(|k| thumb(&images, Some(k), need).0).collect() } else { Vec::new() };
+            NavPlaylist {
+                id: *id as i32,
+                name: name.into(),
+                count: *count as i32,
+                cover,
+                has_cover,
+                covers: ModelRc::new(VecModel::from(covers)),
+                seed: seed_color(name),
+            }
         });
     }
 
@@ -2828,10 +3044,56 @@ impl App {
     }
 
     fn toast(&mut self, text: &str) {
+        self.show_toast(text, None);
+    }
+
+    /// A toast with a button ("Undo", "Open"), shown a little longer so there's time to press it.
+    fn show_toast(&mut self, text: &str, action: Option<ToastAction>) {
+        let label = match &action {
+            Some(ToastAction::Undo(_)) => "Undo",
+            Some(ToastAction::Open(_)) => "Open",
+            None => "",
+        };
         if let Some(ui) = self.ui.upgrade() {
             ui.global::<AppState>().set_toast(text.into());
+            ui.global::<AppState>().set_toast_action(label.into());
         }
-        self.toast_until = Some(Instant::now() + Duration::from_millis(2800));
+        let ms = if action.is_some() { 5000 } else { 2800 };
+        self.toast_action = action;
+        self.toast_until = Some(Instant::now() + Duration::from_millis(ms));
+    }
+
+    fn undo_toast(&mut self, text: &str, undo: Undo) {
+        self.show_toast(text, Some(ToastAction::Undo(undo)));
+    }
+
+    fn run_toast_action(&mut self) {
+        let Some(action) = self.toast_action.take() else { return };
+        self.toast_until = Some(Instant::now());
+        match action {
+            ToastAction::Open(id) => self.show_page(Page::Playlist(id), true),
+            ToastAction::Undo(Undo::Playlist { name, tracks, row, was_open }) => {
+                match self.library.insert_playlist(&name, &tracks, row) {
+                    Ok(id) => {
+                        self.update_playlists_nav();
+                        if was_open {
+                            self.show_page(Page::Playlist(id), true);
+                        }
+                        self.toast(&format!("Restored “{name}”"));
+                    }
+                    Err(e) => self.toast(&format!("Could not restore the playlist: {e}")),
+                }
+            }
+            ToastAction::Undo(Undo::Songs { id, tracks }) => {
+                if self.library.set_playlist_tracks(id, &tracks).is_ok() {
+                    self.update_playlists_nav();
+                    if self.page == Page::Playlist(id) {
+                        self.refresh_page();
+                    }
+                    self.toast("Undone");
+                }
+            }
+        }
     }
 
     fn open_mini(&mut self) {
@@ -3077,6 +3339,51 @@ impl App {
             "look" => self.handle(Action::SetTheme(arg.to_string())),
             "art-colours" => self.handle(Action::SetDynamicAccent(arg != "0")),
             "levelling" => self.handle(Action::SetVolumeLevelling(arg != "0")),
+            // "make-playlist:Road Trip=Wall,Dawn" makes a playlist of those albums' songs.
+            "make-playlist" => {
+                let (name, albums) = arg.split_once('=').unwrap_or((arg, ""));
+                let mut ids = Vec::new();
+                for album in albums.split(',').filter(|a| !a.is_empty()) {
+                    if let Some(id) = find_album(self, album) {
+                        ids.extend(self.library.index().album(id).map(|a| a.tracks.clone()).unwrap_or_default());
+                    }
+                }
+                let _ = self.library.create_playlist(name, &ids);
+                self.update_playlists_nav();
+            }
+            "open-playlist" => {
+                let id = self.library.index().playlists().iter().find(|p| p.name == arg).map(|p| p.id);
+                if let Some(id) = id {
+                    self.show_page(Page::Playlist(id), true);
+                }
+            }
+            // "playlist-cmd:sort-title,Road Trip" runs a playlist menu command.
+            "playlist-cmd" => {
+                let (what, name) = arg.split_once(',').unwrap_or((arg, ""));
+                let id = self.library.index().playlists().iter().find(|p| p.name == name).map(|p| p.id);
+                if let Some(id) = id {
+                    self.playlist_command(what, id);
+                }
+            }
+            "playlist-move" => {
+                if let Some((from, to)) = arg.split_once(',').and_then(|(a, b)| Some((a.parse().ok()?, b.parse().ok()?))) {
+                    self.move_in_playlist(from, to);
+                }
+            }
+            // "drag:playlist,0,2" shows a drag in progress (row 0 held over row 2).
+            "drag" => {
+                let parts: Vec<&str> = arg.split(',').collect();
+                if let (Some(kind), Some(from), Some(to)) = (parts.first(), parts.get(1), parts.get(2)) {
+                    if let Some(ui) = self.ui.upgrade() {
+                        let state = ui.global::<AppState>();
+                        state.set_drag_kind((*kind).into());
+                        state.set_drag_from(from.parse().unwrap_or(-1));
+                        state.set_drag_to(to.parse().unwrap_or(-1));
+                    }
+                }
+            }
+            "save-queue" => self.save_queue(),
+            "toast-action" => self.run_toast_action(),
             "preamp" => self.handle(Action::SetLevellingPreamp(arg.parse().unwrap_or(0))),
             "like" => self.handle(Action::ToggleLikeCurrent),
             "queue" => {
@@ -3216,6 +3523,8 @@ fn icon_by_name(icons: &Icons, name: &str) -> Image {
         "refresh" => icons.get_refresh(),
         "scrobble" => icons.get_scrobble(),
         "edit" => icons.get_edit(),
+        "save" => icons.get_save(),
+        "plus-square" => icons.get_plus_square(),
         _ => icons.get_info(),
     }
 }
@@ -3337,6 +3646,24 @@ fn plural(n: usize) -> &'static str {
 /// The Settings choice (0..=3) for a pre-amp in dB (0, 2, 4, 6).
 fn preamp_index(db: f32) -> i32 {
     ((db / 2.0).round() as i32).clamp(0, 3)
+}
+
+/// Artwork keys for a playlist's cover: the first four different album covers, or just the first
+/// cover when there are fewer than four.
+fn playlist_art(index: &LibraryIndex, tracks: &[TrackId]) -> Vec<String> {
+    let mut keys: Vec<String> = Vec::new();
+    for t in tracks.iter().filter_map(|t| index.track(*t)) {
+        if let Some(k) = &t.artwork {
+            if !keys.contains(k) {
+                keys.push(k.clone());
+                if keys.len() == 4 {
+                    return keys;
+                }
+            }
+        }
+    }
+    keys.truncate(1);
+    keys
 }
 
 /// Linear engine gain for a levelling choice (1.0 when off or unknown).

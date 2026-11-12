@@ -88,6 +88,27 @@ pub fn capture(ui: &AppWindow, dispatcher: &Rc<Dispatcher>, out: &Path) -> anyho
         }
         settle(dispatcher, 0);
     }
+    // LYCHEE_SCREENSHOT_DRAG=1072,380,1072,520 presses at the first point, moves to the second in small
+    // steps and releases there (dragging a row). Ending with ",hold" leaves the button down,
+    // to show the drag in progress.
+    if let Ok(spec) = std::env::var("LYCHEE_SCREENSHOT_DRAG") {
+        let parts: Vec<&str> = spec.split(',').map(str::trim).collect();
+        let nums: Vec<f32> = parts.iter().take(4).filter_map(|p| p.parse().ok()).collect();
+        if let (Some(win), &[x1, y1, x2, y2]) = (WINDOWS.with(|ws| ws.borrow().first().cloned()), &nums[..]) {
+            use slint::platform::{PointerEventButton, WindowEvent};
+            let at = |t: f32| slint::LogicalPosition::new(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
+            win.dispatch_event(WindowEvent::PointerMoved { position: at(0.0) });
+            win.dispatch_event(WindowEvent::PointerPressed { position: at(0.0), button: PointerEventButton::Left });
+            for step in 1..=10 {
+                win.dispatch_event(WindowEvent::PointerMoved { position: at(step as f32 / 10.0) });
+                settle(dispatcher, 0);
+            }
+            if parts.get(4) != Some(&"hold") {
+                win.dispatch_event(WindowEvent::PointerReleased { position: at(1.0), button: PointerEventButton::Left });
+            }
+        }
+        settle(dispatcher, 0);
+    }
     settle(dispatcher, 0);
     render(0, w, h, out)?;
     if let Ok(mini_out) = std::env::var("LYCHEE_SCREENSHOT_MINI") {
