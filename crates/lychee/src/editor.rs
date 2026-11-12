@@ -1484,11 +1484,58 @@ impl EditorCtl {
         self.refresh_form();
     }
 
+    /// Files that belong together in the list: same album tag in the same folder (untagged files
+    /// group by folder). Compared case-insensitively.
+    fn group_key(&self, i: usize) -> (String, Option<&std::path::Path>) {
+        let f = &self.session.files()[i];
+        (f.tags.get(Field::Album).trim().to_lowercase(), f.path.parent())
+    }
+
+    /// First and last index of the run of files around `i` with the same group key.
+    fn group_bounds(&self, i: usize) -> (usize, usize) {
+        let key = self.group_key(i);
+        let mut first = i;
+        while first > 0 && self.group_key(first - 1) == key {
+            first -= 1;
+        }
+        let mut last = i;
+        while last + 1 < self.session.len() && self.group_key(last + 1) == key {
+            last += 1;
+        }
+        (first, last)
+    }
+
     fn file_row(&self, i: usize) -> EditorFile {
         let f = &self.session.files()[i];
         let t = &f.tags;
         let title = t.get(Field::Title);
+        let (first, last) = self.group_bounds(i);
+        let files = &self.session.files()[first..=last];
+        let album = t.get(Field::Album);
+        let group_title = if album.trim().is_empty() {
+            f.path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+        } else {
+            album.to_string()
+        };
+        // The album artist, else the artist if everyone agrees, else "Various artists".
+        let album_artist = files.iter().map(|f| f.tags.get(Field::AlbumArtist)).find(|a| !a.trim().is_empty());
+        let artist = album_artist.map(str::to_string).unwrap_or_else(|| {
+            let first_artist = files[0].tags.get(Field::Artist);
+            if files.iter().all(|f| f.tags.get(Field::Artist) == first_artist) {
+                first_artist.to_string()
+            } else {
+                "Various artists".into()
+            }
+        });
+        let n = files.len();
+        let count = format!("{n} file{}", if n == 1 { "" } else { "s" });
+        let group_detail = if artist.trim().is_empty() { count } else { format!("{artist} · {count}") };
         EditorFile {
+            group_first: first as i32,
+            group_last: last as i32,
+            group_title: group_title.into(),
+            group_detail: group_detail.into(),
+            group_modified: files.iter().filter(|f| f.is_modified()).count() as i32,
             name: f.file_name().into(),
             new_name: f.target_name().unwrap_or_default().into(),
             folder: f.path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default().into(),
@@ -1517,7 +1564,22 @@ impl EditorCtl {
 
     /// After an edit: update the touched rows and the summary; refresh one field's markers.
     fn after_edit(&mut self, touched: &[usize], field: Option<Field>) {
-        for &i in touched {
+        // Every file of a touched album group shows the group's label and counts, and an album
+        // edit can join or split groups: rebuild the touched groups and their neighbours.
+        let mut rows: Vec<usize> = Vec::new();
+        for &i in touched.iter().filter(|&&i| i < self.session.len()) {
+            // The group as it is now, and as the list showed it before the edit.
+            let (first, last) = self.group_bounds(i);
+            let (was_first, was_last) = self
+                .files_model
+                .row_data(i)
+                .map_or((first, last), |r| (r.group_first.max(0) as usize, r.group_last.max(0) as usize));
+            let (from, to) = (first.min(was_first), last.max(was_last));
+            rows.extend(from.saturating_sub(1)..=(to + 1).min(self.session.len() - 1));
+        }
+        rows.sort_unstable();
+        rows.dedup();
+        for i in rows {
             if i < self.files_model.row_count() {
                 self.files_model.set_row_data(i, self.file_row(i));
             }

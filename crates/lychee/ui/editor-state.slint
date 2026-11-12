@@ -13,6 +13,15 @@ export struct EditorFile {
     modified: bool,
     selected: bool,
     error: string,
+    // The album group this file belongs to (same album tag in the same folder; untagged files group
+    // by folder): its first and last file, and how to label it. Set on every file of the group.
+    group-first: int,
+    group-last: int,
+    group-title: string,
+    // "Aurora Fields · 3 files"
+    group-detail: string,
+    // Files of the group with unsaved changes.
+    group-modified: int,
 }
 
 export struct EditorField {

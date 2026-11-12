@@ -126,6 +126,9 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
   stopped the album page from highlighting the playing song.
 - **The tag editor** (`editor.rs`, `EditorCtl`) mirrors a `lychee_tagger::Session` into the `Editor` global.
   - Worker results identify files by *path*, because indices change when files are added or closed.
+  - The file list shows each album as a card (`group_bounds` in `editor.rs`: same album tag and folder).
+    Every row carries its group's first/last index and label; `after_edit` rebuilds the touched groups as
+    they were and are, because an album edit can split or join them.
   - Text inputs reload only when `Editor.generation` changes, never while the user types.
   - `Outcome` tells the app to toast, refresh views after a save, or quit.
   - Saving writes tags, then renames, then calls `Library::refresh_files`, which keeps track ids, likes

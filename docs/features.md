@@ -106,6 +106,9 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 - [x] Add albums from your library without leaving the editor: a searchable picker (the file list's "+",
   the empty editor, or Ctrl+K) where you tick several albums at once; albums already open are marked
 - [x] File list with markers for unsaved changes, pending renames and read or save errors
+- [x] The file list sets each album apart in its own card (same album tag in the same folder; untagged files group
+  by folder), headed by the album, artist, file count and unsaved changes. Click a header to select the whole
+  album, so Look up searches for it
 - [x] Multi-selection (Ctrl/Shift-click, Ctrl+A). A field reads "Multiple values" when the files disagree, and typing sets it for all of them
 - [x] Fields: title, artist, album, album artist, year, genre, track and disc numbers with totals, composer, comment,
   plus original artist, lyricist, label, catalog number, ISRC, copyright, URL, encoded by and the MusicBrainz IDs
