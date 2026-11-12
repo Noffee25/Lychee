@@ -109,7 +109,8 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
       `invoke_set_panel` and friends.
   - **Grids:** Rust builds grid rows, so every grid page computes its own column count with
     `Grid.columns(width)` and reports it through `Actions.set-grid-columns` on `init` and on change.
-    Don't read `AppState.grid-columns` in a page: a stale count from another page squeezed the Genres tiles.
+    There's deliberately no shared column-count property: a stale count from another page once squeezed
+    the Genres tiles.
   - **Tag editor:** below 900 px of page width, `EditorPage.compact` makes Scanner and Look up icon-only
     and moves Disc onto its own line.
   - **Sidebar:** its playlist list has no minimum height. With one, the player bar was pushed partly out of

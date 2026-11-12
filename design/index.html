@@ -50,56 +50,17 @@ header h1 span { color: var(--text-3); font-weight: 600; }
 </head>
 <body>
 <div class="wrap">
-  <header><span id="logo"></span><h1>Lychee <span>/ design directions</span></h1></header>
-  <p class="lede">Four directions for a modern music player for Linux and Windows. Each one is an interactive prototype, not a static picture: click albums, play and pause, seek, and open the Now Playing views. Pick the one you like (or a mix), and it becomes the basis for the real Rust implementation.</p>
+  <header><span id="logo"></span><h1>Lychee <span>/ design</span></h1></header>
+  <p class="lede">Flow, the design Lychee is built on, as an interactive prototype: click albums, play and pause, seek, and open the command palette. Three other directions were explored and set aside; the app in <code>crates/lychee/ui/</code> implements this one.</p>
   <div class="how">
     <span>Hover a preview to see its second screen</span>
     <span><kbd>Space</kbd> play / pause</span>
     <span><kbd>Esc</kbd> back to library</span>
-    <span>Click any album to "play" it and watch the UI re-theme</span>
+    <span>Click any album to "play" it</span>
     <span>Resize the window to see the layout adapt</span>
   </div>
 
   <div class="grid">
-    <article class="card">
-      <a class="shots" href="aurora/index.html"><img class="a" src="previews/aurora-library.jpg" alt="Aurora library view"><img class="b" src="previews/aurora-now.jpg" alt="Aurora now playing view"><span class="hint">hover: Now Playing</span></a>
-      <div class="body">
-        <div class="title"><span class="letter">A</span><h2>Aurora</h2><em>immersive, album-driven</em></div>
-        <p>The music sets the mood. The current cover becomes a slowly drifting, blurred backdrop, the interface floats on frosted glass, and the accent color comes from the artwork, so every album gives the app a new palette.</p>
-        <div class="cols">
-          <div><h3>Signature details</h3><ul><li>Dynamic color from album art</li><li>Floating glass dock</li><li>Waveform seek bar</li><li>Full-screen synced lyrics</li></ul></div>
-          <div><h3>Trade-offs</h3><ul><li>Heaviest GPU look (blur)</li><li>Very bright covers need contrast handling</li><li>Less dense for huge libraries</li></ul></div>
-        </div>
-        <div class="links"><a href="aurora/index.html">Open prototype</a><a href="aurora/index.html?view=now">Now Playing</a><a href="aurora/index.html?view=now&amp;tab=queue">Up Next</a></div>
-      </div>
-    </article>
-
-    <article class="card">
-      <a class="shots" href="folio/index.html"><img class="a" src="previews/folio-library.jpg" alt="Folio library view"><img class="b" src="previews/folio-now.jpg" alt="Folio now playing view"><span class="hint">hover: Now Playing</span></a>
-      <div class="body">
-        <div class="title"><span class="letter">B</span><h2>Folio</h2><em>editorial, typographic</em></div>
-        <p>Your library as a beautifully typeset record catalog: serif display type, hairline rules, generous whitespace and one restrained red. Ships as "Paper" (light) and "Ink" (dark).</p>
-        <div class="cols">
-          <div><h3>Signature details</h3><ul><li>Magazine-spread Now Playing</li><li>Current lyric as a pull quote</li><li>Track index with dotted leaders</li><li>Big serif timeline</li></ul></div>
-          <div><h3>Trade-offs</h3><ul><li>Light-first is unusual for players</li><li>Fewer controls visible at a glance</li><li>Type-heavy layouts need care at small sizes</li></ul></div>
-        </div>
-        <div class="links"><a href="folio/index.html">Open prototype</a><a href="folio/index.html?view=now">Now Playing</a><a href="folio/index.html?theme=ink">Ink theme</a></div>
-      </div>
-    </article>
-
-    <article class="card">
-      <a class="shots" href="console/index.html"><img class="a" src="previews/console-library.jpg" alt="Console library view"><img class="b" src="previews/console-display.jpg" alt="Console display view"><span class="hint">hover: Display mode</span></a>
-      <div class="body">
-        <div class="title"><span class="letter">C</span><h2>Console</h2><em>hi-fi hardware</em></div>
-        <p>The tactile appeal of hi-fi gear and synths: a dot-matrix display, an LED spectrum analyzer, physical keys, a rotary volume knob, and a status line that always shows the real output chain.</p>
-        <div class="cols">
-          <div><h3>Signature details</h3><ul><li>Album art as an LED dot matrix</li><li>Live spectrum + VU meters</li><li>Keycaps and knob with real press states</li><li>Output / DSP status bar</li></ul></div>
-          <div><h3>Trade-offs</h3><ul><li>Strongest personality; polarizing</li><li>Dense; dark-only in spirit</li><li>Visualizers cost a little CPU (pausable)</li></ul></div>
-        </div>
-        <div class="links"><a href="console/index.html">Open prototype</a><a href="console/index.html?view=now">Display mode</a></div>
-      </div>
-    </article>
-
     <article class="card">
       <a class="shots" href="flow/index.html"><img class="a" src="previews/flow-album.jpg" alt="Flow album view"><img class="b" src="previews/flow-palette.jpg" alt="Flow command palette"><span class="hint">hover: Command palette</span></a>
       <div class="body">
@@ -117,20 +78,12 @@ header h1 span { color: var(--text-3); font-weight: 600; }
   <div class="extra">
     <article class="card">
       <a class="shots" href="mini/index.html" style="aspect-ratio:16/9"><img class="a" src="previews/mini.jpg" alt="Mini player concepts"><img class="b" src="previews/mini.jpg" alt=""></a>
-      <div class="body"><div class="title"><h2>Mini players</h2><em>one per direction</em></div><p>A compact, always-on-top mode (Ctrl+M) that keeps each direction's visual language.</p><div class="links"><a href="mini/index.html">Open concepts</a></div></div>
+      <div class="body"><div class="title"><h2>Mini players</h2><em>concepts</em></div><p>A compact, always-on-top mode (Ctrl+M). The app uses Flow's compact mini player; the page also keeps the concepts drawn for the other directions.</p><div class="links"><a href="mini/index.html">Open concepts</a></div></div>
     </article>
     <article class="card">
       <div class="body">
-        <div class="title"><h2>Mixing directions</h2></div>
-        <p>These directions can be combined. The UI will be built from design tokens (color, type, radius, spacing) and swappable views, so for example:</p>
-        <div class="cols" style="grid-template-columns:1fr">
-          <ul>
-            <li><b>Flow</b> layout and command palette with <b>Aurora</b>'s Now Playing screen and dynamic color</li>
-            <li><b>Aurora</b> as the default, with <b>Folio</b> Paper/Ink offered as an alternative theme</li>
-            <li><b>Console</b>'s spectrum and output status line as an optional "audiophile" panel</li>
-          </ul>
-        </div>
-        <p>Brand: the logo is a peeled lychee that is also a vinyl record. The red skin is the disc (with faint grooves), the white flesh is the label, and the seed is the spindle.</p>
+        <div class="title"><h2>Brand</h2></div>
+        <p>The logo is a peeled lychee that is also a vinyl record. The red skin is the disc (with faint grooves), the white flesh is the label, and the seed is the spindle.</p>
       </div>
     </article>
   </div>

@@ -226,7 +226,6 @@ pub fn run_helper() -> anyhow::Result<()> {
     actions.on_toggle_play(|| say(MiniCommand::TogglePlay.word()));
     actions.on_next(|| say(MiniCommand::Next.word()));
     actions.on_previous(|| say(MiniCommand::Previous.word()));
-    actions.on_raise_main(|| say(MiniCommand::Close.word()));
     actions.on_close_mini(|| say(MiniCommand::Close.word()));
     {
         let weak = mini.as_weak();

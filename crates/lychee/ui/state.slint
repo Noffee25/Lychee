@@ -219,7 +219,6 @@ export global AppState {
     }
     in-out property <bool> palette-open;
     in-out property <bool> library-empty;
-    in-out property <bool> mini-open;
 
     in-out property <[AlbumRow]> album-rows;
     in-out property <string> albums-title: "Albums";
@@ -246,7 +245,6 @@ export global AppState {
     in-out property <bool> content-scrolled;
     in-out property <[NavPlaylist]> playlists;
     in-out property <int> favorites-count;
-    in-out property <int> grid-columns: 5;
 
     in-out property <[QueueItem]> queue-manual;
     in-out property <[QueueItem]> queue-context;
@@ -384,11 +382,9 @@ export global Actions {
 
     callback create-playlist(string);
     callback rename-playlist(int, string);
-    callback delete-playlist(int);
 
     callback open-mini();
     callback close-mini();
-    callback raise-main();
     callback start-window-drag();
     callback open-url(string);
 }

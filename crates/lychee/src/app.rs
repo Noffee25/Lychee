@@ -96,7 +96,6 @@ pub enum Action {
     LastfmOpenProfile,
     CreatePlaylist(String),
     RenamePlaylist(i32, String),
-    DeletePlaylist(i32),
     /// A row of the open playlist moved (from, to).
     PlaylistMove(i32, i32),
     /// A playlist menu command (see `Actions.playlist-command`) on a playlist.
@@ -221,7 +220,6 @@ macro_rules! wire_actions {
         a.on_lastfm_open_profile({ let d = d.clone(); move || d.dispatch(Action::LastfmOpenProfile) });
         a.on_create_playlist({ let d = d.clone(); move |n| d.dispatch(Action::CreatePlaylist(n.into())) });
         a.on_rename_playlist({ let d = d.clone(); move |id, n| d.dispatch(Action::RenamePlaylist(id, n.into())) });
-        a.on_delete_playlist({ let d = d.clone(); move |id| d.dispatch(Action::DeletePlaylist(id)) });
         a.on_playlist_move({ let d = d.clone(); move |f, t| d.dispatch(Action::PlaylistMove(f, t)) });
         a.on_playlist_command({ let d = d.clone(); move |w, id| d.dispatch(Action::PlaylistCommand(w.into(), id)) });
         a.on_nav_playlist_move({ let d = d.clone(); move |id, t| d.dispatch(Action::NavPlaylistMove(id, t)) });
@@ -229,7 +227,6 @@ macro_rules! wire_actions {
         a.on_toast_action({ let d = d.clone(); move || d.dispatch(Action::ToastAction) });
         a.on_open_mini({ let d = d.clone(); move || d.dispatch(Action::OpenMini) });
         a.on_close_mini({ let d = d.clone(); move || d.dispatch(Action::CloseMini) });
-        a.on_raise_main({ let d = d.clone(); move || d.dispatch(Action::RaiseMain) });
         a.on_start_window_drag({ let d = d.clone(); move || d.dispatch(Action::StartWindowDrag) });
         a.on_open_url({ let d = d.clone(); move |u| d.dispatch(Action::OpenUrl(u.into())) });
     }};
@@ -789,9 +786,6 @@ impl App {
                 let cols = cols.clamp(1, 20) as usize;
                 if cols != self.grid_columns {
                     self.grid_columns = cols;
-                    if let Some(ui) = self.ui.upgrade() {
-                        ui.global::<AppState>().set_grid_columns(cols as i32);
-                    }
                     self.refresh_page();
                 }
             }
@@ -936,7 +930,6 @@ impl App {
                     self.refresh_page();
                 }
             }
-            Action::DeletePlaylist(id) => self.delete_playlist(i64::from(id)),
             Action::PlaylistMove(from, to) => self.move_in_playlist(from, to),
             Action::PlaylistCommand(what, id) => self.playlist_command(&what, i64::from(id)),
             Action::NavPlaylistMove(id, to) => {
@@ -956,9 +949,6 @@ impl App {
                 }
                 // Dropping the helper closes its stdin, which makes it quit.
                 self.mini_helper = None;
-                if let Some(ui) = self.ui.upgrade() {
-                    ui.global::<AppState>().set_mini_open(false);
-                }
                 self.handle(Action::RaiseMain);
             }
             Action::RaiseMain => {
@@ -3172,7 +3162,6 @@ impl App {
     fn main_steps_aside(&mut self) {
         let wayland = self.main_is_wayland();
         let Some(ui) = self.ui.upgrade() else { return };
-        ui.global::<AppState>().set_mini_open(true);
         if wayland {
             // A minimised Wayland window can only be brought back by the user, so hide it
             // completely; `RaiseMain` maps it again.
