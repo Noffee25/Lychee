@@ -206,6 +206,15 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
   parent. Overlays need `x: 0px; y: 0px;`: without them the side panel drawer sat 42 px too low.
 - Don't put icons in empty states. The owner had them all removed, and a `VerticalLayout` puts a
   fixed-size `Image` at the left edge rather than centring it.
+- **Continuous animation redraws the whole window every frame** (FemtoVG has no partial rendering).
+  - `PlayingBars` reads `animation-tick()` only while `moving` (music is playing).
+  - Measured in a nested mutter, the moving bars roughly doubled the app's CPU use in a maximised
+    2560×1440 window, from about 2% to 4% of a core. That was at about 20 frames a second; a real
+    60 Hz or faster display costs more.
+  - Don't add always-running animations. A 30-a-second `Timer` instead of `animation-tick()` froze
+    the window in the nested mutter (see Testing).
+- `PillButton.other-text` reserves room for a second label (Play/Pause), so switching labels doesn't
+  shift the buttons beside it.
 
 ## Testing and checking your work
 
@@ -236,6 +245,15 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
     frame is produced. Otherwise screenshots contradict the app's actual state.
   - Observe with `RUST_LOG=lychee=debug` (every action is logged), MPRIS on the private bus,
     `WAYLAND_DEBUG=1` and `xprop`.
+  - Count frames with `WAYLAND_DEBUG=client`. Each frame logs `wl_surface#N.commit()` twice for the
+    main surface; the title-bar subsurfaces are other numbers.
+  - Frame rates there are unreliable. With the NVIDIA driver, the app's vsynced frames (wp_fifo_v1
+    and commit-timing) are sometimes held until something else redraws, such as the title bar or the
+    pointer.
+    - Continuous animation averaged about 20 frames a second, with stalls of up to a second.
+    - A 30-a-second timer stalled until the pointer moved.
+    - The title bar is redrawn once a second during playback, which ends the shorter stalls.
+    - Nobody has checked whether a real desktop does the same.
   - Never inject input into or open windows on the owner's live session (DISPLAY=:0 / wayland-0).
 - Test fixtures: `crates/lychee-tagger/tests/fixtures` (tiny silent files in seven formats); the
   library test writes WAVs on the fly. Make larger test media with ffmpeg in a temp dir, never in the repo.

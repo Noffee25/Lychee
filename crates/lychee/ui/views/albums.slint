@@ -1,6 +1,6 @@
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
-import { AppState, Actions, AlbumCard, AlbumRow } from "../state.slint";
+import { AppState, Actions, Player, AlbumCard, AlbumRow } from "../state.slint";
 import { Cover, PlayingBars, Segmented } from "../widgets.slint";
 import { ListView } from "std-widgets.slint";
 
@@ -49,7 +49,7 @@ export component AlbumTile inherits Rectangle {
                 height: 24px;
                 border-radius: 7px;
                 background: #000000a8;
-                PlayingBars { }
+                PlayingBars { moving: Player.playing; }
             }
             Rectangle {
                 x: parent.width - 52px;
@@ -63,14 +63,21 @@ export component AlbumTile inherits Rectangle {
                 drop-shadow-color: #00000060;
                 animate opacity { duration: Theme.medium; }
                 Image {
-                    source: Icons.play;
+                    source: root.card.playing && Player.playing ? Icons.pause : Icons.play;
                     colorize: Theme.on-accent;
                     width: 18px;
                     height: 18px;
                 }
                 fab-ta := TouchArea {
                     mouse-cursor: pointer;
-                    clicked => { Actions.play-album(root.card.id, false); }
+                    // On the album that's playing (or paused) it pauses and resumes; on others it plays the album.
+                    clicked => {
+                        if (root.card.playing) {
+                            Actions.toggle-play();
+                        } else {
+                            Actions.play-album(root.card.id, false);
+                        }
+                    }
                 }
             }
         }

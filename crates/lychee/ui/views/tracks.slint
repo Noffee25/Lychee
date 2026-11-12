@@ -1,6 +1,6 @@
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
-import { AppState, Actions, TrackRow } from "../state.slint";
+import { AppState, Actions, Player, TrackRow } from "../state.slint";
 import { Cover, PlayingBars, IconButton, PillButton, Segmented, Divider } from "../widgets.slint";
 import { Grid } from "albums.slint";
 import { ListView, LineEdit } from "std-widgets.slint";
@@ -58,7 +58,7 @@ export component TrackRowView inherits Rectangle {
         spacing: 12px;
         Rectangle {
             width: 28px;
-            if root.track.current && !root.hovered: PlayingBars { }
+            if root.track.current && !root.hovered: PlayingBars { moving: Player.playing; }
             if root.hovered: Image {
                 source: Icons.play;
                 colorize: Theme.text;

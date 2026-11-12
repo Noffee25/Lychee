@@ -52,6 +52,10 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 - [x] Large album art, track title, artist, album, format badge (e.g. `FLAC 24/96`), position and duration
 - [x] Click the cover or title in the player bar to open the album (the playing song is highlighted there).
   A credit like "A feat. B, C" shows as separate artist links (A, B, C) there and in the Queue panel
+- [x] The playing song and album are marked with three bars, which move while music plays and rest when
+  it's paused
+- [x] While an album plays, its Play button (on the album page and on its tile) turns into Pause; pressing
+  it again resumes where you left off
 - [x] **Dynamic colour**: buttons and highlights take the album's accent; headers its dominant colour (can be turned off)
 - [x] **Lyrics**: `.lrc` sidecar files and embedded lyrics, synced highlighting with auto-scroll, click a line to seek
 - [x] Details panel: tags, format, decoder, output device, file size, play count, path

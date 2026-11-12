@@ -77,14 +77,58 @@ export component Cover inherits Rectangle {
     }
 }
 
-// Three static bars marking the playing row (static on purpose: no constant redraws).
+// Three bars marking what's playing. While `moving` (music is playing) they bob up and down; when
+// paused they rest at 8, 14 and 10 px, which is also where the motion starts.
 export component PlayingBars inherits Rectangle {
     in property <color> bar-color: Theme.accent;
+    in property <bool> moving;
     width: 14px;
     height: 14px;
-    Rectangle { x: 0px; y: 6px; width: 3px; height: 8px; border-radius: 1px; background: root.bar-color; }
-    Rectangle { x: 5px; y: 0px; width: 3px; height: 14px; border-radius: 1px; background: root.bar-color; }
-    Rectangle { x: 10px; y: 4px; width: 3px; height: 10px; border-radius: 1px; background: root.bar-color; }
+    // Milliseconds since the bars started moving. animation-tick() redraws the whole window every
+    // frame while it's read, so it's only read while moving. (A 30-a-second timer would be
+    // cheaper, but in a mutter test session it froze the window until the pointer moved.)
+    // animation-tick() counts from the app's start, and small numbers keep the waves precise.
+    // Every wave repeats a whole number of times a minute, so moving the start on by a minute
+    // never makes the bars jump.
+    property <duration> started;
+    property <float> t: root.moving ? (animation-tick() - root.started) / 1ms : 0;
+    init => { root.started = animation-tick(); }
+    changed moving => { root.started = animation-tick(); }
+    changed t => {
+        if (root.t >= 60000) {
+            root.started += 60s;
+        }
+    }
+    // A slow wave plus a faster, smaller one, in cycles a minute, different for each bar so
+    // they never fall into step. The phases give the resting heights at t = 0.
+    pure function level(slow: int, slow-phase: angle, fast: int, fast-phase: angle) -> length {
+        return 3px + 11px * (0.5 + 0.3 * Math.sin(root.t / 60000 * slow * 360deg + slow-phase)
+            + 0.2 * Math.sin(root.t / 60000 * fast * 360deg + fast-phase));
+    }
+    Rectangle {
+        x: 0px;
+        y: root.height - self.height;
+        width: 3px;
+        height: root.level(51, -8.715deg, 128, 180deg);
+        border-radius: 1px;
+        background: root.bar-color;
+    }
+    Rectangle {
+        x: 5px;
+        y: root.height - self.height;
+        width: 3px;
+        height: root.level(64, 90deg, 146, 90deg);
+        border-radius: 1px;
+        background: root.bar-color;
+    }
+    Rectangle {
+        x: 10px;
+        y: root.height - self.height;
+        width: 3px;
+        height: root.level(46, 27.04deg, 113, 0deg);
+        border-radius: 1px;
+        background: root.bar-color;
+    }
 }
 
 export component Tag inherits Rectangle {
@@ -111,6 +155,9 @@ export component Tag inherits Rectangle {
 
 export component PillButton inherits Rectangle {
     in property <string> text;
+    // Another label the button switches to ("Pause" for "Play"). The button keeps room for the
+    // longer of the two, so the buttons beside it don't shift.
+    in property <string> other-text;
     in property <image> icon;
     in property <bool> has-icon: true;
     in property <bool> primary;
@@ -144,11 +191,19 @@ export component PillButton inherits Rectangle {
         }
         Text {
             text: root.text;
+            min-width: other.preferred-width;
             color: root.ink;
             font-weight: 600;
             font-size: root.pill-height > 34px ? 13.5px : 12.5px;
+            horizontal-alignment: center;
             vertical-alignment: center;
         }
+    }
+    other := Text {
+        visible: false;
+        text: root.other-text;
+        font-weight: 600;
+        font-size: root.pill-height > 34px ? 13.5px : 12.5px;
     }
     ta := TouchArea {
         enabled: root.enabled;

@@ -1,6 +1,6 @@
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
-import { AppState, Actions } from "../state.slint";
+import { AppState, Actions, Player } from "../state.slint";
 import { Cover, Tag, PillButton, IconButton } from "../widgets.slint";
 import { Grid, AlbumGrid } from "albums.slint";
 import { TrackHeader, TrackRowView } from "tracks.slint";
@@ -109,10 +109,19 @@ export component AlbumPage inherits Rectangle {
                 spacing: 10px;
                 alignment: start;
                 PillButton {
-                    text: "Play";
-                    icon: Icons.play;
+                    // A song from this album is playing or paused: the button pauses and resumes it.
+                    property <bool> current: Player.now.has-track && Player.now.album-id == AppState.album.id;
+                    text: self.current && Player.playing ? "Pause" : "Play";
+                    other-text: "Pause";
+                    icon: self.current && Player.playing ? Icons.pause : Icons.play;
                     primary: true;
-                    clicked => { Actions.play-album(AppState.album.id, false); }
+                    clicked => {
+                        if (self.current) {
+                            Actions.toggle-play();
+                        } else {
+                            Actions.play-album(AppState.album.id, false);
+                        }
+                    }
                 }
                 PillButton {
                     text: "Shuffle";
