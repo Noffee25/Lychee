@@ -21,7 +21,7 @@ import { ListPage } from "views/tracks.slint";
 import { ArtistsPage, ArtistPage, GenresPage } from "views/browse.slint";
 import { SettingsPage } from "views/settings.slint";
 import { CommandPalette, Welcome, Toast } from "views/overlays.slint";
-import { EditorPage, ScannerDialog, LookupDialog, QuitPrompt } from "views/editor.slint";
+import { EditorPage, ScannerDialog, LookupDialog, QuitPrompt, AlbumPicker } from "views/editor.slint";
 import { Editor } from "editor-state.slint";
 import { MiniWindow } from "mini.slint";
 
@@ -72,7 +72,7 @@ export component AppWindow inherits Window {
 
     property <bool> dark: Theme.dark;
     // Give the keyboard back to the shortcuts when an editor dialog closes.
-    property <bool> editor-dialog: Editor.scanner-open || Editor.lookup-open || Editor.quit-prompt;
+    property <bool> editor-dialog: Editor.scanner-open || Editor.lookup-open || Editor.quit-prompt || AppState.album-picker-open;
     changed editor-dialog => {
         if (!self.editor-dialog) {
             keys.focus();
@@ -265,6 +265,11 @@ export component AppWindow inherits Window {
         }
 
         if Editor.lookup-open: LookupDialog {
+            width: parent.width;
+            height: parent.height;
+        }
+
+        if AppState.album-picker-open: AlbumPicker {
             width: parent.width;
             height: parent.height;
         }

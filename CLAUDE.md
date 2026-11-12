@@ -259,6 +259,7 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
       (0–3 = 0/+2/+4/+6 dB), `like`,
       `queue:`, `toast:`
     - library: `add-folder:`, `like-album:`
+    - tag editor album picker: `album-picker:QUERY` (opens it), `album-picker-toggle:0,2`, `album-picker-add`
     - playlists: `make-playlist:Name=Album,Album`, `open-playlist:Name`, `playlist-cmd:what,Name` (the
       `Actions.playlist-command` words: `sort-title`, `dedupe`, `delete`…), `playlist-move:from,to`,
       `drag:kind,from,to` (a drag in progress: `playlist`, `queue` or `nav`), `save-queue`, `toast-action`

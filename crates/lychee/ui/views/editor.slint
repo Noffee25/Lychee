@@ -4,7 +4,7 @@
 
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
-import { AppState, InfoRow } from "../state.slint";
+import { AppState, Actions, InfoRow, PickerAlbum } from "../state.slint";
 import { Editor, EditorFile, EditorField, EditorPicture, ScanRow, LookupItem, LookupTrack } from "../editor-state.slint";
 import { PillButton, IconButton, Toggle, Segmented, TextField, Divider, Cover, BusyRing } from "../widgets.slint";
 import { ListView, ScrollView, TextEdit } from "std-widgets.slint";
@@ -713,7 +713,7 @@ component EmptyEditor inherits Rectangle {
             horizontal-alignment: center;
         }
         Text {
-            text: "Open a folder, or right-click an album or song in your library and choose “Edit tags…”. Fill tags from file names, rename files from tags, and look albums up on MusicBrainz.";
+            text: "Add albums from your library, open a folder, or right-click an album or song and choose “Edit tags…”. Fill tags from file names, rename files from tags, and look albums up on MusicBrainz.";
             color: Theme.text-2;
             horizontal-alignment: center;
             wrap: word-wrap;
@@ -722,9 +722,17 @@ component EmptyEditor inherits Rectangle {
             spacing: 10px;
             alignment: center;
             PillButton {
+                text: "Add albums…";
+                icon: Icons.disc;
+                primary: true;
+                enabled: !AppState.library-empty;
+                clicked => {
+                    Actions.open-album-picker();
+                }
+            }
+            PillButton {
                 text: "Open folder…";
                 icon: Icons.folder;
-                primary: true;
                 clicked => {
                     Editor.open-folder();
                 }
@@ -879,13 +887,29 @@ export component EditorPage inherits Rectangle {
                                 Editor.select-all();
                             }
                         }
-                        IconButton {
-                            icon: Icons.plus;
-                            size: 30px;
-                            icon-size: 15px;
-                            tooltip: "Add files…";
-                            clicked => {
-                                Editor.add-files();
+                        add-menu := ContextMenuArea {
+                            IconButton {
+                                icon: Icons.plus;
+                                size: 30px;
+                                icon-size: 15px;
+                                tooltip: "Add…";
+                                clicked => {
+                                    add-menu.show({ x: 0px, y: self.height + 4px });
+                                }
+                            }
+                            Menu {
+                                MenuItem {
+                                    title: "Albums from your library…";
+                                    activated => {
+                                        Actions.open-album-picker();
+                                    }
+                                }
+                                MenuItem {
+                                    title: "Files…";
+                                    activated => {
+                                        Editor.add-files();
+                                    }
+                                }
                             }
                         }
                         IconButton {
@@ -1889,6 +1913,153 @@ export component LookupDialog inherits Dialog {
                 enabled: Editor.lookup-selected >= 0 && !Editor.lookup-loading-tracks && (Editor.lookup-tags || Editor.lookup-artwork || Editor.lookup-lyrics);
                 clicked => {
                     Editor.lookup-apply();
+                }
+            }
+        }
+    }
+}
+
+// One album in the picker: click anywhere on it to tick it.
+component PickerRow inherits Rectangle {
+    in property <PickerAlbum> album;
+    height: 56px;
+    border-radius: 9px;
+    background: root.album.checked ? Theme.accent.with-alpha(0.10) : ta.has-hover && !root.album.open ? Theme.hover : transparent;
+    ta := TouchArea {
+        mouse-cursor: root.album.open ? MouseCursor.default : MouseCursor.pointer;
+        clicked => {
+            Actions.album-picker-toggle(root.album.index);
+        }
+    }
+    HorizontalLayout {
+        cross-axis-alignment: center;
+        padding-left: 10px;
+        padding-right: 12px;
+        spacing: 12px;
+        Rectangle {
+            width: 20px;
+            height: 20px;
+            border-radius: 6px;
+            border-width: root.album.checked ? 0px : 1.5px;
+            border-color: root.album.open ? Theme.border : Theme.text-3;
+            background: root.album.checked ? Theme.accent : transparent;
+            if root.album.checked: Image {
+                source: Icons.check;
+                colorize: Theme.on-accent;
+                width: 13px;
+                height: 13px;
+            }
+        }
+        Cover {
+            width: 40px;
+            height: 40px;
+            radius: 7px;
+            source: root.album.cover;
+            has-image: root.album.has-cover;
+            seed: root.album.seed;
+        }
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: center;
+            Text {
+                text: root.album.title;
+                font-weight: 500;
+                color: root.album.open ? Theme.text-3 : Theme.text;
+                overflow: elide;
+            }
+            Text {
+                text: root.album.detail;
+                font-size: 12.5px;
+                color: Theme.text-3;
+                overflow: elide;
+            }
+        }
+        if root.album.open: Text {
+            text: "In the editor";
+            font-size: 12px;
+            color: Theme.text-3;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// "Add albums": pick albums from the library to add to the tag editor, without leaving it.
+export component AlbumPicker inherits Dialog {
+    panel-width: 620px;
+    panel-height: 640px;
+    close => {
+        AppState.album-picker-open = false;
+    }
+    VerticalLayout {
+        padding: 22px;
+        spacing: 14px;
+        Text {
+            text: "Add albums to the tag editor";
+            font-size: 18px;
+            font-weight: 700;
+            color: Theme.text;
+        }
+        TextField {
+            height: 38px;
+            placeholder: "Search albums and artists";
+            init => {
+                self.focus();
+            }
+            edited(text) => {
+                Actions.album-picker-search(text);
+            }
+            accepted => {
+                if (AppState.album-picker-checked > 0) {
+                    Actions.album-picker-add();
+                }
+            }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Theme.border;
+            if AppState.album-picker-rows.length == 0: Text {
+                text: "No albums match";
+                color: Theme.text-3;
+            }
+            VerticalLayout {
+                padding: 4px;
+                ListView {
+                    for album in AppState.album-picker-rows: PickerRow {
+                        album: album;
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 8px;
+            cross-axis-alignment: center;
+            Text {
+                text: AppState.album-picker-summary;
+                color: Theme.text-2;
+                font-size: 12.5px;
+                horizontal-stretch: 1;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+            PillButton {
+                text: "Cancel";
+                has-icon: false;
+                pill-height: 36px;
+                clicked => {
+                    AppState.album-picker-open = false;
+                }
+            }
+            PillButton {
+                text: AppState.album-picker-checked > 1 ? "Add " + AppState.album-picker-checked + " albums" : "Add album";
+                other-text: "Add 99 albums";
+                icon: Icons.plus;
+                primary: true;
+                pill-height: 36px;
+                enabled: AppState.album-picker-checked > 0;
+                clicked => {
+                    Actions.album-picker-add();
                 }
             }
         }

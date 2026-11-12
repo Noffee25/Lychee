@@ -211,6 +211,11 @@ impl EditorCtl {
         self.session.modified_count() > 0
     }
 
+    /// The files open in the editor.
+    pub fn paths(&self) -> HashSet<PathBuf> {
+        self.session.files().iter().map(|f| f.path.clone()).collect()
+    }
+
     pub fn take_outcome(&mut self) -> Outcome {
         std::mem::take(&mut self.outcome)
     }

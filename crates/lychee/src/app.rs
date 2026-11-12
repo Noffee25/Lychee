@@ -33,7 +33,8 @@ use crate::settings::{Paths, ScrobbleArtist, Settings, ThemeMode};
 use crate::themes;
 use crate::{
     Actions, AlbumCard, AlbumHeader, AlbumRow, AppState, AppWindow, ArtistCard, Choice, GenreCard, GenreRow, Icons, InfoRow,
-    LastfmUi, ListHeader, Lyric, MiniWindow, NavPlaylist, NowPlaying, PaletteItem, Player, QueueItem, ScanUi, Theme, ThemeCard,
+    LastfmUi, ListHeader, Lyric, MiniWindow, NavPlaylist, NowPlaying, PaletteItem, PickerAlbum, Player, QueueItem, ScanUi, Theme,
+    ThemeCard,
     TrackRow,
 };
 
@@ -104,6 +105,10 @@ pub enum Action {
     NavPlaylistMove(i32, i32),
     SaveQueue,
     ToastAction,
+    OpenAlbumPicker,
+    AlbumPickerSearch(String),
+    AlbumPickerToggle(i32),
+    AlbumPickerAdd,
     OpenMini,
     CloseMini,
     RaiseMain,
@@ -224,6 +229,10 @@ macro_rules! wire_actions {
         a.on_playlist_command({ let d = d.clone(); move |w, id| d.dispatch(Action::PlaylistCommand(w.into(), id)) });
         a.on_nav_playlist_move({ let d = d.clone(); move |id, t| d.dispatch(Action::NavPlaylistMove(id, t)) });
         a.on_save_queue({ let d = d.clone(); move || d.dispatch(Action::SaveQueue) });
+        a.on_open_album_picker({ let d = d.clone(); move || d.dispatch(Action::OpenAlbumPicker) });
+        a.on_album_picker_search({ let d = d.clone(); move |q| d.dispatch(Action::AlbumPickerSearch(q.into())) });
+        a.on_album_picker_toggle({ let d = d.clone(); move |i| d.dispatch(Action::AlbumPickerToggle(i)) });
+        a.on_album_picker_add({ let d = d.clone(); move || d.dispatch(Action::AlbumPickerAdd) });
         a.on_toast_action({ let d = d.clone(); move || d.dispatch(Action::ToastAction) });
         a.on_open_mini({ let d = d.clone(); move || d.dispatch(Action::OpenMini) });
         a.on_close_mini({ let d = d.clone(); move || d.dispatch(Action::CloseMini) });
@@ -280,6 +289,16 @@ impl Page {
 enum ScanMsg {
     Progress(ScanProgress),
     Done(Result<ScanSummary, String>),
+}
+
+/// State of the tag editor's "Add albums" picker.
+#[derive(Default)]
+struct AlbumPicker {
+    /// Albums matching the search, in library order.
+    shown: Vec<AlbumId>,
+    checked: HashSet<AlbumId>,
+    /// Files open in the editor when the picker opened.
+    open: HashSet<PathBuf>,
 }
 
 /// The button in a toast.
@@ -354,6 +373,7 @@ struct Models {
     queue_manual: Rc<LazyModel<QueueItem>>,
     queue_context: Rc<LazyModel<QueueItem>>,
     playlists: Rc<LazyModel<NavPlaylist>>,
+    album_picker: Rc<LazyModel<PickerAlbum>>,
 }
 
 impl Models {
@@ -369,6 +389,7 @@ impl Models {
             queue_manual: Rc::new(LazyModel::new()),
             queue_context: Rc::new(LazyModel::new()),
             playlists: Rc::new(LazyModel::new()),
+            album_picker: Rc::new(LazyModel::new()),
         }
     }
 
@@ -392,6 +413,7 @@ impl Models {
         self.queue_manual.images_ready(keys);
         self.queue_context.images_ready(keys);
         self.playlists.images_ready(keys);
+        self.album_picker.images_ready(keys);
     }
 }
 
@@ -483,6 +505,8 @@ pub struct App {
     devices: Vec<String>,
     toast_until: Option<Instant>,
     toast_action: Option<ToastAction>,
+    /// The tag editor's album picker: the albums shown, those ticked, and files already in the editor.
+    picker: Rc<RefCell<AlbumPicker>>,
     last_position_tick: Instant,
     last_media_position: Instant,
     settings_dirty: bool,
@@ -505,6 +529,7 @@ impl App {
         state.set_queue_manual(ModelRc::from(models.queue_manual.clone()));
         state.set_queue_context(ModelRc::from(models.queue_context.clone()));
         state.set_playlists(ModelRc::from(models.playlists.clone()));
+        state.set_album_picker_rows(ModelRc::from(models.album_picker.clone()));
         state.set_version(env!("CARGO_PKG_VERSION").into());
 
         let (scan_tx, scan_rx) = crossbeam_channel::unbounded();
@@ -582,6 +607,7 @@ impl App {
             devices: Vec::new(),
             toast_until: None,
             toast_action: None,
+            picker: Rc::default(),
             last_position_tick: Instant::now(),
             last_media_position: Instant::now(),
             settings_dirty: false,
@@ -938,6 +964,10 @@ impl App {
                 }
             }
             Action::SaveQueue => self.save_queue(),
+            Action::OpenAlbumPicker => self.open_album_picker(),
+            Action::AlbumPickerSearch(query) => self.album_picker_search(&query),
+            Action::AlbumPickerToggle(row) => self.album_picker_toggle(row),
+            Action::AlbumPickerAdd => self.album_picker_add(),
             Action::ToastAction => self.run_toast_action(),
             Action::OpenMini => self.open_mini(),
             Action::CloseMini => {
@@ -1737,6 +1767,122 @@ impl App {
     }
 
     // ---------------------------------------------------------------------------------------
+    // Tag editor: adding albums from the library
+
+    fn open_album_picker(&mut self) {
+        if self.library.index().albums(AlbumSort::Artist).is_empty() {
+            self.toast("There are no albums in your library yet");
+            return;
+        }
+        self.show_page(Page::Editor, true);
+        *self.picker.borrow_mut() = AlbumPicker { open: self.editor.paths(), ..Default::default() };
+        self.album_picker_search("");
+        if let Some(ui) = self.ui.upgrade() {
+            ui.global::<AppState>().set_album_picker_open(true);
+        }
+    }
+
+    /// Show albums whose title, artist or year contain every word of `query`.
+    fn album_picker_search(&mut self, query: &str) {
+        let index = self.library.index();
+        let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+        let shown: Vec<AlbumId> = index
+            .albums(AlbumSort::Artist)
+            .into_iter()
+            .filter(|a| {
+                let hay = format!("{} {} {}", a.title, a.artist, a.year.map(|y| y.to_string()).unwrap_or_default()).to_lowercase();
+                words.iter().all(|w| hay.contains(w.as_str()))
+            })
+            .map(|a| a.id)
+            .collect();
+        drop(index);
+        self.picker.borrow_mut().shown = shown.clone();
+        let library = self.library.clone();
+        let images = self.images.clone();
+        let picker = self.picker.clone();
+        self.models.album_picker.set(shown.len(), move |row, need| {
+            let index = library.index();
+            let Some(a) = index.album(shown[row]) else { return PickerAlbum::default() };
+            let (cover, has_cover) = thumb(&images, a.artwork.as_deref(), need);
+            let picker = picker.borrow();
+            let songs = a.tracks.len();
+            let mut detail = a.artist.clone();
+            if let Some(y) = a.year {
+                detail.push_str(&format!(" · {y}"));
+            }
+            detail.push_str(&format!(" · {songs} song{}", plural(songs)));
+            PickerAlbum {
+                index: row as i32,
+                title: a.title.clone().into(),
+                detail: detail.into(),
+                cover,
+                has_cover,
+                seed: seed_color(&a.title),
+                checked: picker.checked.contains(&a.id),
+                open: album_in_editor(&index, a, &picker.open),
+            }
+        });
+        self.update_album_picker_summary();
+    }
+
+    fn album_picker_toggle(&mut self, row: i32) {
+        let index = self.library.index();
+        {
+            let mut picker = self.picker.borrow_mut();
+            let Some(&id) = usize::try_from(row).ok().and_then(|r| picker.shown.get(r)) else { return };
+            let Some(album) = index.album(id) else { return };
+            if album_in_editor(&index, album, &picker.open) {
+                return;
+            }
+            if !picker.checked.remove(&id) {
+                picker.checked.insert(id);
+            }
+        }
+        drop(index);
+        self.models.album_picker.refresh();
+        self.update_album_picker_summary();
+    }
+
+    fn update_album_picker_summary(&mut self) {
+        let index = self.library.index();
+        let picker = self.picker.borrow();
+        let songs: usize = picker.checked.iter().filter_map(|id| index.album(*id)).map(|a| a.tracks.len()).sum();
+        let n = picker.checked.len();
+        let summary = match (n, picker.shown.len()) {
+            (0, shown) => format!("{} album{}", thousands(shown), plural(shown)),
+            (n, _) => format!("{n} album{} ticked · {} song{}", plural(n), thousands(songs), plural(songs)),
+        };
+        if let Some(ui) = self.ui.upgrade() {
+            let state = ui.global::<AppState>();
+            state.set_album_picker_checked(n as i32);
+            state.set_album_picker_summary(summary.into());
+        }
+    }
+
+    /// Add the ticked albums to the editor, keeping what's open, and select the first one.
+    fn album_picker_add(&mut self) {
+        let index = self.library.index();
+        let albums: Vec<&Album> =
+            index.albums(AlbumSort::Artist).into_iter().filter(|a| self.picker.borrow().checked.contains(&a.id)).collect();
+        if albums.is_empty() {
+            return;
+        }
+        let paths_of = |a: &Album| -> Vec<PathBuf> { a.tracks.iter().filter_map(|t| index.track(*t)).map(|t| t.path.clone()).collect() };
+        let paths: Vec<PathBuf> = albums.iter().flat_map(|a| paths_of(a)).collect();
+        let first = paths_of(albums[0]);
+        // A fresh editor is named after what was added; otherwise its name stays.
+        let title = self.editor.paths().is_empty().then(|| {
+            if albums.len() == 1 { albums[0].title.clone() } else { format!("{} albums", albums.len()) }
+        });
+        drop(index);
+        if let Some(ui) = self.ui.upgrade() {
+            ui.global::<AppState>().set_album_picker_open(false);
+        }
+        self.editor.open(paths, true, first, title);
+        self.apply_editor_outcome();
+    }
+
+    // ---------------------------------------------------------------------------------------
     // Playlists
 
     /// Move a song on the open playlist (drag, or the Move menu).
@@ -2273,6 +2419,7 @@ impl App {
             Command::AddFolder => self.pick_folder(),
             Command::Rescan => self.start_scan(),
             Command::TagEditor => self.show_page(Page::Editor, true),
+            Command::AddAlbumsToEditor => self.open_album_picker(),
             Command::Lastfm => self.lastfm_connect(),
         }
     }
@@ -3372,6 +3519,17 @@ impl App {
                 }
             }
             "save-queue" => self.save_queue(),
+            // "album-picker:glass" opens the tag editor's album picker with that search.
+            "album-picker" => {
+                self.open_album_picker();
+                self.album_picker_search(arg);
+            }
+            "album-picker-toggle" => {
+                for row in arg.split(',').filter_map(|r| r.trim().parse().ok()) {
+                    self.album_picker_toggle(row);
+                }
+            }
+            "album-picker-add" => self.album_picker_add(),
             "toast-action" => self.run_toast_action(),
             "preamp" => self.handle(Action::SetLevellingPreamp(arg.parse().unwrap_or(0))),
             "like" => self.handle(Action::ToggleLikeCurrent),
@@ -3635,6 +3793,11 @@ fn plural(n: usize) -> &'static str {
 /// The Settings choice (0..=3) for a pre-amp in dB (0, 2, 4, 6).
 fn preamp_index(db: f32) -> i32 {
     ((db / 2.0).round() as i32).clamp(0, 3)
+}
+
+/// True when every song of `album` is already open in the tag editor.
+fn album_in_editor(index: &LibraryIndex, album: &Album, open: &HashSet<PathBuf>) -> bool {
+    !open.is_empty() && album.tracks.iter().filter_map(|t| index.track(*t)).all(|t| open.contains(&t.path))
 }
 
 /// Artwork keys for a playlist's cover: the first four different album covers, or just the first

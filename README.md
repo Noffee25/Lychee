@@ -21,7 +21,8 @@
 - **Synced lyrics** from `.lrc` files next to your music or embedded in the file. Click a line to jump to it.
 - **Queue and playlists.** Play next, add to queue, Favorites, and playlists with cover mosaics. Drag songs and playlists into order, save the queue as a playlist, sort a playlist once or clear out duplicates, and undo deletes and removals from the toast (or Ctrl+Z).
 - **Last.fm scrobbling.** Sign in through the browser, send "now playing" updates, scrobble with an offline queue, and optionally love tracks you favorite. A status icon sits in the bottom-right corner.
-- **Tag editor, modelled on EasyTAG.** Edit many files at once (mixed values show as "Multiple values"),
+- **Tag editor, modelled on EasyTAG.** Pick several albums from your library to edit together, or open a folder.
+  Edit many files at once (mixed values show as "Multiple values"),
   number tracks, edit artwork and lyrics, and undo anything. Its scanner fills tags from file names
   (`%n - %t`), renames files from tags, cleans up text (Title Case, underscores, spaces) and writes artist
   credits one way ("A ft. B", "A, B" and "A; B" all become "A feat. B"). Changes are

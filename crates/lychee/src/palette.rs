@@ -25,6 +25,7 @@ pub enum Command {
     Rescan,
     Lastfm,
     TagEditor,
+    AddAlbumsToEditor,
 }
 
 /// A shortcut label: macOS shows ⌘ where other systems say Ctrl (Slint maps Control to ⌘ there).
@@ -60,6 +61,7 @@ pub const COMMANDS: &[CommandInfo] = &[
     CommandInfo { command: Command::AddFolder, title: "Add music folder…", subtitle: "Library", hint: "", icon: "folder-plus" },
     CommandInfo { command: Command::Rescan, title: "Rescan library", subtitle: "Pick up new and changed files", hint: "", icon: "refresh" },
     CommandInfo { command: Command::Lastfm, title: "Connect Last.fm", subtitle: "Scrobbling", hint: "", icon: "scrobble" },
+    CommandInfo { command: Command::AddAlbumsToEditor, title: "Add albums to the tag editor", subtitle: "Pick albums from your library to edit together", hint: "", icon: "edit" },
     CommandInfo { command: Command::TagEditor, title: "Open the tag editor", subtitle: "Edit tags, artwork and lyrics; look albums up online", hint: "", icon: "edit" },
 ];
 

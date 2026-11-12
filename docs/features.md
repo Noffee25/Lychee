@@ -103,6 +103,8 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 
 ### Tag editor (modelled on EasyTAG)
 - [x] Open a folder (recursively) or single files, use "Edit tags…" on any album or song, drop files onto the editor, or run `lychee --edit FOLDER`
+- [x] Add albums from your library without leaving the editor: a searchable picker (the file list's "+",
+  the empty editor, or Ctrl+K) where you tick several albums at once; albums already open are marked
 - [x] File list with markers for unsaved changes, pending renames and read or save errors
 - [x] Multi-selection (Ctrl/Shift-click, Ctrl+A). A field reads "Multiple values" when the files disagree, and typing sets it for all of them
 - [x] Fields: title, artist, album, album artist, year, genre, track and disc numbers with totals, composer, comment,

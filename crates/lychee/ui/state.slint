@@ -66,6 +66,20 @@ export struct GenreRow {
     items: [GenreCard],
 }
 
+// A row of the tag editor's album picker.
+export struct PickerAlbum {
+    index: int,
+    title: string,
+    // "Artist · 1998 · 12 songs"
+    detail: string,
+    cover: image,
+    has-cover: bool,
+    seed: color,
+    checked: bool,
+    // Already in the tag editor.
+    open: bool,
+}
+
 export struct NavPlaylist {
     id: int,
     name: string,
@@ -291,6 +305,11 @@ export global AppState {
     in-out property <int> drag-to: -1;
     // The playlist page shows its name as a text field (Rename from a menu).
     in-out property <bool> renaming-playlist;
+    // The tag editor's "Add albums" picker: matching albums, and how many are ticked.
+    in-out property <bool> album-picker-open;
+    in-out property <[PickerAlbum]> album-picker-rows;
+    in-out property <int> album-picker-checked;
+    in-out property <string> album-picker-summary;
     in-out property <string> version;
 }
 
@@ -341,6 +360,10 @@ export global Actions {
     callback queue-remove(int);
     callback queue-move(int, int);
     callback save-queue();
+    callback open-album-picker();
+    callback album-picker-search(string);
+    callback album-picker-toggle(int);
+    callback album-picker-add();
     callback toast-action();
     // Move a song on the open playlist from one row to another.
     callback playlist-move(int, int);
