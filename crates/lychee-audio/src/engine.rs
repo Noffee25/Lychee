@@ -828,14 +828,33 @@ fn decode_packet(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     const RATE: u32 = 8000;
 
-    /// A stereo 16-bit WAV whose frame `i` holds `value(i)` on both channels.
-    fn wav(name: &str, frames: usize, value: impl Fn(usize) -> i16) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("lychee-engine-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join(name);
+    /// A folder for one test's files, removed when the test ends (pass or fail).
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new(test: &str) -> Scratch {
+            let dir = std::env::temp_dir().join(format!("lychee-engine-{}-{test}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            Scratch(dir)
+        }
+
+        /// A stereo 16-bit WAV whose frame `i` holds `value(i)` on both channels.
+        fn wav(&self, name: &str, frames: usize, value: impl Fn(usize) -> i16) -> PathBuf {
+            wav(&self.0.join(name), frames, value)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn wav(path: &Path, frames: usize, value: impl Fn(usize) -> i16) -> PathBuf {
         let data_len = (frames * 4) as u32;
         let mut b = Vec::with_capacity(44 + data_len as usize);
         b.extend_from_slice(b"RIFF");
@@ -855,8 +874,8 @@ mod tests {
             b.extend_from_slice(&v);
             b.extend_from_slice(&v);
         }
-        std::fs::write(&path, b).unwrap();
-        path
+        std::fs::write(path, b).unwrap();
+        path.to_path_buf()
     }
 
     fn worker() -> Worker {
@@ -904,8 +923,9 @@ mod tests {
 
     #[test]
     fn gapless_without_crossfade() {
-        let a = wav("gapless-a.wav", 3000, |i| (i % 1000) as i16);
-        let b = wav("gapless-b.wav", 2000, |i| -((i % 1000) as i16) - 1);
+        let dir = Scratch::new("gapless_without_crossfade");
+        let a = dir.wav("gapless-a.wav", 3000, |i| (i % 1000) as i16);
+        let b = dir.wav("gapless-b.wav", 2000, |i| -((i % 1000) as i16) - 1);
         let mut w = worker();
         w.load(1, a, 0, true, 1.0);
         w.handle(Cmd::Preload { token: 2, path: b, gain: 1.0, may_fade: true });
@@ -918,8 +938,9 @@ mod tests {
 
     #[test]
     fn crossfade_mixes_the_end_into_the_start() {
-        let a = wav("fade-a.wav", 8000, |_| 16384); // 0.5
-        let b = wav("fade-b.wav", 8000, |_| -8192); // -0.25
+        let dir = Scratch::new("crossfade_mixes_the_end_into_the_start");
+        let a = dir.wav("fade-a.wav", 8000, |_| 16384); // 0.5
+        let b = dir.wav("fade-b.wav", 8000, |_| -8192); // -0.25
         let mut w = worker();
         w.handle(Cmd::SetCrossfade(250)); // 2000 frames at 8 kHz
         w.load(1, a, 0, true, 1.0);
@@ -938,8 +959,9 @@ mod tests {
 
     #[test]
     fn album_transitions_stay_gapless_with_crossfade_on() {
-        let a = wav("album-a.wav", 4000, |_| 1000);
-        let b = wav("album-b.wav", 4000, |_| 2000);
+        let dir = Scratch::new("album_transitions_stay_gapless_with_crossfade_on");
+        let a = dir.wav("album-a.wav", 4000, |_| 1000);
+        let b = dir.wav("album-b.wav", 4000, |_| 2000);
         let mut w = worker();
         w.handle(Cmd::SetCrossfade(250));
         w.load(1, a, 0, true, 1.0);
@@ -952,8 +974,9 @@ mod tests {
 
     #[test]
     fn short_songs_fade_for_at_most_half_their_length() {
-        let a = wav("short-a.wav", 8000, |_| 1000);
-        let b = wav("short-b.wav", 1000, |_| 2000); // 125 ms
+        let dir = Scratch::new("short_songs_fade_for_at_most_half_their_length");
+        let a = dir.wav("short-a.wav", 8000, |_| 1000);
+        let b = dir.wav("short-b.wav", 1000, |_| 2000); // 125 ms
         let mut w = worker();
         w.handle(Cmd::SetCrossfade(500));
         w.load(1, a, 0, true, 1.0);
@@ -974,8 +997,9 @@ mod tests {
 
     #[test]
     fn seeking_back_after_the_fade_was_decoded_plays_the_first_song_again() {
-        let a = wav("seek-a.wav", 8000, |_| 1000);
-        let b = wav("seek-b.wav", 8000, |_| 2000);
+        let dir = Scratch::new("seeking_back_after_the_fade_was_decoded_plays_the_first_song_again");
+        let a = dir.wav("seek-a.wav", 8000, |_| 1000);
+        let b = dir.wav("seek-b.wav", 8000, |_| 2000);
         let mut w = worker();
         w.handle(Cmd::SetCrossfade(250));
         w.load(1, a, 0, true, 1.0);
@@ -1005,8 +1029,9 @@ mod tests {
 
     #[test]
     fn a_long_crossfade_doesnt_make_the_decoder_run_ahead() {
+        let dir = Scratch::new("a_long_crossfade_doesnt_make_the_decoder_run_ahead");
         // Slow decoders (Opus) would leave the device waiting if a fade needed seconds decoded first.
-        let a = wav("long-a.wav", 80_000, |_| 1000); // 10 s
+        let a = dir.wav("long-a.wav", 80_000, |_| 1000); // 10 s
         let mut w = worker();
         w.handle(Cmd::SetCrossfade(5000));
         w.load(1, a, 0, true, 1.0);
@@ -1018,8 +1043,9 @@ mod tests {
 
     #[test]
     fn a_late_preload_still_fades_and_ends_with_the_track() {
-        let a = wav("late-a.wav", 80_000, |_| 1000); // 10 s
-        let b = wav("late-b.wav", 8000, |_| 2000);
+        let dir = Scratch::new("a_late_preload_still_fades_and_ends_with_the_track");
+        let a = dir.wav("late-a.wav", 80_000, |_| 1000); // 10 s
+        let b = dir.wav("late-b.wav", 8000, |_| 2000);
         let mut w = worker();
         w.handle(Cmd::SetCrossfade(1000)); // would start at frame 72 000
         w.load(1, a, 0, true, 1.0);
@@ -1045,10 +1071,11 @@ mod tests {
 
     #[test]
     fn a_seek_into_the_last_seconds_plays_them_as_they_are() {
+        let dir = Scratch::new("a_seek_into_the_last_seconds_plays_them_as_they_are");
         // Fading from the start of the new stream would show the next song at once (and as
         // playing, even when paused).
-        let a = wav("window-a.wav", 80_000, |_| 1000); // 10 s, decoded in several packets
-        let b = wav("window-b.wav", 64_000, |_| 2000); // long enough not to shorten the fade
+        let a = dir.wav("window-a.wav", 80_000, |_| 1000); // 10 s, decoded in several packets
+        let b = dir.wav("window-b.wav", 64_000, |_| 2000); // long enough not to shorten the fade
         let mut w = worker();
         w.handle(Cmd::SetCrossfade(2000)); // the fade would start at 8 s
         w.load(1, a, 9000, false, 1.0);
@@ -1059,8 +1086,8 @@ mod tests {
         assert!(out.len().abs_diff(8000 + 64_000) <= 1);
         assert_eq!(w.shared.token.load(Relaxed), 1, "song 2 isn't audible before the device gets there");
         // A seek to just before the fade still fades.
-        let a = wav("window-c.wav", 80_000, |_| 1000);
-        let b = wav("window-d.wav", 64_000, |_| 2000);
+        let a = dir.wav("window-c.wav", 80_000, |_| 1000);
+        let b = dir.wav("window-d.wav", 64_000, |_| 2000);
         let mut w = worker();
         w.handle(Cmd::SetCrossfade(2000));
         w.load(1, a, 7000, false, 1.0);
@@ -1079,8 +1106,9 @@ mod tests {
 
     #[test]
     fn a_track_longer_than_its_guessed_length_fades_from_its_real_end() {
-        let a = wav("guess-short-a.wav", 8000, |_| 1000); // 1 s, guessed at 0.5 s
-        let b = wav("guess-short-b.wav", 8000, |_| 2000);
+        let dir = Scratch::new("a_track_longer_than_its_guessed_length_fades_from_its_real_end");
+        let a = dir.wav("guess-short-a.wav", 8000, |_| 1000); // 1 s, guessed at 0.5 s
+        let b = dir.wav("guess-short-b.wav", 8000, |_| 2000);
         let mut w = worker();
         w.handle(Cmd::SetCrossfade(250));
         load_guessed(&mut w, a, 500);
@@ -1094,8 +1122,9 @@ mod tests {
 
     #[test]
     fn a_track_shorter_than_its_guessed_length_plays_out_in_full() {
-        let a = wav("guess-long-a.wav", 8000, |_| 1000); // 1 s, guessed at 2 s
-        let b = wav("guess-long-b.wav", 8000, |_| 2000);
+        let dir = Scratch::new("a_track_shorter_than_its_guessed_length_plays_out_in_full");
+        let a = dir.wav("guess-long-a.wav", 8000, |_| 1000); // 1 s, guessed at 2 s
+        let b = dir.wav("guess-long-b.wav", 8000, |_| 2000);
         let mut w = worker();
         w.handle(Cmd::SetCrossfade(250));
         load_guessed(&mut w, a, 2000);
