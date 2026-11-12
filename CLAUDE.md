@@ -409,7 +409,10 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
      same version (11.0). The bundle id is `io.github.noffee25.lychee`.
    - macOS icons sit on a rounded tile, or recent macOS shows them in a grey square:
      `packaging/macos/make-icns.py` composes it from the logo.
-   - `hdiutil create` sometimes fails on GitHub's macOS runners ("Resource busy"); re-run the job.
+   - `hdiutil create` sometimes fails on GitHub's macOS runners ("Resource busy"); re-run the job. "No space
+     left on device" is a different failure: hdiutil gives an image the source folder's file system (APFS on
+     the runners), and such images can come out too small. That stopped the first 0.1.2 build, so
+     `build-dmg.sh` asks for HFS+ (`-fs HFS+`).
 5. If a job fails, nothing is published: Publish needs all three builds.
    - If the cause is outside the code (a runner's network, for example), the owner can click *Re-run
      failed jobs*.

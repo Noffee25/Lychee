@@ -47,5 +47,7 @@ codesign --verify --strict --verbose=1 "$app"
 
 ln -s /Applications "$work/Lychee/Applications"
 dmg="$out/Lychee-$version-macos.dmg"
-hdiutil create -volname Lychee -srcfolder "$work/Lychee" -format UDZO -ov "$dmg"
+# HFS+: left to itself, hdiutil gives the image the source's file system, APFS on current macOS, and
+# those images can come out too small for the app ("No space left on device", actions/runner-images#4288).
+hdiutil create -volname Lychee -srcfolder "$work/Lychee" -fs HFS+ -format UDZO -ov "$dmg"
 echo "built $dmg"
