@@ -118,6 +118,14 @@ export struct Choice {
     selected: bool,
 }
 
+// A band of the equalizer: its label ("1k"), level in dB, and where its centre sits across the
+// graph (0–1).
+export struct EqBand {
+    label: string,
+    db: float,
+    x: float,
+}
+
 export struct AlbumHeader {
     id: int,
     title: string,
@@ -144,6 +152,9 @@ export struct ListHeader {
     editable: bool,
     // Songs that appear more than once (playlists), for "Remove duplicates".
     duplicates: int,
+    // What playing this list is called in `Player.source` ("playlist:3", "artist:Name", "songs"…):
+    // while it plays, the page's Play button is a Pause button.
+    source: string,
 }
 
 export struct NowPlaying {
@@ -200,7 +211,7 @@ export global AppState {
     // side panel toggles with ⌃⌘S instead of Ctrl Q.
     out property <bool> mac: Platform.os == OperatingSystemType.macos;
     // Navigation: "albums", "album", "artists", "artist", "songs", "genres", "genre",
-    // "recent", "favorites", "playlist", "history", "settings".
+    // "recent", "favorites", "playlist", "history", "settings", "audio" (Settings → Audio), "editor".
     in-out property <string> page: "albums";
     in-out property <bool> can-go-back;
     in-out property <bool> can-go-forward;
@@ -294,6 +305,24 @@ export global AppState {
     in-out property <int> levelling-preamp;
     // What volume levelling knows: "Measuring loudness… 40 of 120" or how many songs it covers.
     in-out property <string> levelling-status;
+    // Settings → Audio. The equalizer: its bands, the curve as SVG path commands in a 1000 × 1000
+    // box (+12 dB at the top), the same closed along 0 dB for the tint under it, the presets, and
+    // how far the level is lowered to make room for boosts.
+    in-out property <bool> eq-enabled;
+    in-out property <[EqBand]> eq-bands;
+    in-out property <string> eq-curve;
+    in-out property <string> eq-area;
+    in-out property <[Choice]> eq-presets;
+    in-out property <string> eq-preset-name;
+    in-out property <float> eq-headroom;
+    // Crossfade choice (0 = off, n = 2n seconds); crossfeed and its strength (0–2).
+    in-out property <int> crossfade;
+    in-out property <bool> crossfeed;
+    in-out property <int> crossfeed-level: 1;
+    // The output stream ("48 kHz, stereo"); empty until something has played.
+    in-out property <string> output-format;
+    // Under "Audio" on the Settings page: the device and what's switched on.
+    in-out property <string> audio-summary;
     in-out property <bool> wayland;
     in-out property <string> toast;
     // A button in the toast ("Undo", "Open"); Actions.toast-action runs it. Ctrl+Z runs "Undo".
@@ -326,6 +355,8 @@ export global Player {
     // 0 = off, 1 = all, 2 = one
     in-out property <int> repeat;
     in-out property <LastfmUi> lastfm;
+    // What the queue was started from, as in `ListHeader.source` ("" for opened files and such).
+    in-out property <string> source;
 }
 
 export global Actions {
@@ -393,6 +424,14 @@ export global Actions {
     callback set-mini-on-top(bool);
     callback set-volume-levelling(bool);
     callback set-levelling-preamp(int);
+    callback set-eq-enabled(bool);
+    // Band, level in dB (rounded to half a dB by Rust).
+    callback set-eq-band(int, float);
+    // A row of `AppState.eq-presets`.
+    callback set-eq-preset(int);
+    callback set-crossfade(int);
+    callback set-crossfeed(bool);
+    callback set-crossfeed-level(int);
 
     callback lastfm-connect();
     callback lastfm-cancel();

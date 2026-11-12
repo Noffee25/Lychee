@@ -109,6 +109,30 @@ impl Default for LastfmSettings {
     }
 }
 
+/// The equalizer: on or off, and which curve.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EqSettings {
+    pub enabled: bool,
+    /// A preset id (see `eq.rs`), or "custom" for `custom`.
+    pub preset: String,
+    /// The user's own curve, in dB per band (32 Hz … 16 kHz).
+    pub custom: [f32; lychee_audio::EQ_BANDS],
+}
+
+impl Default for EqSettings {
+    fn default() -> Self {
+        EqSettings { enabled: false, preset: "flat".into(), custom: [0.0; lychee_audio::EQ_BANDS] }
+    }
+}
+
+impl EqSettings {
+    /// The curve in use.
+    pub fn bands(&self) -> [f32; lychee_audio::EQ_BANDS] {
+        crate::eq::preset(&self.preset).map_or(self.custom, |p| p.bands)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -132,6 +156,13 @@ pub struct Settings {
     pub volume_levelling: bool,
     /// Extra gain on top of volume levelling, in dB (0, 2, 4 or 6): a louder target than −18 LUFS.
     pub levelling_preamp: f32,
+    pub eq: EqSettings,
+    /// Seconds one song fades into the next (0 = off). Songs that follow each other on an album
+    /// always play gaplessly.
+    pub crossfade: u32,
+    /// Headphone crossfeed, and its strength (1–3: light, medium, strong).
+    pub crossfeed: bool,
+    pub crossfeed_level: u32,
     pub lastfm: LastfmSettings,
 }
 
@@ -154,6 +185,10 @@ impl Default for Settings {
             mini_on_top: true,
             volume_levelling: true,
             levelling_preamp: 0.0,
+            eq: EqSettings::default(),
+            crossfade: 0,
+            crossfeed: false,
+            crossfeed_level: 2,
             lastfm: LastfmSettings::default(),
         }
     }

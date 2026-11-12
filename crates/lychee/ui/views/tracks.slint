@@ -52,10 +52,17 @@ export component TrackRowView inherits Rectangle {
     border-radius: 9px;
     background: root.dragged ? Theme.accent.with-alpha(0.14)
         : root.track.current ? Theme.accent.with-alpha(0.10) : root.hovered ? Theme.hover : transparent;
-    // Click to play; on a playlist page, press anywhere on the row and drag to move the song.
+    // Click to play (the playing song pauses and resumes); on a playlist page, press anywhere on
+    // the row and drag to move the song.
     row-ta := DragTouch {
         draggable: root.in-playlist;
-        tapped => { Actions.play-from(root.context, root.track.index); }
+        tapped => {
+            if (root.track.current) {
+                Actions.toggle-play();
+            } else {
+                Actions.play-from(root.context, root.track.index);
+            }
+        }
         dragged(dy) => {
             AppState.drag-kind = "playlist";
             AppState.drag-from = root.track.index;
@@ -78,7 +85,7 @@ export component TrackRowView inherits Rectangle {
             width: 28px;
             if root.track.current && !root.hovered: PlayingBars { moving: Player.playing; }
             if root.hovered: Image {
-                source: Icons.play;
+                source: root.track.current && Player.playing ? Icons.pause : Icons.play;
                 colorize: Theme.text;
                 width: 14px;
                 height: 14px;
@@ -385,11 +392,21 @@ component ListHero inherits HorizontalLayout {
             spacing: 10px;
             alignment: start;
             PillButton {
-                text: "Play";
-                icon: Icons.play;
+                // This list is what's playing (or paused): the button pauses and resumes it.
+                property <bool> current: Player.now.has-track && AppState.list-header.source != ""
+                    && Player.source == AppState.list-header.source;
+                text: self.current && Player.playing ? "Pause" : "Play";
+                other-text: "Pause";
+                icon: self.current && Player.playing ? Icons.pause : Icons.play;
                 primary: true;
-                enabled: AppState.tracks.length > 0;
-                clicked => { Actions.play-list(false); }
+                enabled: AppState.tracks.length > 0 || self.current;
+                clicked => {
+                    if (self.current) {
+                        Actions.toggle-play();
+                    } else {
+                        Actions.play-list(false);
+                    }
+                }
             }
             PillButton {
                 text: "Shuffle";

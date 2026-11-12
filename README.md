@@ -15,6 +15,7 @@
 - **Plays essentially anything:** MP3, FLAC (up to 24-bit/192 kHz), WAV, AIFF, ALAC, AAC/M4A, Ogg Vorbis, Opus, CAF and MKV/WebM audio. Decoding is pure Rust.
 - **Gapless playback.** High-quality resampling when your device's rate differs from the file's. Clickless pause, seek and volume.
 - **Volume levelling.** Every song plays at about the same loudness, using ReplayGain tags where your files have them and measuring the rest (EBU R128) in the background. Albums keep their own dynamics, and a pre-amp of up to +6 dB makes everything louder if you prefer.
+- **Equalizer, crossfade and crossfeed** (Settings → Audio). A ten-band equalizer with presets and a curve you drag into shape; it makes room for its boosts so they never distort. Crossfade of up to 12 seconds leaves songs that run into each other on an album gapless, and headphone crossfeed takes the edge off songs mixed hard left and right.
 - **Fast library.** Parallel scanning, incremental rescans, embedded or folder artwork, and compilations grouped as "Various Artists". Browse Albums, Artists, Songs, Genres (several per song, with spellings like "Hip-Hop" and "Hip Hop" merged), Recently Added and Recently Played.
 - **The Flow interface.** A three-pane layout, album pages tinted with the colors of their artwork, and a Queue / Lyrics / Details side panel. Eleven colour themes, including Catppuccin, Tokyo Night, Gruvbox and Rosé Pine, with separate dark and light picks that can follow the system.
 - **Command palette (Ctrl+K).** Fuzzy-search your whole library and run any command from the keyboard.
@@ -33,7 +34,7 @@
   synced lyrics from LRCLIB.
 - **Mini player (Ctrl+M, ⌘M on a Mac).** A compact bar that stays on top. On Wayland, which has no "always on top",
   it runs through XWayland so it can.
-- **Desktop integration.** MPRIS on Linux (media keys, GNOME/KDE media controls, `playerctl`), System Media Transport Controls on Windows, and Now Playing on macOS (media keys, Control Center). Drag and drop files to play them, or pass them on the command line.
+- **Desktop integration.** MPRIS on Linux (media keys, GNOME/KDE media controls, `playerctl`), System Media Transport Controls on Windows, and Now Playing on macOS (media keys, Control Center). Drag and drop files to play them, or pass them on the command line. "Open with Lychee" while it's running plays the files in the open window instead of starting a second Lychee.
 - **Remembers where you were.** On restart, Lychee restores your queue, the track you were on and its position.
 
 | Albums | Songs and lyrics |
@@ -152,11 +153,12 @@ Lychee only changes your music files when you save in the tag editor.
 ```
 crates/
   lychee-core      domain model, play queue (shuffle, repeat, play next), formatting helpers
-  lychee-audio     playback engine: Symphonia + pure-Rust Opus, rubato resampling, gapless, cpal output,
-                   per-track gain and an EBU R128 loudness meter
+  lychee-audio     playback engine: Symphonia + pure-Rust Opus, rubato resampling, gapless and crossfade,
+                   cpal output, per-track gain, an EBU R128 loudness meter, equalizer and crossfeed
   lychee-library   scanning, tags (lofty), artwork + colors, SQLite store, fuzzy search, lyrics
   lychee-lastfm    Last.fm auth, now playing, scrobbling with an offline queue
-  lychee-platform  MPRIS (Linux), System Media Transport Controls (Windows), Now Playing (macOS)
+  lychee-platform  MPRIS (Linux), System Media Transport Controls (Windows), Now Playing (macOS),
+                   one running instance
   lychee-tagger    tag editor engine: lossless tag writing, EasyTAG masks, text clean-up, artist credits, undo
   lychee-lookup    MusicBrainz, Cover Art Archive and LRCLIB clients, album detection and matching
 packaging/         Linux installer and packages, Windows installer and icon, macOS app and disk image,

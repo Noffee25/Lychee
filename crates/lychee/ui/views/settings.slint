@@ -2,12 +2,17 @@ import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
 import { AppState, Player, Actions, ThemeCard } from "../state.slint";
 import { PillButton, IconButton, Toggle, Segmented, TextField, Divider } from "../widgets.slint";
-import { PageHeader } from "albums.slint";
+import { Grid, PageHeader } from "albums.slint";
 import { ScrollView, AboutSlint } from "std-widgets.slint";
 
-component Section inherits Rectangle {
+// A card of settings. Sections that are one feature (the equalizer, volume levelling) have their
+// switch beside the title.
+export component Section inherits Rectangle {
     in property <string> title;
     in property <string> description;
+    in property <bool> has-switch;
+    in-out property <bool> on;
+    callback switched(bool);
     border-radius: 12px;
     border-width: 1px;
     border-color: Theme.border;
@@ -15,11 +20,20 @@ component Section inherits Rectangle {
     VerticalLayout {
         padding: 20px;
         spacing: 12px;
-        Text {
-            text: root.title;
-            font-size: 16px;
-            font-weight: 650;
-            color: Theme.text;
+        HorizontalLayout {
+            cross-axis-alignment: center;
+            spacing: 16px;
+            Text {
+                text: root.title;
+                font-size: 16px;
+                font-weight: 650;
+                color: Theme.text;
+                horizontal-stretch: 1;
+            }
+            if root.has-switch: Toggle {
+                checked <=> root.on;
+                toggled(on) => { root.switched(on); }
+            }
         }
         if root.description != "": Text {
             text: root.description;
@@ -30,7 +44,7 @@ component Section inherits Rectangle {
     }
 }
 
-component SettingRow inherits HorizontalLayout {
+export component SettingRow inherits HorizontalLayout {
     in property <string> label;
     in property <string> hint;
     spacing: 16px;
@@ -80,101 +94,96 @@ component ShortcutRow inherits HorizontalLayout {
     }
 }
 
-// The output device: the current one in a field; the rest drop down from it.
-component DeviceSelect inherits Rectangle {
-    height: 38px;
-    border-radius: 9px;
+// The title of a page inside Settings, "Settings › Audio": "Settings" leads back.
+export component SubpageHeader inherits HorizontalLayout {
+    in property <string> title;
+    padding-left: Grid.side-padding;
+    padding-right: Grid.side-padding;
+    padding-top: 4px;
+    padding-bottom: 18px;
+    spacing: 8px;
+    alignment: start;
+    Text {
+        text: "Settings";
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: -0.6px;
+        color: back-ta.has-hover ? Theme.text-2 : Theme.text-3;
+        animate color { duration: Theme.fast; }
+        back-ta := TouchArea {
+            mouse-cursor: pointer;
+            clicked => { Actions.navigate("settings"); }
+        }
+    }
+    VerticalLayout {
+        alignment: center;
+        Image {
+            source: Icons.chev-r;
+            colorize: Theme.text-3;
+            width: 24px;
+            height: 24px;
+        }
+    }
+    Text {
+        text: root.title;
+        font-size: 30px;
+        font-weight: 700;
+        letter-spacing: -0.6px;
+        color: Theme.text;
+        overflow: elide;
+    }
+}
+
+// A card on the Settings page that opens a page of its own (Audio): what's there, and how it's
+// set up now.
+component SettingsLink inherits Rectangle {
+    in property <string> title;
+    in property <string> description;
+    in property <string> summary;
+    callback clicked;
+    border-radius: 12px;
     border-width: 1px;
-    border-color: select-ta.has-hover ? Theme.text-3 : Theme.border-2;
-    background: Theme.surface-2;
+    border-color: ta.has-hover ? Theme.border-2 : Theme.border;
+    background: ta.has-hover ? Theme.surface-2 : Theme.surface;
+    animate background, border-color { duration: Theme.fast; }
     HorizontalLayout {
-        cross-axis-alignment: center;
-        padding-left: 12px;
-        padding-right: 10px;
-        spacing: 10px;
-        Image {
-            source: Icons.device;
-            colorize: Theme.text-2;
-            width: 16px;
-            height: 16px;
-        }
-        Text {
-            text: AppState.device-choice;
-            color: Theme.text;
-            vertical-alignment: center;
-            overflow: elide;
+        padding: 20px;
+        spacing: 16px;
+        VerticalLayout {
             horizontal-stretch: 1;
-        }
-        Image {
-            source: Icons.chev-d;
-            colorize: Theme.text-2;
-            width: 15px;
-            height: 15px;
-        }
-    }
-    select-ta := TouchArea {
-        mouse-cursor: pointer;
-        clicked => { popup.show(); }
-    }
-    popup := PopupWindow {
-        x: 0px;
-        y: root.height + 6px;
-        width: root.width;
-        height: Math.min(300px, 16px + AppState.devices.length * 34px);
-        close-policy: close-on-click-outside;
-        Rectangle {
-            background: Theme.surface;
-            border-radius: 12px;
-            border-width: 1px;
-            border-color: Theme.border-2;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: Theme.shadow;
-            // Inset so the list clips itself rectangularly inside the rounded card.
-            sv := ScrollView {
-                x: 1px;
-                y: 1px;
-                width: parent.width - 2px;
-                height: parent.height - 2px;
-                content-width: self.visible-width;
-                content-height: rows.preferred-height;
-                rows := VerticalLayout {
-                    width: sv.visible-width;
-                    padding: 7px;
-                    spacing: 2px;
-                    for device in AppState.devices: Rectangle {
-                        height: 32px;
-                        border-radius: 8px;
-                        background: dev-ta.has-hover ? Theme.hover : transparent;
-                        HorizontalLayout {
-                            cross-axis-alignment: center;
-                            padding-left: 10px;
-                            padding-right: 10px;
-                            spacing: 8px;
-                            Text {
-                                text: device.label;
-                                color: device.selected ? Theme.accent : Theme.text;
-                                vertical-alignment: center;
-                                overflow: elide;
-                                horizontal-stretch: 1;
-                            }
-                            if device.selected: Image {
-                                source: Icons.check;
-                                colorize: Theme.accent;
-                                width: 15px;
-                                height: 15px;
-                            }
-                        }
-                        dev-ta := TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => {
-                                Actions.set-device(device.label);
-                                popup.close();
-                            }
-                        }
-                    }
-                }
+            spacing: 6px;
+            Text {
+                text: root.title;
+                font-size: 16px;
+                font-weight: 650;
+                color: Theme.text;
+            }
+            Text {
+                text: root.description;
+                color: Theme.text-2;
+                wrap: word-wrap;
+            }
+            if root.summary != "": Text {
+                text: root.summary;
+                font-family: Theme.mono;
+                font-size: 12px;
+                color: Theme.text-3;
+                wrap: word-wrap;
             }
         }
+        VerticalLayout {
+            alignment: center;
+            Image {
+                source: Icons.chev-r;
+                colorize: ta.has-hover ? Theme.text : Theme.text-3;
+                width: 20px;
+                height: 20px;
+            }
+        }
+    }
+    ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
     }
 }
 
@@ -387,40 +396,11 @@ export component SettingsPage inherits Rectangle {
                         }
                     }
 
-                    Section {
-                        title: "Playback";
-                        description: "Lychee plays gaplessly and converts sample rates in high quality when your device needs it.";
-                        Text {
-                            text: "Output device";
-                            font-weight: 500;
-                            color: Theme.text;
-                        }
-                        DeviceSelect { }
-                        Divider { }
-                        SettingRow {
-                            label: "Volume levelling";
-                            hint: "Plays every song at about the same loudness (ReplayGain), so you aren't reaching for the volume between a quiet ballad and a loud track. Albums keep their own quiet and loud moments.";
-                            Toggle {
-                                checked: AppState.volume-levelling;
-                                toggled(on) => { Actions.set-volume-levelling(on); }
-                            }
-                        }
-                        if AppState.volume-levelling: SettingRow {
-                            label: "Pre-amp";
-                            hint: "Plays levelled songs louder. Quiet songs that can't be raised this far without distorting stay a little below the rest.";
-                            Segmented {
-                                options: ["0 dB", "+2 dB", "+4 dB", "+6 dB"];
-                                selected <=> AppState.levelling-preamp;
-                                changed(i) => { Actions.set-levelling-preamp(i); }
-                            }
-                        }
-                        if AppState.volume-levelling && AppState.levelling-status != "": Text {
-                            text: AppState.levelling-status;
-                            font-family: Theme.mono;
-                            font-size: 12px;
-                            color: Theme.text-3;
-                            wrap: word-wrap;
-                        }
+                    SettingsLink {
+                        title: "Audio";
+                        description: "Output device, equalizer, volume levelling, crossfade and headphone crossfeed.";
+                        summary: AppState.audio-summary;
+                        clicked => { Actions.navigate("audio"); }
                     }
 
                     Section {

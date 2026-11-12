@@ -13,17 +13,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
-use lychee_audio::{Engine, EngineEvent, StreamInfo};
+use lychee_audio::{EQ_BANDS, Engine, EngineEvent, EqDesign, StreamInfo};
 use lychee_core::{
     Album, AlbumId, AudioFormat, Gain, GainSource, Lyrics, PlaybackStatus, PlaylistId, Queue, RepeatMode, Track, TrackId,
     TrackRef, format_duration, format_duration_ms,
 };
 use lychee_lastfm::{Scrobble, Scrobbler};
 use lychee_library::{AlbumSort, Library, LibraryIndex, ScanProgress, ScanSummary, TrackSort, sort_key};
-use lychee_platform::{MediaAction, MediaControls, NowPlaying as OsNowPlaying, Playback, Repeat};
-use slint::{Color, ComponentHandle, Image, ModelRc, SharedString, VecModel};
+use lychee_platform::{MediaAction, MediaControls, NowPlaying as OsNowPlaying, Playback, Repeat, instance};
+use slint::{Color, ComponentHandle, Image, Model, ModelRc, SharedString, VecModel};
 
 use crate::editor::{EditorAction, EditorCtl};
+use crate::eq;
 use crate::images::{ImageCache, Size};
 use crate::lastfm::{LastfmMsg, Listen, ListenEvent, scrobble_artist, start_auth, track_info};
 use crate::mini::{self, MiniCommand, MiniEvent, MiniState};
@@ -32,9 +33,9 @@ use crate::palette::{self, Command, Entry};
 use crate::settings::{Paths, ScrobbleArtist, Settings, ThemeMode};
 use crate::themes;
 use crate::{
-    Actions, AlbumCard, AlbumHeader, AlbumRow, AppState, AppWindow, ArtistCard, Choice, GenreCard, GenreRow, Icons, InfoRow,
-    LastfmUi, ListHeader, Lyric, MiniWindow, NavPlaylist, NowPlaying, PaletteItem, PickerAlbum, Player, QueueItem, ScanUi, Theme,
-    ThemeCard,
+    Actions, AlbumCard, AlbumHeader, AlbumRow, AppState, AppWindow, ArtistCard, Choice, EqBand, GenreCard, GenreRow, Icons,
+    InfoRow, LastfmUi, ListHeader, Lyric, MiniWindow, NavPlaylist, NowPlaying, PaletteItem, PickerAlbum, Player, QueueItem,
+    ScanUi, Theme, ThemeCard,
     TrackRow,
 };
 
@@ -87,6 +88,16 @@ pub enum Action {
     SetMiniOnTop(bool),
     SetVolumeLevelling(bool),
     SetLevellingPreamp(i32),
+    SetEqEnabled(bool),
+    /// A band dragged to a level in dB.
+    SetEqBand(i32, f32),
+    /// A row of the preset dropdown.
+    SetEqPreset(i32),
+    /// Crossfade choice: 0 = off, else 2 × n seconds.
+    SetCrossfade(i32),
+    SetCrossfeed(bool),
+    /// Crossfeed strength choice: 0–2 = light, medium, strong.
+    SetCrossfeedLevel(i32),
     LastfmConnect,
     LastfmCancel,
     LastfmDisconnect,
@@ -215,6 +226,12 @@ macro_rules! wire_actions {
         a.on_set_mini_on_top({ let d = d.clone(); move |on| d.dispatch(Action::SetMiniOnTop(on)) });
         a.on_set_volume_levelling({ let d = d.clone(); move |on| d.dispatch(Action::SetVolumeLevelling(on)) });
         a.on_set_levelling_preamp({ let d = d.clone(); move |i| d.dispatch(Action::SetLevellingPreamp(i)) });
+        a.on_set_eq_enabled({ let d = d.clone(); move |on| d.dispatch(Action::SetEqEnabled(on)) });
+        a.on_set_eq_band({ let d = d.clone(); move |i, db| d.dispatch(Action::SetEqBand(i, db)) });
+        a.on_set_eq_preset({ let d = d.clone(); move |i| d.dispatch(Action::SetEqPreset(i)) });
+        a.on_set_crossfade({ let d = d.clone(); move |i| d.dispatch(Action::SetCrossfade(i)) });
+        a.on_set_crossfeed({ let d = d.clone(); move |on| d.dispatch(Action::SetCrossfeed(on)) });
+        a.on_set_crossfeed_level({ let d = d.clone(); move |i| d.dispatch(Action::SetCrossfeedLevel(i)) });
         a.on_lastfm_connect({ let d = d.clone(); move || d.dispatch(Action::LastfmConnect) });
         a.on_lastfm_cancel({ let d = d.clone(); move || d.dispatch(Action::LastfmCancel) });
         a.on_lastfm_disconnect({ let d = d.clone(); move || d.dispatch(Action::LastfmDisconnect) });
@@ -263,6 +280,8 @@ enum Page {
     Playlist(PlaylistId),
     History,
     Settings,
+    /// Settings → Audio.
+    Audio,
     Editor,
 }
 
@@ -281,6 +300,7 @@ impl Page {
             Page::Playlist(_) => "playlist",
             Page::History => "history",
             Page::Settings => "settings",
+            Page::Audio => "audio",
             Page::Editor => "editor",
         }
     }
@@ -352,6 +372,9 @@ struct SessionState {
     current: Option<usize>,
     position_ms: u64,
     context: String,
+    /// What the queue was started from (see `App::source`).
+    #[serde(default)]
+    source: String,
 }
 
 /// The playing track and album, shared with lazily built rows: refreshing a model then shows
@@ -425,6 +448,9 @@ pub struct Services {
     pub lastfm_tx: Sender<LastfmMsg>,
     pub media: Option<MediaControls>,
     pub media_rx: Receiver<MediaAction>,
+    /// This is the running Lychee: later launches ("Open with Lychee" while it runs) hand it
+    /// their files.
+    pub instance: Option<instance::Primary>,
     pub settings: Settings,
     pub paths: Paths,
     pub synchronous_images: bool,
@@ -451,6 +477,7 @@ pub struct App {
     lastfm_message: String,
     media: Option<MediaControls>,
     media_rx: Receiver<MediaAction>,
+    instance: Option<instance::Primary>,
     settings: Settings,
     paths: Paths,
     images: Rc<ImageCache>,
@@ -466,6 +493,17 @@ pub struct App {
     token: u64,
     token_seq: u64,
     preloaded: Option<(u64, TrackId)>,
+    /// Whether the current track may fade into the pre-loaded one (crossfade).
+    preloaded_fade: bool,
+    /// What the queue was started from: "album:ID", "playlist:ID", "artist:NAME", "songs",
+    /// "favorites", "history", or "" (opened files, single songs). A page whose list is playing
+    /// shows Pause instead of Play (`Player.source` against `ListHeader.source`).
+    source: String,
+    /// The equalizer bands shown in Settings → Audio; rows are updated in place, so a band being
+    /// dragged keeps its pointer grab.
+    eq_bands: Rc<VecModel<EqBand>>,
+    /// The output's sample rate, for drawing the equalizer curve.
+    output_rate: u32,
     /// Volume levelling gains sent to the engine for the current and the pre-loaded track.
     current_gain: Option<Gain>,
     preloaded_gain: Option<Gain>,
@@ -486,6 +524,8 @@ pub struct App {
     list_ids: Vec<TrackId>,
     list_play: Vec<TrackId>,
     list_name: String,
+    /// `source` of the list page on screen.
+    list_source: String,
     album_ids: Vec<TrackId>,
     palette_entries: Vec<Entry>,
     system_dark: bool,
@@ -560,6 +600,7 @@ impl App {
             lastfm_message: String::new(),
             media: s.media,
             media_rx: s.media_rx,
+            instance: s.instance,
             settings: s.settings,
             paths: s.paths,
             images,
@@ -574,6 +615,10 @@ impl App {
             token: 0,
             token_seq: 0,
             preloaded: None,
+            preloaded_fade: false,
+            source: String::new(),
+            eq_bands: Rc::new(VecModel::default()),
+            output_rate: 48_000,
             current_gain: None,
             preloaded_gain: None,
             position_ms: 0,
@@ -591,6 +636,7 @@ impl App {
             list_ids: Vec::new(),
             list_play: Vec::new(),
             list_name: String::new(),
+            list_source: String::new(),
             album_ids: Vec::new(),
             palette_entries: Vec::new(),
             system_dark: s.system_dark,
@@ -626,6 +672,7 @@ impl App {
         state.set_mini_on_top(self.settings.mini_on_top);
         state.set_volume_levelling(self.settings.volume_levelling);
         state.set_levelling_preamp(preamp_index(self.settings.levelling_preamp));
+        state.set_eq_bands(ModelRc::from(self.eq_bands.clone()));
         state.set_right_panel(self.settings.right_panel);
         state.set_right_tab(self.settings.right_tab.clone().into());
         state.set_album_sort(self.settings.album_sort);
@@ -634,6 +681,7 @@ impl App {
         self.queue.set_shuffle(self.settings.shuffle);
         self.queue.set_repeat(self.settings.repeat);
         self.engine.set_volume(if self.settings.muted { 0.0 } else { self.settings.volume });
+        self.apply_audio();
         self.restore_session();
         self.refresh_library_views();
         self.update_player_state();
@@ -660,6 +708,7 @@ impl App {
                     "favorites" => Page::Favorites,
                     "history" => Page::History,
                     "settings" => Page::Settings,
+                    "audio" => Page::Audio,
                     "editor" => Page::Editor,
                     _ => Page::Albums,
                 };
@@ -717,8 +766,8 @@ impl App {
                 let index = self.library.index();
                 let Some(album) = index.album(id) else { return };
                 match what.as_str() {
-                    "play-next" => self.enqueue(album.tracks.clone(), true, &album.title),
-                    "add-queue" => self.enqueue(album.tracks.clone(), false, &album.title),
+                    "play-next" => self.enqueue(album.tracks.clone(), true, &album.title, &format!("album:{id}")),
+                    "add-queue" => self.enqueue(album.tracks.clone(), false, &album.title, &format!("album:{id}")),
                     "go-artist" => {
                         let name = album.artist.clone();
                         self.show_page(Page::Artist(name), true);
@@ -742,17 +791,23 @@ impl App {
                 if context == "album" {
                     let name = self.album_title();
                     let ids = self.album_ids.clone();
-                    self.play_ids(ids, index, name, None);
+                    let source = match &self.page {
+                        Page::Album(id) => format!("album:{id}"),
+                        _ => String::new(),
+                    };
+                    self.play_ids(ids, index, name, source, None);
                 } else {
                     let ids = self.list_ids.clone();
                     let name = self.list_name.clone();
-                    self.play_ids(ids, index, name, None);
+                    let source = self.list_source.clone();
+                    self.play_ids(ids, index, name, source, None);
                 }
             }
             Action::PlayList(shuffle) => {
                 let ids = if self.list_play.is_empty() { self.list_ids.clone() } else { self.list_play.clone() };
                 let name = self.list_name.clone();
-                self.play_ids(ids, 0, name, Some(shuffle));
+                let source = self.list_source.clone();
+                self.play_ids(ids, 0, name, source, Some(shuffle));
             }
             Action::TrackAction(what, id) => self.track_action(&what, i64::from(id)),
             Action::AddToPlaylist(playlist, what, id) => self.add_to_playlist(playlist, &what, id),
@@ -884,6 +939,7 @@ impl App {
                 // Heard at once, not only from the next song on.
                 self.refresh_gains(true);
                 self.update_levelling_status();
+                self.update_audio_summary();
             }
             Action::SetLevellingPreamp(i) => {
                 self.settings.levelling_preamp = (i.clamp(0, 3) * 2) as f32;
@@ -892,6 +948,51 @@ impl App {
                     ui.global::<AppState>().set_levelling_preamp(i.clamp(0, 3));
                 }
                 self.refresh_gains(true);
+            }
+            Action::SetEqEnabled(on) => {
+                self.settings.eq.enabled = on;
+                self.settings_dirty = true;
+                self.apply_eq();
+            }
+            Action::SetEqBand(band, db) => {
+                let Some(band) = usize::try_from(band).ok().filter(|b| *b < EQ_BANDS) else { return };
+                let db = eq::snap(db);
+                let mut bands = self.settings.eq.bands();
+                if bands[band] == db && self.settings.eq.enabled {
+                    return;
+                }
+                // Moving a band makes the curve the user's own (and switches the equalizer on).
+                bands[band] = db;
+                self.settings.eq.custom = bands;
+                self.settings.eq.preset = eq::CUSTOM.into();
+                self.settings.eq.enabled = true;
+                self.settings_dirty = true;
+                self.apply_eq();
+            }
+            Action::SetEqPreset(row) => {
+                // The dropdown lists the presets, then "Custom" once there is a curve of your own.
+                self.settings.eq.preset = match usize::try_from(row).ok().and_then(|i| eq::PRESETS.get(i)) {
+                    Some(p) => p.id.into(),
+                    None => eq::CUSTOM.into(),
+                };
+                self.settings.eq.enabled = true;
+                self.settings_dirty = true;
+                self.apply_eq();
+            }
+            Action::SetCrossfade(i) => {
+                self.settings.crossfade = (i.clamp(0, 6) * 2) as u32;
+                self.settings_dirty = true;
+                self.apply_crossfade();
+            }
+            Action::SetCrossfeed(on) => {
+                self.settings.crossfeed = on;
+                self.settings_dirty = true;
+                self.apply_crossfeed();
+            }
+            Action::SetCrossfeedLevel(i) => {
+                self.settings.crossfeed_level = (i.clamp(0, 2) + 1) as u32;
+                self.settings_dirty = true;
+                self.apply_crossfeed();
             }
             Action::SetMiniOnTop(on) => {
                 self.settings.mini_on_top = on;
@@ -1060,6 +1161,9 @@ impl App {
         while let Ok(action) = self.media_rx.try_recv() {
             self.on_media_action(action);
         }
+        while let Some(request) = self.instance.as_ref().and_then(|i| i.requests.try_recv().ok()) {
+            self.on_launch(request);
+        }
         self.editor.poll();
         self.apply_editor_outcome();
         let mini_events = self.mini_helper.as_ref().map(|m| m.poll()).unwrap_or_default();
@@ -1128,7 +1232,10 @@ impl App {
                     self.token = token;
                     self.errors_in_row = 0;
                     if let Some(track) = self.library.index().track(next_id) {
-                        self.set_current(track, 0, true);
+                        // Normally heard while playing, but don't claim so if the hand-over came
+                        // while paused.
+                        let playing = self.status == PlaybackStatus::Playing;
+                        self.set_current(track, 0, playing);
                     }
                     self.preload_next();
                 }
@@ -1162,9 +1269,13 @@ impl App {
             }
             EngineEvent::OutputChanged { device, sample_rate, channels } => {
                 self.output = format!("{device} · {} kHz · {} ch", sample_rate as f32 / 1000.0, channels);
+                self.output_rate = sample_rate;
                 if let Some(ui) = self.ui.upgrade() {
-                    ui.global::<AppState>().set_device_name(device.into());
+                    let state = ui.global::<AppState>();
+                    state.set_device_name(device.into());
+                    state.set_output_format(output_format(sample_rate, channels).into());
                 }
+                self.update_eq_ui();
                 self.update_details();
                 self.update_settings_ui();
             }
@@ -1213,13 +1324,16 @@ impl App {
         let Some(album) = index.album(id) else { return };
         let (ids, title) = (album.tracks.clone(), album.title.clone());
         drop(index);
-        self.play_ids(ids, 0, title, Some(shuffle));
+        self.play_ids(ids, 0, title, format!("album:{id}"), Some(shuffle));
     }
 
-    fn play_ids(&mut self, ids: Vec<TrackId>, start: usize, context: String, shuffle: Option<bool>) {
+    /// Replace the queue with `ids` and play from `start`. `context` names it in the Queue panel;
+    /// `source` says which page it came from (see `App::source`).
+    fn play_ids(&mut self, ids: Vec<TrackId>, start: usize, context: String, source: String, shuffle: Option<bool>) {
         if ids.is_empty() {
             return;
         }
+        self.set_source(source);
         if let Some(s) = shuffle {
             self.queue.set_shuffle(s);
             self.settings.shuffle = s;
@@ -1286,15 +1400,22 @@ impl App {
         let next = self.queue.peek_next(true);
         match next {
             Some(id) => {
-                if self.preloaded.is_some_and(|(_, t)| t == id) {
-                    // Same song, but its neighbours (and so album or track gain) may have changed.
+                if let Some((token, t)) = self.preloaded.filter(|(_, t)| *t == id) {
+                    // Same song, but its neighbours (and so album or track gain, and whether to
+                    // fade into it) may have changed.
                     self.refresh_gains(false);
+                    let fade = self.may_fade(t);
+                    if fade != self.preloaded_fade {
+                        self.preloaded_fade = fade;
+                        self.engine.set_fade(token, fade);
+                    }
                     return;
                 }
                 let Some(track) = self.library.index().track(id) else { return };
                 let token = self.next_token();
                 self.preloaded_gain = self.gain_at(&track, self.queue.peek_next_index(true));
-                self.engine.preload(token, track.path.clone(), factor(self.preloaded_gain));
+                self.preloaded_fade = self.may_fade(id);
+                self.engine.preload(token, track.path.clone(), factor(self.preloaded_gain), self.preloaded_fade);
                 self.preloaded = Some((token, id));
             }
             None => {
@@ -1326,7 +1447,7 @@ impl App {
                     self.start_current(true, at);
                 } else {
                     let ids: Vec<TrackId> = self.library.index().tracks(TrackSort::Artist).iter().map(|t| t.id).collect();
-                    self.play_ids(ids, 0, "Songs".into(), None);
+                    self.play_ids(ids, 0, "Songs".into(), "songs".into(), None);
                 }
                 return;
             }
@@ -1445,12 +1566,12 @@ impl App {
         self.update_player_state();
     }
 
-    fn enqueue(&mut self, ids: Vec<TrackId>, next: bool, label: &str) {
+    fn enqueue(&mut self, ids: Vec<TrackId>, next: bool, label: &str, source: &str) {
         if ids.is_empty() {
             return;
         }
         if self.queue.current().is_none() {
-            self.play_ids(ids, 0, label.to_string(), None);
+            self.play_ids(ids, 0, label.to_string(), source.to_string(), None);
             return;
         }
         if next {
@@ -1531,8 +1652,8 @@ impl App {
         let Some(track) = self.library.index().track(id) else { return };
         match what {
             "like" => self.toggle_like(id),
-            "play-next" => self.enqueue(vec![id], true, &track.title),
-            "add-queue" => self.enqueue(vec![id], false, &track.title),
+            "play-next" => self.enqueue(vec![id], true, &track.title, ""),
+            "add-queue" => self.enqueue(vec![id], false, &track.title, ""),
             "go-album" => self.show_page(Page::Album(track.album_id), true),
             "go-artist" => self.handle(Action::OpenArtist(track.album_artist.clone())),
             "show-folder" => {
@@ -1686,11 +1807,35 @@ impl App {
                     self.queue_changed();
                     self.toast(&format!("Added {n} song{} to the queue", if n == 1 { "" } else { "s" }));
                 } else {
-                    self.play_ids(ids, 0, "Opened files".into(), None);
+                    self.play_ids(ids, 0, "Opened files".into(), String::new(), None);
                 }
             }
             Ok(_) => self.toast("Nothing playable in what you opened"),
             Err(e) => self.toast(&format!("Could not open: {e}")),
+        }
+    }
+
+    /// Another launch of Lychee handed over its request: play its files now (replacing the queue,
+    /// as a fresh start would), open its files in the tag editor, or just come to the front.
+    fn on_launch(&mut self, request: instance::Request) {
+        let instance::Request { open, edit } = request;
+        if !open.is_empty() {
+            match self.library.import_paths(&open) {
+                Ok(ids) if !ids.is_empty() => self.play_ids(ids, 0, "Opened files".into(), String::new(), None),
+                Ok(_) => self.toast("Nothing playable in what you opened"),
+                Err(e) => self.toast(&format!("Could not open: {e}")),
+            }
+        }
+        if !edit.is_empty() {
+            self.handle(Action::EditPaths(edit));
+        }
+        // Opening songs only changes what's playing; anything else is about the window.
+        if open.is_empty() {
+            if self.mini.as_ref().is_some_and(|m| m.window().is_visible()) || self.mini_helper.is_some() {
+                self.handle(Action::CloseMini);
+            } else {
+                self.handle(Action::RaiseMain);
+            }
         }
     }
 
@@ -1923,9 +2068,9 @@ impl App {
     fn playlist_command(&mut self, what: &str, id: PlaylistId) {
         let Some(p) = self.library.index().playlist(id).cloned() else { return };
         match what {
-            "play" | "shuffle" => self.play_ids(p.tracks, 0, p.name, Some(what == "shuffle")),
-            "play-next" => self.enqueue(p.tracks, true, &p.name),
-            "add-queue" => self.enqueue(p.tracks, false, &p.name),
+            "play" | "shuffle" => self.play_ids(p.tracks, 0, p.name, format!("playlist:{id}"), Some(what == "shuffle")),
+            "play-next" => self.enqueue(p.tracks, true, &p.name, &format!("playlist:{id}")),
+            "add-queue" => self.enqueue(p.tracks, false, &p.name, &format!("playlist:{id}")),
             "rename" => {
                 self.show_page(Page::Playlist(id), true);
                 if let Some(ui) = self.ui.upgrade() {
@@ -2340,7 +2485,7 @@ impl App {
                     if let Some(a) = index.album(id) {
                         let (ids, title) = (a.tracks.clone(), a.title.clone());
                         drop(index);
-                        self.enqueue(ids, true, &title);
+                        self.enqueue(ids, true, &title, &format!("album:{id}"));
                     }
                 } else {
                     drop(index);
@@ -2355,16 +2500,16 @@ impl App {
                 let Some(t) = index.track(id) else { return };
                 if play_next {
                     drop(index);
-                    self.enqueue(vec![id], true, &t.title);
+                    self.enqueue(vec![id], true, &t.title, "");
                 } else {
                     let album = index.album(t.album_id).cloned();
                     drop(index);
                     match album {
                         Some(a) => {
                             let start = a.tracks.iter().position(|x| *x == id).unwrap_or(0);
-                            self.play_ids(a.tracks.clone(), start, a.title.clone(), None);
+                            self.play_ids(a.tracks.clone(), start, a.title.clone(), format!("album:{}", a.id), None);
                         }
-                        None => self.play_ids(vec![id], 0, t.title.clone(), None),
+                        None => self.play_ids(vec![id], 0, t.title.clone(), String::new(), None),
                     }
                 }
             }
@@ -2416,6 +2561,7 @@ impl App {
             Command::Songs => self.show_page(Page::Songs, true),
             Command::Favorites => self.show_page(Page::Favorites, true),
             Command::Settings => self.show_page(Page::Settings, true),
+            Command::Audio => self.show_page(Page::Audio, true),
             Command::AddFolder => self.pick_folder(),
             Command::Rescan => self.start_scan(),
             Command::TagEditor => self.show_page(Page::Editor, true),
@@ -2505,6 +2651,7 @@ impl App {
                 });
             }
             Page::Artist(name) => {
+                self.list_source = format!("artist:{name}");
                 let albums: Vec<AlbumId> = index.artist_albums(&name).iter().map(|a| a.id).collect();
                 let tracks = index.artist_tracks(&name);
                 let mut play: Vec<&Album> = index.artist_albums(&name);
@@ -2532,6 +2679,7 @@ impl App {
                 self.set_album_grid(&self.models.artist_albums.clone(), albums, &index);
             }
             Page::Songs => {
+                self.list_source = "songs".into();
                 let sort = match self.settings.track_sort {
                     1 => TrackSort::Title,
                     2 => TrackSort::Album,
@@ -2575,6 +2723,7 @@ impl App {
                 });
             }
             Page::Favorites => {
+                self.list_source = "favorites".into();
                 let liked = index.liked();
                 let total: u64 = liked.iter().map(|t| t.duration_ms).sum();
                 self.set_list_header(ListHeader {
@@ -2588,6 +2737,7 @@ impl App {
                 self.set_track_list(liked.iter().map(|t| t.id).collect(), true);
             }
             Page::Playlist(id) => {
+                self.list_source = format!("playlist:{id}");
                 let Some(p) = index.playlist(id).cloned() else {
                     drop(index);
                     self.show_page(Page::Albums, false);
@@ -2616,12 +2766,14 @@ impl App {
                     id: p.id as i32,
                     editable: true,
                     duplicates: (p.tracks.len() - unique.len()) as i32,
+                    ..Default::default()
                 });
                 self.list_name = p.name.clone();
                 self.list_play.clear();
                 self.set_track_list(p.tracks.clone(), true);
             }
             Page::History => {
+                self.list_source = "history".into();
                 let recent = index.recently_played(300);
                 self.set_list_header(ListHeader {
                     kind: "History".into(),
@@ -2633,7 +2785,7 @@ impl App {
                 self.list_play.clear();
                 self.set_track_list(recent.iter().map(|t| t.id).collect(), true);
             }
-            Page::Settings => self.update_settings_ui(),
+            Page::Settings | Page::Audio => self.update_settings_ui(),
             Page::Editor => {}
         }
     }
@@ -2648,9 +2800,10 @@ impl App {
         }
     }
 
-    fn set_list_header(&self, header: ListHeader) {
+    fn set_list_header(&self, mut header: ListHeader) {
         if let Some(ui) = self.ui.upgrade() {
             let state = ui.global::<AppState>();
+            header.source = self.list_source.as_str().into();
             state.set_list_header(header);
             state.set_track_sort(self.settings.track_sort);
         }
@@ -3062,6 +3215,7 @@ impl App {
                 let known = self.library.index().track(t.id).unwrap_or_else(|| t.clone());
                 add("Levelling", levelling_text(self.current_gain, &known));
             }
+            add("Effects", self.effects_text());
             add("Duration", format_duration_ms(t.duration_ms));
             add("File size", human_bytes(t.file_size));
             add("Plays", if t.play_count > 0 { t.play_count.to_string() } else { "Never".into() });
@@ -3100,6 +3254,141 @@ impl App {
         drop(index);
         self.update_lastfm_ui();
         self.update_levelling_status();
+        self.update_audio_summary();
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Audio settings
+
+    fn set_source(&mut self, source: String) {
+        if let Some(ui) = self.ui.upgrade() {
+            ui.global::<Player>().set_source(source.as_str().into());
+        }
+        self.source = source;
+    }
+
+    /// Whether the current track may fade into `next` (crossfade). Never between songs that
+    /// follow each other on an album (they play gaplessly), or from a song into itself.
+    fn may_fade(&self, next: TrackId) -> bool {
+        let Some(cur) = &self.current else { return false };
+        if cur.id == next {
+            return false;
+        }
+        let index = self.library.index();
+        let Some(n) = index.track(next) else { return false };
+        if n.album_id != cur.album_id {
+            return true;
+        }
+        let Some(album) = index.album(cur.album_id) else { return true };
+        let at = |id: TrackId| album.tracks.iter().position(|t| *t == id);
+        !matches!((at(cur.id), at(next)), (Some(a), Some(b)) if b == a + 1)
+    }
+
+    /// Hand every audio setting to the engine (at start-up).
+    fn apply_audio(&mut self) {
+        self.apply_eq();
+        self.apply_crossfade();
+        self.apply_crossfeed();
+    }
+
+    fn apply_eq(&mut self) {
+        let design = EqDesign::new(&self.settings.eq.bands());
+        self.engine.set_eq(self.settings.eq.enabled.then_some(&design));
+        self.update_eq_ui();
+        self.update_audio_summary();
+        self.update_details();
+    }
+
+    fn apply_crossfade(&mut self) {
+        self.engine.set_crossfade(self.settings.crossfade.min(12) * 1000);
+        if let Some(ui) = self.ui.upgrade() {
+            ui.global::<AppState>().set_crossfade((self.settings.crossfade.min(12) / 2) as i32);
+        }
+        self.update_audio_summary();
+    }
+
+    fn apply_crossfeed(&mut self) {
+        let level = self.settings.crossfeed_level.clamp(1, 3);
+        self.engine.set_crossfeed(if self.settings.crossfeed { level } else { 0 });
+        if let Some(ui) = self.ui.upgrade() {
+            let state = ui.global::<AppState>();
+            state.set_crossfeed(self.settings.crossfeed);
+            state.set_crossfeed_level(level as i32 - 1);
+        }
+        self.update_audio_summary();
+        self.update_details();
+    }
+
+    /// The equalizer in Settings → Audio: bands, curve, presets.
+    fn update_eq_ui(&mut self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let state = ui.global::<AppState>();
+        let eq_settings = &self.settings.eq;
+        let bands = eq_settings.bands();
+        let design = EqDesign::new(&bands);
+        let xs = eq::band_positions();
+        let rows: Vec<EqBand> = (0..EQ_BANDS)
+            .map(|i| EqBand { label: eq::LABELS[i].into(), db: bands[i], x: xs[i] as f32 })
+            .collect();
+        if self.eq_bands.row_count() != rows.len() {
+            self.eq_bands.set_vec(rows);
+        } else {
+            // In place, so the band being dragged keeps the pointer.
+            for (i, row) in rows.into_iter().enumerate() {
+                if self.eq_bands.row_data(i).as_ref() != Some(&row) {
+                    self.eq_bands.set_row_data(i, row);
+                }
+            }
+        }
+        let (line, area) = eq::paths(&design, self.output_rate);
+        state.set_eq_curve(line.into());
+        state.set_eq_area(area.into());
+        state.set_eq_enabled(eq_settings.enabled);
+        state.set_eq_headroom(-design.preamp as f32);
+        let custom = eq_settings.preset == eq::CUSTOM;
+        let mut choices: Vec<Choice> =
+            eq::PRESETS.iter().map(|p| Choice { label: p.name.into(), selected: p.id == eq_settings.preset }).collect();
+        if custom || eq_settings.custom.iter().any(|b| *b != 0.0) {
+            choices.push(Choice { label: "Custom".into(), selected: custom });
+        }
+        state.set_eq_preset_name(eq_preset_name(eq_settings).into());
+        state.set_eq_presets(ModelRc::new(VecModel::from(choices)));
+    }
+
+    /// Active sound effects, for the Details panel ("" when none).
+    fn effects_text(&self) -> String {
+        let mut parts = Vec::new();
+        if self.settings.eq.enabled {
+            parts.push(format!("Equalizer ({})", eq_preset_name(&self.settings.eq)));
+        }
+        if self.settings.crossfeed {
+            parts.push(format!("crossfeed ({})", crossfeed_name(self.settings.crossfeed_level)));
+        }
+        let text = parts.join(", ");
+        let mut chars = text.chars();
+        match chars.next() {
+            Some(first) => first.to_uppercase().chain(chars).collect(),
+            None => text,
+        }
+    }
+
+    /// The line under "Audio" on the Settings page: the device and what's switched on.
+    fn update_audio_summary(&self) {
+        let Some(ui) = self.ui.upgrade() else { return };
+        let mut parts = vec![self.settings.output_device.clone().unwrap_or_else(|| "Default Audio Device".into())];
+        if self.settings.eq.enabled {
+            parts.push(format!("Equalizer: {}", eq_preset_name(&self.settings.eq)));
+        }
+        if self.settings.volume_levelling {
+            parts.push("Volume levelling".into());
+        }
+        if self.settings.crossfade > 0 {
+            parts.push(format!("Crossfade {} s", self.settings.crossfade));
+        }
+        if self.settings.crossfeed {
+            parts.push("Crossfeed".into());
+        }
+        ui.global::<AppState>().set_audio_summary(parts.join(" · ").into());
     }
 
     fn is_dark(&self) -> bool {
@@ -3398,6 +3687,7 @@ impl App {
         }
         let current = session.current.map(|c| c.min(entries.len() - 1));
         self.queue.restore(&entries, current, self.settings.shuffle, self.settings.repeat, session.context);
+        self.set_source(session.source);
         if let Some(track) = self.queue.current().and_then(|id| index.track(id)) {
             drop(index);
             let pos = session.position_ms.min(track.duration_ms.saturating_sub(1000));
@@ -3409,7 +3699,13 @@ impl App {
     fn save_session(&mut self) {
         self.last_session_save = Instant::now();
         let (entries, current) = self.queue.snapshot();
-        let state = SessionState { entries, current, position_ms: self.position_ms, context: self.queue.context().to_string() };
+        let state = SessionState {
+            entries,
+            current,
+            position_ms: self.position_ms,
+            context: self.queue.context().to_string(),
+            source: self.source.clone(),
+        };
         if let Ok(json) = serde_json::to_string(&state) {
             self.library.set_kv("session", &json);
         }
@@ -3532,6 +3828,29 @@ impl App {
             "album-picker-add" => self.album_picker_add(),
             "toast-action" => self.run_toast_action(),
             "preamp" => self.handle(Action::SetLevellingPreamp(arg.parse().unwrap_or(0))),
+            // "eq:rock" picks a preset (and switches the equalizer on), "eq:off" switches it off.
+            "eq" => match arg {
+                "off" => self.handle(Action::SetEqEnabled(false)),
+                id => {
+                    if let Some(row) = eq::PRESETS.iter().position(|p| p.id == id) {
+                        self.handle(Action::SetEqPreset(row as i32));
+                    }
+                }
+            },
+            // "eq-band:3=6.5" drags band 3 to +6.5 dB.
+            "eq-band" => {
+                if let Some((band, db)) = arg.split_once('=').and_then(|(b, d)| Some((b.parse().ok()?, d.parse().ok()?))) {
+                    self.handle(Action::SetEqBand(band, db));
+                }
+            }
+            "crossfade" => self.handle(Action::SetCrossfade(arg.parse::<i32>().unwrap_or(0) / 2)),
+            "crossfeed" => match arg.parse::<i32>().unwrap_or(0) {
+                0 => self.handle(Action::SetCrossfeed(false)),
+                n => {
+                    self.handle(Action::SetCrossfeed(true));
+                    self.handle(Action::SetCrossfeedLevel(n - 1));
+                }
+            },
             "like" => self.handle(Action::ToggleLikeCurrent),
             "queue" => {
                 if let Some(id) = find_album(self, arg) {
@@ -3623,6 +3942,10 @@ impl App {
     }
 
     pub fn shutdown(&mut self) {
+        // A launch from now on waits for this Lychee to finish, then starts afresh.
+        if let Some(instance) = &self.instance {
+            instance.close();
+        }
         self.save_session();
         self.settings.right_panel = self.ui.upgrade().map(|ui| ui.global::<AppState>().get_right_panel()).unwrap_or(true);
         self.settings.right_tab =
@@ -3666,6 +3989,7 @@ fn icon_by_name(icons: &Icons, name: &str) -> Image {
         "music" => icons.get_music(),
         "heart" => icons.get_heart(),
         "settings" => icons.get_settings(),
+        "volume" => icons.get_volume(),
         "folder-plus" => icons.get_folder_plus(),
         "refresh" => icons.get_refresh(),
         "scrobble" => icons.get_scrobble(),
@@ -3932,4 +4256,29 @@ mod tests {
         assert_eq!(h.album(a), Some(i64::MAX - 5));
         assert_eq!(h.album(99), None);
     }
+}
+
+fn eq_preset_name(eq: &crate::settings::EqSettings) -> &'static str {
+    eq::preset(&eq.preset).map_or("Custom", |p| p.name)
+}
+
+fn crossfeed_name(level: u32) -> &'static str {
+    match level {
+        1 => "light",
+        3 => "strong",
+        _ => "medium",
+    }
+}
+
+/// "48 kHz, stereo" for an output stream.
+fn output_format(rate: u32, channels: u16) -> String {
+    let khz = if rate % 1000 == 0 { format!("{}", rate / 1000) } else { format!("{:.1}", f64::from(rate) / 1000.0) };
+    let layout = match channels {
+        1 => "mono".to_string(),
+        2 => "stereo".to_string(),
+        6 => "5.1 surround".to_string(),
+        8 => "7.1 surround".to_string(),
+        n => format!("{n} channels"),
+    };
+    format!("{khz} kHz, {layout}")
 }

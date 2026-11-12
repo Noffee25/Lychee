@@ -7,11 +7,14 @@
 //!
 //! The UI never talks to these APIs directly. It pushes state with the setters below and
 //! receives [`MediaAction`]s on a channel, the same way every other control surface does.
+//!
+//! [`instance`] keeps one Lychee running per library: later launches hand it their files.
 
 use std::path::PathBuf;
 
 use crossbeam_channel::Sender;
 
+pub mod instance;
 #[cfg(all(unix, not(target_os = "macos")))]
 mod mpris;
 #[cfg(target_os = "macos")]

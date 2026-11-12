@@ -291,7 +291,7 @@ export component Sidebar inherits Rectangle {
         NavItem {
             label: "Settings";
             icon: Icons.settings;
-            active: AppState.page == "settings";
+            active: AppState.page == "settings" || AppState.page == "audio";
             clicked => { Actions.navigate("settings"); }
         }
     }

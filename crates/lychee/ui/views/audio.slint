@@ -1,0 +1,391 @@
+// Settings → Audio: the output device, the equalizer, volume levelling, crossfade and crossfeed.
+
+import { Theme } from "../theme.slint";
+import { Icons } from "../icons.slint";
+import { AppState, Actions, Choice, EqBand } from "../state.slint";
+import { Toggle, Segmented, Divider, Bubble } from "../widgets.slint";
+import { Section, SettingRow, SubpageHeader } from "settings.slint";
+import { ScrollView } from "std-widgets.slint";
+
+// A field showing the current choice; the other choices drop down from it.
+component Dropdown inherits Rectangle {
+    in property <[Choice]> choices;
+    in property <string> current;
+    in property <image> icon;
+    in property <bool> has-icon;
+    callback picked(int);
+    height: 38px;
+    border-radius: 9px;
+    border-width: 1px;
+    border-color: select-ta.has-hover ? Theme.text-3 : Theme.border-2;
+    background: Theme.surface-2;
+    HorizontalLayout {
+        cross-axis-alignment: center;
+        padding-left: 12px;
+        padding-right: 10px;
+        spacing: 10px;
+        if root.has-icon: Image {
+            source: root.icon;
+            colorize: Theme.text-2;
+            width: 16px;
+            height: 16px;
+        }
+        Text {
+            text: root.current;
+            color: Theme.text;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        Image {
+            source: Icons.chev-d;
+            colorize: Theme.text-2;
+            width: 15px;
+            height: 15px;
+        }
+    }
+    select-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { popup.show(); }
+    }
+    popup := PopupWindow {
+        x: 0px;
+        y: root.height + 6px;
+        width: root.width;
+        height: Math.min(340px, 16px + root.choices.length * 34px);
+        close-policy: close-on-click-outside;
+        Rectangle {
+            background: Theme.surface;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.border-2;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: Theme.shadow;
+            // Inset so the list clips itself rectangularly inside the rounded card.
+            sv := ScrollView {
+                x: 1px;
+                y: 1px;
+                width: parent.width - 2px;
+                height: parent.height - 2px;
+                content-width: self.visible-width;
+                content-height: rows.preferred-height;
+                rows := VerticalLayout {
+                    width: sv.visible-width;
+                    padding: 7px;
+                    spacing: 2px;
+                    for choice[i] in root.choices: Rectangle {
+                        height: 32px;
+                        border-radius: 8px;
+                        background: choice-ta.has-hover ? Theme.hover : transparent;
+                        HorizontalLayout {
+                            cross-axis-alignment: center;
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            spacing: 8px;
+                            Text {
+                                text: choice.label;
+                                color: choice.selected ? Theme.accent : Theme.text;
+                                vertical-alignment: center;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                            if choice.selected: Image {
+                                source: Icons.check;
+                                colorize: Theme.accent;
+                                width: 15px;
+                                height: 15px;
+                            }
+                        }
+                        choice-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.picked(i);
+                                popup.close();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// One band of the equalizer graph: a column the full height of the graph. Press anywhere in it to
+// move the band there and drag up or down; double-click puts it back to 0 dB. (The mouse wheel is
+// left to the page: the graph sits in the middle of it, and scrolling past mustn't move bands.)
+component EqColumn inherits Rectangle {
+    in property <EqBand> band;
+    in property <int> index;
+    in property <bool> active;
+    // The plot's top and height within the column, and the space for the label below it.
+    in property <length> plot-y;
+    in property <length> plot-h;
+    property <bool> dragging;
+    property <bool> lit: ta.has-hover || root.dragging;
+    property <length> handle-y: root.plot-y + (12 - root.band.db) / 24 * root.plot-h;
+    pure function db-at(y: length) -> float {
+        return Math.clamp(12 - (y - root.plot-y) / root.plot-h * 24, -12, 12);
+    }
+    pure function signed(db: float) -> string {
+        return db > 0 ? "+" + db : db < 0 ? "−" + Math.abs(db) : "0";
+    }
+    ta := TouchArea {
+        mouse-cursor: MouseCursor.ns-resize;
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                root.dragging = true;
+                Actions.set-eq-band(root.index, root.db-at(self.mouse-y));
+            } else if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
+                root.dragging = false;
+            }
+        }
+        moved => {
+            if (root.dragging) {
+                Actions.set-eq-band(root.index, root.db-at(self.mouse-y));
+            }
+        }
+        double-clicked => { Actions.set-eq-band(root.index, 0); }
+    }
+    // A faint guide through the band while it's hovered or dragged.
+    if root.lit: Rectangle {
+        x: (parent.width - 1px) / 2;
+        y: root.plot-y;
+        width: 1px;
+        height: root.plot-h;
+        background: Theme.border-2;
+    }
+    Rectangle {
+        property <length> size: root.lit ? 16px : 13px;
+        x: (parent.width - self.size) / 2;
+        y: root.handle-y - self.size / 2;
+        width: self.size;
+        height: self.size;
+        border-radius: self.size / 2;
+        background: root.active ? Theme.accent : Theme.text-3;
+        border-width: 2.5px;
+        border-color: Theme.surface-2;
+        drop-shadow-blur: root.lit ? 8px : 4px;
+        drop-shadow-color: #00000050;
+        animate size { duration: Theme.fast; }
+    }
+    if root.lit: Bubble {
+        width: self.preferred-width;
+        height: self.preferred-height;
+        x: (parent.width - self.width) / 2;
+        // Above the handle, or below it near the top.
+        y: root.handle-y > root.plot-y + 40px ? root.handle-y - self.height - 14px : root.handle-y + 14px;
+        text: root.signed(root.band.db) + " dB";
+    }
+    Text {
+        y: root.plot-y + root.plot-h + 10px;
+        width: parent.width;
+        text: root.band.label;
+        font-family: Theme.mono;
+        font-size: 11px;
+        color: root.lit ? Theme.text : Theme.text-3;
+        horizontal-alignment: center;
+    }
+}
+
+// The equalizer: a grid from −12 to +12 dB, the curve the bands make, and a handle on each band.
+component EqGraph inherits Rectangle {
+    in property <[EqBand]> bands;
+    in property <string> curve;
+    in property <string> area;
+    in property <bool> active;
+    property <length> plot-x: 40px;
+    property <length> plot-y: 22px;
+    property <length> plot-w: root.width - root.plot-x - 18px;
+    property <length> plot-h: root.height - root.plot-y - 40px;
+    property <color> ink: root.active ? Theme.accent : Theme.text-3;
+    height: 248px;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.surface-2;
+    for level in [12, 6, 0, -6, -12]: Rectangle {
+        x: root.plot-x;
+        y: root.plot-y + (12 - level) / 24 * root.plot-h;
+        width: root.plot-w;
+        height: 1px;
+        background: level == 0 ? Theme.border-2 : Theme.border;
+    }
+    for level in [12, 6, 0, -6, -12]: Text {
+        x: 0px;
+        y: root.plot-y + (12 - level) / 24 * root.plot-h - 8px;
+        width: root.plot-x - 10px;
+        height: 16px;
+        text: level > 0 ? "+" + level : level < 0 ? "−" + Math.abs(level) : "0";
+        font-family: Theme.mono;
+        font-size: 10.5px;
+        color: Theme.text-3;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+    Path {
+        x: root.plot-x;
+        y: root.plot-y;
+        width: root.plot-w;
+        height: root.plot-h;
+        viewbox-width: 1000;
+        viewbox-height: 1000;
+        fit: fill;
+        commands: root.area;
+        fill: root.ink.with-alpha(root.active ? 0.14 : 0.06);
+    }
+    Path {
+        x: root.plot-x;
+        y: root.plot-y;
+        width: root.plot-w;
+        height: root.plot-h;
+        viewbox-width: 1000;
+        viewbox-height: 1000;
+        fit: fill;
+        commands: root.curve;
+        stroke: root.ink;
+        stroke-width: 2px;
+    }
+    for band[i] in root.bands: EqColumn {
+        // Columns are a tenth of the plot wide, centred on their band.
+        x: root.plot-x + band.x * root.plot-w - root.plot-w / 20;
+        y: 0px;
+        width: root.plot-w / 10;
+        height: root.height;
+        band: band;
+        index: i;
+        active: root.active;
+        plot-y: root.plot-y;
+        plot-h: root.plot-h;
+    }
+}
+
+export component AudioSettingsPage inherits Rectangle {
+    property <bool> scrolled: sv.content-y < -8px;
+    changed scrolled => { AppState.content-scrolled = root.scrolled; }
+    init => { AppState.content-scrolled = false; }
+    sv := ScrollView {
+        content-width: self.visible-width;
+        content-height: page.preferred-height;
+        page := VerticalLayout {
+            width: sv.visible-width;
+            padding-top: 52px;
+            padding-bottom: 40px;
+            alignment: start;
+            SubpageHeader {
+                title: "Audio";
+            }
+            HorizontalLayout {
+                cross-axis-alignment: center;
+                padding-left: 24px;
+                padding-right: 24px;
+                alignment: start;
+                VerticalLayout {
+                    max-width: 780px;
+                    horizontal-stretch: 1;
+                    spacing: 18px;
+
+                    Section {
+                        title: "Output";
+                        SettingRow {
+                            label: "Output device";
+                            hint: AppState.output-format != ""
+                                ? "Playing at " + AppState.output-format + ". Songs at other sample rates are converted in high quality."
+                                : "Songs whose sample rate differs from the device's are converted in high quality.";
+                            Dropdown {
+                                width: 300px;
+                                choices: AppState.devices;
+                                current: AppState.device-choice;
+                                icon: Icons.device;
+                                has-icon: true;
+                                picked(i) => { Actions.set-device(AppState.devices[i].label); }
+                            }
+                        }
+                        Divider { }
+                        SettingRow {
+                            label: "Headphone crossfeed";
+                            hint: "Blends a little of each side into the other, as speakers in a room do, so songs mixed hard left and right are easier on the ears.";
+                            Toggle {
+                                checked <=> AppState.crossfeed;
+                                toggled(on) => { Actions.set-crossfeed(on); }
+                            }
+                        }
+                        if AppState.crossfeed: SettingRow {
+                            label: "Strength";
+                            Segmented {
+                                options: ["Light", "Medium", "Strong"];
+                                selected <=> AppState.crossfeed-level;
+                                changed(i) => { Actions.set-crossfeed-level(i); }
+                            }
+                        }
+                    }
+
+                    Section {
+                        title: "Equalizer";
+                        description: "Shape the sound across ten bands, from deep bass at 32 Hz to the air at 16 kHz. Pick a preset, or drag a point to make the curve your own.";
+                        has-switch: true;
+                        on <=> AppState.eq-enabled;
+                        switched(on) => { Actions.set-eq-enabled(on); }
+                        SettingRow {
+                            label: "Preset";
+                            Dropdown {
+                                width: 220px;
+                                choices: AppState.eq-presets;
+                                current: AppState.eq-preset-name;
+                                picked(i) => { Actions.set-eq-preset(i); }
+                            }
+                        }
+                        EqGraph {
+                            bands: AppState.eq-bands;
+                            curve: AppState.eq-curve;
+                            area: AppState.eq-area;
+                            active: AppState.eq-enabled;
+                        }
+                        if AppState.eq-enabled && AppState.eq-headroom >= 0.5: Text {
+                            text: "Songs play " + Math.round(AppState.eq-headroom * 2) / 2 + " dB quieter to make room for the boosts, so they never distort.";
+                            font-size: 12.5px;
+                            color: Theme.text-3;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    Section {
+                        title: "Volume levelling";
+                        description: "Plays every song at about the same loudness (ReplayGain), so you aren't reaching for the volume between a quiet ballad and a loud track. Albums keep their own quiet and loud moments.";
+                        has-switch: true;
+                        on <=> AppState.volume-levelling;
+                        switched(on) => { Actions.set-volume-levelling(on); }
+                        if AppState.volume-levelling: SettingRow {
+                            label: "Pre-amp";
+                            hint: "Plays levelled songs louder. Quiet songs that can't be raised this far without distorting stay a little below the rest.";
+                            Segmented {
+                                options: ["0 dB", "+2 dB", "+4 dB", "+6 dB"];
+                                selected <=> AppState.levelling-preamp;
+                                changed(i) => { Actions.set-levelling-preamp(i); }
+                            }
+                        }
+                        if AppState.volume-levelling && AppState.levelling-status != "": Text {
+                            text: AppState.levelling-status;
+                            font-family: Theme.mono;
+                            font-size: 12px;
+                            color: Theme.text-3;
+                            wrap: word-wrap;
+                        }
+                    }
+
+                    Section {
+                        title: "Crossfade";
+                        description: "Fades the end of each song into the start of the next. Songs that run into each other on an album still play gaplessly.";
+                        HorizontalLayout {
+                            alignment: start;
+                            Segmented {
+                                options: ["Off", "2 s", "4 s", "6 s", "8 s", "10 s", "12 s"];
+                                selected <=> AppState.crossfade;
+                                changed(i) => { Actions.set-crossfade(i); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

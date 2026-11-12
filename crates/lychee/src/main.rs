@@ -4,6 +4,7 @@
 
 mod app;
 mod editor;
+mod eq;
 mod images;
 mod lastfm;
 mod mini;
@@ -56,8 +57,8 @@ fn main() -> anyhow::Result<()> {
                 return Ok(());
             }
             "--edit" => editing = true,
-            _ if editing => edit.push(PathBuf::from(arg)),
-            _ => open.push(PathBuf::from(arg)),
+            _ if editing => edit.push(arg_path(arg)),
+            _ => open.push(arg_path(arg)),
         }
     }
     let screenshot = std::env::var_os("LYCHEE_SCREENSHOT").map(PathBuf::from);
@@ -66,6 +67,24 @@ fn main() -> anyhow::Result<()> {
     }
 
     let paths = settings::Paths::discover();
+    // One Lychee per library: if it's already running, hand it the files and stop here.
+    // (Screenshot runs are tools, not players.)
+    let instance = if screenshot.is_some() {
+        None
+    } else {
+        let request = lychee_platform::instance::Request { open: open.clone(), edit: edit.clone() };
+        match lychee_platform::instance::claim(&paths.data_dir, &request) {
+            Ok(lychee_platform::instance::Claim::Forwarded) => {
+                tracing::info!("Lychee is already running; handed the request to it");
+                return Ok(());
+            }
+            Ok(lychee_platform::instance::Claim::Primary(primary)) => Some(primary),
+            Err(e) => {
+                tracing::warn!("couldn't reach the running Lychee ({e}); starting another one");
+                None
+            }
+        }
+    };
     let settings = settings::Settings::load(&paths.config_file);
     let library = Arc::new(lychee_library::Library::open(&paths.data_dir, &paths.cache_dir)?);
     let silent = screenshot.is_some() || settings.muted;
@@ -111,6 +130,7 @@ fn main() -> anyhow::Result<()> {
         lastfm_tx,
         media,
         media_rx,
+        instance,
         settings,
         paths,
         synchronous_images: screenshot.is_some(),
@@ -178,6 +198,52 @@ fn main() -> anyhow::Result<()> {
     #[cfg(not(target_os = "macos"))]
     dispatcher.with_app(|a| a.shutdown());
     Ok(())
+}
+
+/// A command-line argument as a path: absolute (a running Lychee may get it, from another working
+/// directory), and `file://` URIs (what some launchers pass) decoded.
+fn arg_path(arg: std::ffi::OsString) -> PathBuf {
+    let path = match arg.to_str().and_then(|s| s.strip_prefix("file://")) {
+        Some(rest) => file_uri_path(rest),
+        None => PathBuf::from(arg),
+    };
+    std::path::absolute(&path).unwrap_or(path)
+}
+
+/// The path in a `file://` URI (after the scheme): an optional host (only the local one), then
+/// a percent-encoded path.
+fn file_uri_path(rest: &str) -> PathBuf {
+    let path = rest.strip_prefix("localhost").unwrap_or(rest);
+    let mut bytes = Vec::with_capacity(path.len());
+    let raw = path.as_bytes();
+    let mut i = 0;
+    while i < raw.len() {
+        let hex = |b: u8| (b as char).to_digit(16);
+        if raw[i] == b'%' && i + 2 < raw.len() {
+            if let (Some(h), Some(l)) = (hex(raw[i + 1]), hex(raw[i + 2])) {
+                bytes.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        bytes.push(raw[i]);
+        i += 1;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        PathBuf::from(std::ffi::OsString::from_vec(bytes))
+    }
+    #[cfg(not(unix))]
+    {
+        // "file:///C:/Music/a.flac": no leading slash before the drive letter.
+        let text = String::from_utf8_lossy(&bytes).into_owned();
+        let text = match text.strip_prefix('/') {
+            Some(rest) if rest.as_bytes().get(1) == Some(&b':') => rest.to_string(),
+            _ => text,
+        };
+        PathBuf::from(text)
+    }
 }
 
 /// The shutdown (saving the session and settings) for when the event loop ends without returning.
@@ -265,5 +331,20 @@ fn attach_media_window(ui: &AppWindow, d: &Rc<Dispatcher>) {
             let hwnd = win.hwnd.get();
             d.with_app(|a| a.attach_media_window(hwnd));
         }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_uris_become_paths() {
+        assert_eq!(arg_path("file:///home/me/Music/01%20Caf%C3%A9.flac".into()), PathBuf::from("/home/me/Music/01 Café.flac"));
+        assert_eq!(arg_path("file://localhost/music/a%2Fb".into()), PathBuf::from("/music/a/b"));
+        assert_eq!(arg_path("file:///music/100%".into()), PathBuf::from("/music/100%"));
+        assert_eq!(arg_path("/music/plain.mp3".into()), PathBuf::from("/music/plain.mp3"));
+        let relative = arg_path("song.flac".into());
+        assert!(relative.is_absolute() && relative.ends_with("song.flac"));
     }
 }

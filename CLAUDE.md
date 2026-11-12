@@ -34,19 +34,21 @@ crates/
                    volume levelling rules (gain.rs: tag parsing, album gain, album/track choice),
                    MD5 (md5.rs: Last.fm signatures and artwork cache keys)
   lychee-audio     Engine: Symphonia decode (+ pure-Rust Opus), remix, per-track gain, rubato resample,
-                   rtrb ring buffer, cpal output, gapless hand-over, fades; loudness.rs (EBU R128 meter).
-                   examples/decode.rs, engine_check.rs
+                   crossfade, rtrb ring buffer, cpal output, gapless hand-over, fades; dsp.rs (equalizer and
+                   crossfeed, in the callback); loudness.rs (EBU R128 meter). examples/decode.rs, engine_check.rs
   lychee-library   scanner (walkdir + scoped threads + lofty), SQLite store (db.rs), artwork cache + accent/tint
                    colours, in-memory LibraryIndex + fuzzy search, LRC lyrics, refresh_files()
   lychee-lastfm    Last.fm client and background Scrobbler with an offline queue
   lychee-platform  MPRIS (Linux), SMTC (Windows), Now Playing (macOS, nowplaying.rs), `open()` for URLs and
-                   folders. The Windows and macOS backends are type-checked but have never been run here.
+                   folders, instance.rs (one running Lychee). The Windows and macOS backends are type-checked
+                   but have never been run here.
   lychee-tagger    tag editor engine: lossless read/write (file.rs), EasyTAG masks (mask.rs), clean-up
                    (process.rs), Session with pending edits, undo, saving (session.rs)
   lychee-lookup    MusicBrainz / Cover Art Archive / LRCLIB clients, album guessing and track matching
   lychee           the app (bin). src/: main.rs (startup, CLI), app.rs (controller), editor.rs (tag
                    editor page), mini.rs (mini player + XWayland helper), models.rs (LazyModel),
-                   images.rs, palette.rs, lastfm.rs, settings.rs, screenshot.rs (headless renders)
+                   images.rs, palette.rs, lastfm.rs, settings.rs, eq.rs (equalizer presets and curve),
+                   screenshot.rs (headless renders)
                    ui/: app.slint (window, routing, shortcuts), state.slint (AppState/Player/Actions),
                    editor-state.slint (Editor), theme.slint, widgets.slint, icons.slint, views/*.slint
 design/            HTML prototypes; the app implements direction D "Flow" and its compact mini player
@@ -117,8 +119,8 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
     the smallest window.
 - **Sidebar footer and output device.** The sidebar ends with a plain Settings link; scan progress and
   library stats are shown in Settings → Library.
-  - The output device is a dropdown (`DeviceSelect` in `settings.slint`) showing `AppState.device-choice`,
-    the device chosen in Settings.
+  - The output device is a `Dropdown` in Settings → Audio (`views/audio.slint`) showing
+    `AppState.device-choice`, the device chosen there.
   - `device-name` is the device the engine actually opened; it's empty until something plays.
 - **Lazy models.** `LazyModel` builds rows on demand, and `refresh()` re-runs the builder. **Builders
   must read live state**: share ids through `Rc<Cell<…>>` (see `NowIds`) and look tracks up in
@@ -203,6 +205,57 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
     clip; quiet songs that hit their peak simply stay below the rest. Songs with no loudness data get no
     pre-amp (they play unlevelled, which is usually loud already).
   - `RUST_LOG=lychee=debug,lychee_audio=debug` logs every gain decision.
+- **Settings pages.** Settings has sub-pages: Settings → Audio is `Page::Audio` (key `"audio"`, view
+  `views/audio.slint`). The Settings page links to it with a `SettingsLink` card (title, what's there, and a
+  one-line summary of how it's set up, `AppState.audio-summary`); the sub-page's title is a `SubpageHeader`
+  breadcrumb ("Settings › Audio") whose "Settings" leads back. Back/forward work as for any page, and the
+  sidebar's Settings link stays lit. A new sub-page follows the same pattern. `Section` takes `has-switch`
+  for cards that are one feature (Equalizer, Volume levelling).
+- **Equalizer, crossfeed, crossfade** (Settings → Audio):
+  - The equalizer and crossfeed run in the audio callback (`lychee_audio::dsp`), so changes are heard within
+    milliseconds; with everything off the callback leaves the samples untouched (bit-exact).
+  - `EqDesign::new(bands)` turns band settings into filters: overlapping 1.5-octave peaking filters whose
+    gains are solved so the curve passes through every band setting (within 0.1 dB), plus a pre-amp that
+    lowers the level by the curve's highest point, so boosts never clip. The graph in Settings draws
+    `EqDesign::curve_db` itself (`eq::paths`), so what you see is what plays.
+  - Settings keep `eq.preset` (a preset id or `"custom"`) and `eq.custom`. Dragging a band copies the current
+    curve into `custom`, switches to it and turns the equalizer on; so does picking a preset.
+  - The bands model (`App::eq_bands`) is updated row by row (`set_row_data`): replacing it would rebuild the
+    columns under the pointer and end the drag.
+  - The graph doesn't take the mouse wheel: it's in the middle of a scrolling page, and Slint only keeps
+    a ScrollView's wheel for 800 ms after it scrolled, so scrolling past nudged bands (and made the curve
+    Custom).
+  - Crossfade happens while decoding (`Worker::fade`): when the decoder reaches the last seconds of the
+    playing track (from its duration), it opens the pre-loaded one and mixes the two (equal power) as the
+    device needs them. Don't hold the end of every track back instead: the decoder would have to run seconds
+    ahead, and the pure-Rust Opus decoder is only about 5× real time.
+  - Some lengths are guesses (`Source::exact_duration` is false for MPEG audio, whose length Symphonia
+    estimates from the first frames when there's no Xing/VBRI header, and for raw ADTS AAC). Fading from a
+    guessed end cut songs short, so for those the newest seconds are held back in `Worker::tail` near the
+    guessed end and the fade starts from the real one (MP3 and AAC decode fast enough for that).
+  - The app decides per transition with `may_fade`: never between songs that follow each other on an album
+    (they stay gapless), never into the same song; manual skips never fade. A fade lasts at most half of
+    either song; a late pre-load fades for what's left. A seek (or a restored session) that lands inside the
+    fade plays those seconds as they are: fading from the start of a fresh stream would show the next song at
+    once, even while paused. `engine.rs` tests run the decoder without a device (`Worker::test_format`).
+- **Play turns into Pause.** `Player.source` says what the queue was started from (`App::source`: "album:ID",
+  "playlist:ID", "artist:NAME", "songs", "favorites", "history", or ""), saved with the session. List and artist
+  pages compare it with `ListHeader.source`; album pages and tiles use the playing track's album instead. Every
+  `play_ids`/`enqueue` call names its source. The playing song's row pauses and resumes instead of restarting.
+- **One instance** (`lychee_platform::instance`, used in `main.rs` before the library opens):
+  - The first Lychee locks `instance.lock` in its data folder and listens on a Unix socket in
+    `$XDG_RUNTIME_DIR` (named after a hash of the data folder; Windows: a loopback port and key in
+    `instance.port`). A second launch with the lock taken sends its files (`--edit` ones separately) and exits;
+    the running app plays them at once (`App::on_launch`, replacing the queue as a fresh start would) or opens
+    them in the tag editor. A launch with no files restores the main window.
+  - Every `LYCHEE_HOME` is its own instance, so test profiles never reach the owner's running Lychee.
+    Screenshot runs skip the check. Without `LYCHEE_HOME`, `cargo run` while the owner's Lychee is open hands
+    its files to that one and exits at once.
+  - Arguments are made absolute and `file://` URIs decoded (`arg_path`), because the running Lychee has its
+    own working directory. The desktop file passes paths (`%F`).
+  - `App::shutdown` closes the instance first: requests then go unanswered, and a launch keeps trying the
+    lock (for up to 10 s) and starts afresh once the old Lychee has saved and gone, rather than handing its
+    files to a player that's quitting.
 
 ## Slint pitfalls (1.18, winit + FemtoVG)
 
@@ -238,6 +291,11 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
   component must be declared before the first component that uses it.
 - An element that has a width or height but no `x`/`y`, and isn't in a layout, is *centred* in its
   parent. Overlays need `x: 0px; y: 0px;`: without them the side panel drawer sat 42 px too low.
+- An element outside a layout with no size of its own fills its parent. A floating `Bubble` needs
+  `width: self.preferred-width; height: self.preferred-height;` (the equalizer's value bubble covered the
+  whole band column without it).
+- `Path` keeps its viewbox's aspect ratio unless it has `fit: fill` (the equalizer curve uses a 1000 × 1000
+  viewbox stretched over the graph).
 - Don't put icons in empty states. The owner had them all removed, and a `VerticalLayout` puts a
   fixed-size `Image` at the left edge rather than centring it.
 - **Continuous animation redraws the whole window every frame** (FemtoVG has no partial rendering).
@@ -261,6 +319,8 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
     - UI: `palette:`, `tab:`, `theme:N` (mode), `look:ID` (theme), `art-colours:0|1`, `levelling:0|1`, `preamp:N`
       (0–3 = 0/+2/+4/+6 dB), `like`,
       `queue:`, `toast:`
+    - audio (`page:audio` shows Settings → Audio): `eq:ID` (a preset id from `eq.rs`, or `off`), `eq-band:N=DB`,
+      `crossfade:SECONDS`, `crossfeed:0|1|2|3`
     - library: `add-folder:`, `like-album:`
     - tag editor album picker: `album-picker:QUERY` (opens it), `album-picker-toggle:0,2`, `album-picker-add`
     - playlists: `make-playlist:Name=Album,Album`, `open-playlist:Name`, `playlist-cmd:what,Name` (the
@@ -300,6 +360,11 @@ packaging/         linux/install.sh + build-packages.sh, windows/lychee.iss, mac
     - The title bar is redrawn once a second during playback, which ends the shorter stalls.
     - Nobody has checked whether a real desktop does the same.
   - Never inject input into or open windows on the owner's live session (DISPLAY=:0 / wayland-0).
+  - To test a second launch (single instance), start it with the nested app's own environment (read
+    `/proc/PID/environ`: the nested display, the private bus and the same `LYCHEE_HOME`), so that if it
+    doesn't hand over it opens in the nested session, not on the owner's desktop.
+  - MPRIS `SetPosition` on the private bus jumps near the end of a song, which is how crossfade timing was
+    checked (the next title arrived 1.8 s before the end with a 2 s crossfade; on the album, at the end).
 - Test fixtures: `crates/lychee-tagger/tests/fixtures` (tiny silent files in seven formats); the
   library test writes WAVs on the fly. Make larger test media with ffmpeg in a temp dir, never in the repo.
 

@@ -2,7 +2,7 @@
 //!
 //! The real-time callback never allocates or blocks. It only `try_lock`s the current [`Pipe`]
 //! (the control thread holds that lock just long enough to swap in a new one on seek/load) and
-//! otherwise works on atomics.
+//! otherwise works on atomics. It runs the equalizer and crossfeed ([`Dsp`]) before the volume.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering::Relaxed};
@@ -12,6 +12,7 @@ use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
 use parking_lot::Mutex;
 
 use crate::AudioError;
+use crate::dsp::{Dsp, DspParams, MAX_CHANNELS};
 
 /// Where in the sample stream a new track (segment) starts.
 #[derive(Clone, Copy, Debug)]
@@ -49,6 +50,8 @@ pub struct Shared {
     /// Frames consumed from the current pipe.
     pub consumed: AtomicU64,
     pub sample_rate: AtomicU32,
+    /// Equalizer and crossfeed settings.
+    pub dsp: DspParams,
 }
 
 impl Shared {
@@ -63,6 +66,7 @@ impl Shared {
             segment_frames: AtomicU64::new(0),
             consumed: AtomicU64::new(0),
             sample_rate: AtomicU32::new(48_000),
+            dsp: DspParams::default(),
         }
     }
 
@@ -166,8 +170,11 @@ where
     let mut fade = 0.0f32;
     let mut gain = shared.volume();
     let err_shared = shared.clone();
+    let mut dsp = Dsp::new(channels, config.sample_rate);
+    let mut frame_buf = [0.0f32; MAX_CHANNELS];
 
     let data_cb = move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
+        dsp.sync(&shared.dsp);
         let playing = shared.playing.load(Relaxed);
         let target_vol = perceptual(shared.volume());
         let mut guard = shared.pipe.try_lock();
@@ -210,9 +217,20 @@ where
                 g *= 1.0 - p.fade_in as f32 / fade_in_frames.max(1) as f32;
                 p.fade_in -= 1;
             }
-            for s in frame.iter_mut() {
-                let v = p.samples.pop().unwrap_or(0.0);
-                *s = T::from_sample(v * g);
+            if channels <= MAX_CHANNELS {
+                let shaped = &mut frame_buf[..channels];
+                for v in shaped.iter_mut() {
+                    *v = p.samples.pop().unwrap_or(0.0);
+                }
+                dsp.process(shaped);
+                for (s, v) in frame.iter_mut().zip(shaped.iter()) {
+                    *s = T::from_sample(v * g);
+                }
+            } else {
+                for s in frame.iter_mut() {
+                    let v = p.samples.pop().unwrap_or(0.0);
+                    *s = T::from_sample(v * g);
+                }
             }
             p.consumed += 1;
         }

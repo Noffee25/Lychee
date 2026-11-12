@@ -70,6 +70,22 @@ music folder and tag round trips through seven container formats.
   album or track gain, and the app passes it with `Engine::load`/`preload` as a linear factor. The engine
   multiplies samples while decoding, so the gain switches on the exact sample of a gapless hand-over;
   `Engine::set_gain` re-decodes from the audible position, so turning levelling on or off is heard at once.
+- **Equalizer and crossfeed** (`lychee_audio::dsp`) run in the audio callback, after the ring buffer, so
+  moving a band is heard within milliseconds. `EqDesign::new` turns the ten band settings into peaking
+  filters (overlapping 1.5-octave bands, solved so the curve passes through every setting) and a pre-amp
+  that makes room for the biggest boost. The UI thread hands the design to the callback through atomics
+  behind a version counter (`DspParams`); the callback glides to new settings and bypasses itself when
+  everything is off. The app draws the same `curve_db` in Settings → Audio.
+- **Crossfade** happens while decoding (`engine.rs`). When the decoder reaches the last seconds of the
+  current track (known from its duration), it opens the pre-loaded one and mixes both (equal power) at the
+  device's pace; the next track's `Started` marker sits where the fade begins. Where the length is only an
+  estimate (MP3 without a Xing header, raw AAC), the last seconds are held back near the estimated end so the
+  fade starts from the real one. The app decides per transition (`may_fade`): never between songs that
+  follow each other on an album.
+- **One instance** (`lychee_platform::instance`). The first Lychee locks `instance.lock` in its data folder
+  and listens on a Unix socket (Windows: a loopback port with a key). A later launch with the lock taken
+  sends its files and exits; the running app plays them on its next tick. While shutting down it stops
+  answering, and a new launch waits for the lock instead.
 - **Album handles.** Album ids are 63-bit hashes and Slint ints are 32-bit, so the UI uses session-local
   handles that map back to ids.
 
@@ -113,7 +129,7 @@ mini player is open, and showing it again maps a fresh window.
 | To add… | Implement / touch |
 |---|---|
 | A decoder (FFmpeg, libopus, DSD) | a new variant in `lychee-audio`'s `Decoder` (see `source.rs`) |
-| A DSP stage (EQ, crossfade) | the decode → push path in `engine.rs::fill` (before the ring buffer) |
+| A DSP stage | per track, before the ring buffer: `engine.rs::fill`; live, in the callback: `dsp.rs::Dsp` |
 | A library source (Subsonic, Jellyfin) | a sibling of `Library` producing `Track`s; the index and UI are source-agnostic |
 | A scrobbler (ListenBrainz) | a sibling of `lychee-lastfm::Scrobbler`; the controller already tracks listens (`lastfm.rs::Listen`) |
 | A lyrics or artwork provider | `lychee-library::lyrics::load` / `ArtIngest`; online ones in `lychee-lookup` |

@@ -1,6 +1,6 @@
 import { Theme } from "../theme.slint";
 import { Icons } from "../icons.slint";
-import { AppState, Actions, ArtistCard, GenreCard } from "../state.slint";
+import { AppState, Actions, Player, ArtistCard, GenreCard } from "../state.slint";
 import { Cover, PillButton } from "../widgets.slint";
 import { Grid, AlbumGrid, PageHeader } from "albums.slint";
 import { TrackHeader, TrackRowView } from "tracks.slint";
@@ -141,10 +141,20 @@ export component ArtistPage inherits Rectangle {
                             spacing: 10px;
                             alignment: start;
                             PillButton {
-                                text: "Play";
-                                icon: Icons.play;
+                                // This artist is what's playing (or paused): pause and resume.
+                                property <bool> current: Player.now.has-track && AppState.list-header.source != ""
+                                    && Player.source == AppState.list-header.source;
+                                text: self.current && Player.playing ? "Pause" : "Play";
+                                other-text: "Pause";
+                                icon: self.current && Player.playing ? Icons.pause : Icons.play;
                                 primary: true;
-                                clicked => { Actions.play-list(false); }
+                                clicked => {
+                                    if (self.current) {
+                                        Actions.toggle-play();
+                                    } else {
+                                        Actions.play-list(false);
+                                    }
+                                }
                             }
                             PillButton {
                                 text: "Shuffle";

@@ -20,6 +20,7 @@ import { AlbumPage } from "views/album.slint";
 import { ListPage } from "views/tracks.slint";
 import { ArtistsPage, ArtistPage, GenresPage } from "views/browse.slint";
 import { SettingsPage } from "views/settings.slint";
+import { AudioSettingsPage } from "views/audio.slint";
 import { CommandPalette, Welcome, Toast } from "views/overlays.slint";
 import { EditorPage, ScannerDialog, LookupDialog, QuitPrompt, AlbumPicker } from "views/editor.slint";
 import { Editor } from "editor-state.slint";
@@ -217,8 +218,9 @@ export component AppWindow inherits Window {
                     if AppState.page == "artist": ArtistPage { }
                     if AppState.page == "genres": GenresPage { }
                     if AppState.page == "settings": SettingsPage { }
+                    if AppState.page == "audio": AudioSettingsPage { }
                     if AppState.page == "editor": EditorPage { }
-                    if AppState.library-empty && AppState.page != "settings" && AppState.page != "editor": Welcome { }
+                    if AppState.library-empty && AppState.page != "settings" && AppState.page != "audio" && AppState.page != "editor": Welcome { }
                     Toolbar {
                         y: 0px;
                         width: parent.width;

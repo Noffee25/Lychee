@@ -32,7 +32,14 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 - [x] Output device selection
 - [x] Clickless pause, resume and seek (short fades)
 - [x] Resume where you left off: queue, track, position, volume, shuffle and repeat
-- [x] **Volume levelling** (ReplayGain 2.0, on by default in Settings → Playback): every song plays at about
+- [x] **Settings → Audio**, a page of its own: output device, equalizer, volume levelling, crossfade and crossfeed
+- [x] **Equalizer**: ten bands (32 Hz–16 kHz, ±12 dB), 16 presets and your own curve. Drag a point (double-click
+  resets it); the curve passes through every band. The level drops by the biggest boost, so boosted songs never
+  distort. Off means the samples are untouched
+- [x] **Crossfade** from 2 to 12 seconds, on automatic song changes. Songs that follow each other on an album
+  stay gapless, and short songs fade for at most half their length
+- [x] **Headphone crossfeed** (light, medium, strong): the Bauer stereophonic-to-binaural design
+- [x] **Volume levelling** (ReplayGain 2.0, on by default in Settings → Audio): every song plays at about
   the same loudness (−18 LUFS). Gains come from ReplayGain tags (also APE tags on MP3s and Opus's `R128_*`
   tags); songs without them are measured in the background with Lychee's own EBU R128 / BS.1770 meter.
   Album gain while an album plays (the songs beside it in the queue are from the same album), track gain
@@ -60,8 +67,9 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
   A credit like "A feat. B, C" shows as separate artist links (A, B, C) there and in the Queue panel
 - [x] The playing song and album are marked with three bars, which move while music plays and rest when
   it's paused
-- [x] While an album plays, its Play button (on the album page and on its tile) turns into Pause; pressing
-  it again resumes where you left off
+- [x] While an album, playlist, artist, Favorites, Songs or Recently Played plays, its Play button turns into
+  Pause (album tiles too); pressing it again resumes where you left off. The playing song's row pauses and
+  resumes the same way
 - [x] **Dynamic colour**: buttons and highlights take the album's accent; headers its dominant colour (can be turned off)
 - [x] **Lyrics**: `.lrc` sidecar files and embedded lyrics, synced highlighting with auto-scroll, click a line to seek
 - [x] Details panel: tags, format, decoder, output device, file size, play count, path
@@ -155,7 +163,8 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
   `.dmg`. Type-checked and packaged by the release workflow, but not yet run on a Mac.
 - [ ] macOS: opening audio files from Finder ("Open With", double-click). winit doesn't pass them to the app.
 - [ ] macOS: ⌘Q quits without asking about unsaved tag edits (the system ends the app directly)
-- [ ] Single instance: opening a file while Lychee runs hands it to the running window
+- [x] Single instance: opening files while Lychee runs ("Open with", the command line, `--edit`) hands them to the
+  running window, which plays them (or opens them in the tag editor); a plain second launch brings it back
 - [ ] Desktop notifications on track change
 
 ### Last.fm
@@ -172,15 +181,17 @@ Lychee is a local-library music player for Linux, Windows and macOS, written in 
 
 ## v0.2 "Daily Driver"
 - [ ] System tray icon with controls; optionally close to tray
-- [ ] Optional crossfade (never between gapless album tracks)
+- [x] Optional crossfade (never between gapless album tracks)
 - [ ] Waveform seek bar
 - [ ] Ratings and smart playlists (rules: genre, year, rating, play count, date added, format…)
 - [ ] Live folder watching, folder browser, M3U import/export
-- [ ] Single instance and desktop notifications
+- [x] Single instance
+- [ ] Desktop notifications
 - [ ] A faster Opus decoder: the pure-Rust one uses about 20% of a CPU core; libopus would make it optional
 
 ## v0.3 "Audiophile & Power"
-- [ ] Parametric / graphic EQ with presets
+- [x] Graphic EQ with presets (Settings → Audio)
+- [ ] Parametric EQ
 - [ ] Spectrum analyzer and level meters
 - [ ] Bit-perfect / exclusive output (WASAPI exclusive, direct ALSA) with sample-rate switching
 - [ ] Rarer formats through an optional FFmpeg backend: WMA, APE, WavPack, DSD, Musepack, TTA
